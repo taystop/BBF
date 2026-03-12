@@ -1,0 +1,131 @@
+@page "/"
+@using BBF.Data
+@using BBF.Data.Entities
+@using BBF.Services
+@inject ApplicationDbContext Db
+@using Microsoft.EntityFrameworkCore
+@inject OllamaService Ollama
+
+<PageTitle>Dashboard - BBF</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">Dashboard</MudText>
+
+<MudGrid>
+    <MudItem xs="12" sm="6" md="3">
+        <MudPaper Class="pa-4" Elevation="2">
+            <MudStack Row AlignItems="AlignItems.Center" Spacing="3">
+                <MudIcon Icon="@Icons.Material.Filled.Psychology" Size="Size.Large"
+                         Color="@(_ollamaOnline ? Color.Success : Color.Error)" />
+                <div>
+                    <MudText Typo="Typo.h6">Ollama</MudText>
+                    <MudText Typo="Typo.body2" Color="@(_ollamaOnline ? Color.Success : Color.Error)">
+                        @(_ollamaOnline ? "Online" : "Offline")
+                    </MudText>
+                </div>
+            </MudStack>
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12" sm="6" md="3">
+        <MudPaper Class="pa-4" Elevation="2">
+            <MudStack Row AlignItems="AlignItems.Center" Spacing="3">
+                <MudIcon Icon="@Icons.Material.Filled.Chat" Size="Size.Large" Color="Color.Primary" />
+                <div>
+                    <MudText Typo="Typo.h6">Conversations</MudText>
+                    <MudText Typo="Typo.body2">@_conversationCount total</MudText>
+                </div>
+            </MudStack>
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12" sm="6" md="3">
+        <MudPaper Class="pa-4" Elevation="2">
+            <MudStack Row AlignItems="AlignItems.Center" Spacing="3">
+                <MudIcon Icon="@Icons.Material.Filled.Apps" Size="Size.Large" Color="Color.Secondary" />
+                <div>
+                    <MudText Typo="Typo.h6">Services</MudText>
+                    <MudText Typo="Typo.body2">@_serviceCount tracked</MudText>
+                </div>
+            </MudStack>
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12" sm="6" md="3">
+        <MudPaper Class="pa-4" Elevation="2">
+            <MudStack Row AlignItems="AlignItems.Center" Spacing="3">
+                <MudIcon Icon="@Icons.Material.Filled.MenuBook" Size="Size.Large" Color="Color.Tertiary" />
+                <div>
+                    <MudText Typo="Typo.h6">Wiki Articles</MudText>
+                    <MudText Typo="Typo.body2">@_articleCount published</MudText>
+                </div>
+            </MudStack>
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12" md="6">
+        <MudPaper Class="pa-4" Elevation="2">
+            <MudText Typo="Typo.h6" Class="mb-3">Quick Links</MudText>
+            @if (_services.Any())
+            {
+                <MudList T="ServiceLink" Dense>
+                    @foreach (var svc in _services)
+                    {
+                        <MudListItem Icon="@Icons.Material.Filled.OpenInNew"
+                                     Href="@svc.Url" Target="_blank">
+                            <MudText>@svc.Name</MudText>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">@svc.Description</MudText>
+                        </MudListItem>
+                    }
+                </MudList>
+            }
+            else
+            {
+                <MudText Typo="Typo.body2" Color="Color.Secondary">No services configured yet.</MudText>
+            }
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12" md="6">
+        <MudPaper Class="pa-4" Elevation="2">
+            <MudText Typo="Typo.h6" Class="mb-3">Available Models</MudText>
+            @if (_models.Any())
+            {
+                <MudList T="string" Dense>
+                    @foreach (var model in _models)
+                    {
+                        <MudListItem Icon="@Icons.Material.Filled.SmartToy">
+                            @model
+                        </MudListItem>
+                    }
+                </MudList>
+            }
+            else
+            {
+                <MudText Typo="Typo.body2" Color="Color.Secondary">
+                    @(_ollamaOnline ? "No models found." : "Ollama is offline.")
+                </MudText>
+            }
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@code {
+    private bool _ollamaOnline;
+    private int _conversationCount;
+    private int _serviceCount;
+    private int _articleCount;
+    private List<ServiceLink> _services = [];
+    private List<string> _models = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        _ollamaOnline = await Ollama.IsHealthyAsync();
+        _conversationCount = await Db.ChatConversations.CountAsync();
+        _serviceCount = await Db.ServiceLinks.CountAsync(s => s.IsActive);
+        _articleCount = await Db.WikiArticles.CountAsync();
+        _services = await Db.ServiceLinks.Where(s => s.IsActive).OrderBy(s => s.SortOrder).ToListAsync();
+
+        if (_ollamaOnline)
+            _models = await Ollama.GetModelsAsync();
+    }
+}

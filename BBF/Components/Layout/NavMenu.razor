@@ -1,0 +1,23 @@
+<MudNavMenu>
+    <MudNavLink Href="/" Match="NavLinkMatch.All"
+                Icon="@Icons.Material.Filled.Dashboard">Dashboard</MudNavLink>
+    <MudNavLink Href="/chat"
+                Icon="@Icons.Material.Filled.Chat">AI Chat</MudNavLink>
+    <MudNavLink Href="/services"
+                Icon="@Icons.Material.Filled.Apps">Services</MudNavLink>
+    <MudNavLink Href="/wiki"
+                Icon="@Icons.Material.Filled.MenuBook">Documentation</MudNavLink>
+    <MudNavLink Href="/status"
+                Icon="@Icons.Material.Filled.MonitorHeart">Status</MudNavLink>
+    <MudDivider Class="my-2" />
+    <AuthorizeView>
+        <Authorized>
+            <MudNavLink Href="Account/Manage"
+                        Icon="@Icons.Material.Filled.Person">Account</MudNavLink>
+        </Authorized>
+        <NotAuthorized>
+            <MudNavLink Href="Account/Login"
+                        Icon="@Icons.Material.Filled.Login">Login</MudNavLink>
+        </NotAuthorized>
+    </AuthorizeView>
+</MudNavMenu>
