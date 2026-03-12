@@ -1,0 +1,595 @@
+@page "/chat"
+@page "/chat/{ConversationId:int}"
+@using BBF.Data
+@using BBF.Data.Entities
+@using BBF.Services
+@using Microsoft.EntityFrameworkCore
+@using Markdig
+@inject ApplicationDbContext Db
+@inject OllamaService Ollama
+@inject WebSearchService Search
+@inject NavigationManager Nav
+@implements IDisposable
+
+<PageTitle>AI Chat - BBF</PageTitle>
+
+<MudGrid Spacing="0" Class="chat-layout">
+    @* Conversation sidebar *@
+    <MudItem xs="12" md="3" Class="chat-sidebar">
+        <MudPaper Class="pa-3 d-flex flex-column" Style="height: calc(100vh - 100px);" Elevation="2">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" FullWidth
+                       StartIcon="@Icons.Material.Filled.Add" OnClick="NewConversation"
+                       Class="mb-3">
+                New Chat
+            </MudButton>
+
+            <MudTextField @bind-Value="_searchText" Placeholder="Search conversations..."
+                          Variant="Variant.Outlined" Adornment="Adornment.Start"
+                          AdornmentIcon="@Icons.Material.Filled.Search" Immediate
+                          Class="mb-2" Margin="Margin.Dense" />
+
+            <MudDivider Class="mb-2" />
+
+            <div style="overflow-y: auto; flex: 1;">
+                @if (_conversations.Any())
+                {
+                    @foreach (var convo in FilteredConversations)
+                    {
+                        <MudNavLink Href="@($"/chat/{convo.Id}")"
+                                    Match="NavLinkMatch.All"
+                                    Icon="@Icons.Material.Filled.ChatBubbleOutline"
+                                    Class="@(convo.Id == ConversationId ? "mud-nav-link-active" : "")">
+                            <div class="d-flex align-center justify-space-between" style="width: 100%;">
+                                <MudText Typo="Typo.body2" Class="text-truncate" Style="max-width: 160px;">
+                                    @(convo.Title ?? "New Chat")
+                                </MudText>
+                                <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small"
+                                               Color="Color.Error"
+                                               OnClick="@(() => DeleteConversation(convo.Id))"
+                                               onclick:stopPropagation />
+                            </div>
+                        </MudNavLink>
+                    }
+                }
+                else
+                {
+                    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="pa-3 text-center">
+                        No conversations yet
+                    </MudText>
+                }
+            </div>
+        </MudPaper>
+    </MudItem>
+
+    @* Chat area *@
+    <MudItem xs="12" md="9" Class="chat-main">
+        <MudPaper Class="d-flex flex-column" Style="height: calc(100vh - 100px);" Elevation="2">
+            @* Header *@
+            <MudToolBar Dense Class="border-b">
+                <MudText Typo="Typo.h6">
+                    @(_activeConversation?.Title ?? "New Chat")
+                </MudText>
+                <MudSpacer />
+                <MudTooltip Text="@(_webSearchEnabled ? "Web search enabled" : "Web search disabled")">
+                    <MudToggleIconButton @bind-Toggled="_webSearchEnabled"
+                                         Icon="@Icons.Material.Filled.SearchOff"
+                                         ToggledIcon="@Icons.Material.Filled.TravelExplore"
+                                         Color="Color.Default" ToggledColor="Color.Success"
+                                         Size="Size.Medium" />
+                </MudTooltip>
+                @if (_availableModels.Any())
+                {
+                    <MudSelect T="string" @bind-Value="_selectedModel" Variant="Variant.Outlined"
+                               Dense Margin="Margin.Dense" Style="max-width: 200px;"
+                               Label="Model">
+                        @foreach (var model in _availableModels)
+                        {
+                            <MudSelectItem Value="@model">@model</MudSelectItem>
+                        }
+                    </MudSelect>
+                }
+            </MudToolBar>
+
+            @* Messages *@
+            <div @ref="_messagesContainer" class="chat-messages pa-4" style="flex: 1; overflow-y: auto;">
+                @if (_messages.Any() || _isStreaming)
+                {
+                    @foreach (var msg in _messages)
+                    {
+                        <div class="d-flex mb-4 @(msg.Role == "user" ? "justify-end" : "justify-start")">
+                            @if (msg.Role != "user")
+                            {
+                                <MudAvatar Color="Color.Primary" Size="Size.Small" Class="mr-2 mt-1">
+                                    <MudIcon Icon="@Icons.Material.Filled.SmartToy" Size="Size.Small" />
+                                </MudAvatar>
+                            }
+                            <MudPaper Class="@($"pa-3 {(msg.Role == "user" ? "user-message" : "assistant-message")}")"
+                                      Elevation="1"
+                                      Style="@($"max-width: 75%; {(msg.Role == "user" ? "background-color: var(--mud-palette-primary); color: var(--mud-palette-primary-text);" : "")}")">
+                                @if (msg.Role == "user")
+                                {
+                                    <MudText Style="white-space: pre-wrap; word-break: break-word;">@msg.Content</MudText>
+                                }
+                                else
+                                {
+                                    <div class="markdown-body">@((MarkupString)RenderMarkdown(msg.Content))</div>
+                                }
+                            </MudPaper>
+                            @if (msg.Role == "user")
+                            {
+                                <MudAvatar Color="Color.Secondary" Size="Size.Small" Class="ml-2 mt-1">
+                                    <MudIcon Icon="@Icons.Material.Filled.Person" Size="Size.Small" />
+                                </MudAvatar>
+                            }
+                        </div>
+                    }
+
+                    @if (_isStreaming)
+                    {
+                        <div class="d-flex mb-4 justify-start">
+                            <MudAvatar Color="Color.Primary" Size="Size.Small" Class="mr-2 mt-1">
+                                <MudIcon Icon="@Icons.Material.Filled.SmartToy" Size="Size.Small" />
+                            </MudAvatar>
+                            <MudPaper Class="pa-3 assistant-message" Elevation="1" Style="max-width: 75%;">
+                                @if (!string.IsNullOrEmpty(_streamingContent))
+                                {
+                                    <div class="markdown-body">@((MarkupString)RenderMarkdown(_streamingContent))</div>
+                                }
+                                else
+                                {
+                                    <MudStack Row AlignItems="AlignItems.Center" Spacing="2">
+                                        <MudProgressCircular Size="Size.Small" Color="Color.Primary" Indeterminate />
+                                        <MudText Typo="Typo.body2" Color="Color.Secondary">
+                                            @(_isSearching ? "Searching the web..." : "Generating...")
+                                        </MudText>
+                                    </MudStack>
+                                }
+                                <MudProgressLinear Color="Color.Primary" Indeterminate Size="Size.Small" Class="mt-2" />
+                            </MudPaper>
+                        </div>
+                    }
+                }
+                else
+                {
+                    <div class="d-flex flex-column align-center justify-center" style="height: 100%;">
+                        <MudIcon Icon="@Icons.Material.Filled.Psychology" Size="Size.Large"
+                                 Color="Color.Primary" Class="mb-4" />
+                        <MudText Typo="Typo.h5" Color="Color.Secondary">How can I help you?</MudText>
+                        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mt-2">
+                            Start a conversation with your local AI assistant.
+                        </MudText>
+                    </div>
+                }
+            </div>
+
+            @* Input area *@
+            <MudPaper Class="pa-3 border-t" Elevation="0">
+                <MudStack Row AlignItems="AlignItems.End">
+                    <MudTextField @bind-Value="_userInput" Placeholder="Type a message..."
+                                  Variant="Variant.Outlined" autoGrow Lines="1" MaxLines="5"
+                                  Immediate FullWidth Disabled="_isStreaming"
+                                  OnKeyDown="HandleKeyDown" />
+                    @if (_isStreaming)
+                    {
+                        <MudIconButton Icon="@Icons.Material.Filled.Stop" Color="Color.Error"
+                                       Variant="Variant.Filled" OnClick="StopStreaming"
+                                       title="Stop generating" />
+                    }
+                    else
+                    {
+                        <MudIconButton Icon="@Icons.Material.Filled.Send" Color="Color.Primary"
+                                       Variant="Variant.Filled" OnClick="SendMessage"
+                                       Disabled="@(string.IsNullOrWhiteSpace(_userInput))"
+                                       title="Send message" />
+                    }
+                </MudStack>
+            </MudPaper>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+<style>
+    .chat-layout {
+        height: calc(100vh - 100px);
+    }
+
+    .chat-messages::-webkit-scrollbar {
+        width: 6px;
+    }
+
+    .chat-messages::-webkit-scrollbar-thumb {
+        background-color: var(--mud-palette-lines-default);
+        border-radius: 3px;
+    }
+
+    .border-b {
+        border-bottom: 1px solid var(--mud-palette-lines-default);
+    }
+
+    .border-t {
+        border-top: 1px solid var(--mud-palette-lines-default);
+    }
+
+    .text-truncate {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .assistant-message {
+        border-radius: 4px 16px 16px 16px !important;
+    }
+
+    .user-message {
+        border-radius: 16px 4px 16px 16px !important;
+    }
+
+    .markdown-body {
+        word-break: break-word;
+        line-height: 1.6;
+    }
+
+    .markdown-body p {
+        margin: 0 0 0.5em 0;
+    }
+
+    .markdown-body p:last-child {
+        margin-bottom: 0;
+    }
+
+    .markdown-body ul, .markdown-body ol {
+        margin: 0.25em 0 0.5em 0;
+        padding-left: 1.5em;
+    }
+
+    .markdown-body li {
+        margin-bottom: 0.25em;
+    }
+
+    .markdown-body h1, .markdown-body h2, .markdown-body h3,
+    .markdown-body h4, .markdown-body h5, .markdown-body h6 {
+        margin: 0.75em 0 0.25em 0;
+        font-weight: 600;
+    }
+
+    .markdown-body h1 { font-size: 1.4em; }
+    .markdown-body h2 { font-size: 1.25em; }
+    .markdown-body h3 { font-size: 1.1em; }
+
+    .markdown-body code {
+        background-color: rgba(128, 128, 128, 0.2);
+        padding: 0.15em 0.4em;
+        border-radius: 4px;
+        font-size: 0.9em;
+        font-family: 'Cascadia Code', 'Fira Code', monospace;
+    }
+
+    .markdown-body pre {
+        background-color: rgba(0, 0, 0, 0.3);
+        padding: 0.75em 1em;
+        border-radius: 6px;
+        overflow-x: auto;
+        margin: 0.5em 0;
+    }
+
+    .markdown-body pre code {
+        background: none;
+        padding: 0;
+    }
+
+    .markdown-body blockquote {
+        border-left: 3px solid var(--mud-palette-primary);
+        margin: 0.5em 0;
+        padding: 0.25em 0.75em;
+        opacity: 0.85;
+    }
+
+    .markdown-body table {
+        border-collapse: collapse;
+        margin: 0.5em 0;
+        width: 100%;
+    }
+
+    .markdown-body th, .markdown-body td {
+        border: 1px solid var(--mud-palette-lines-default);
+        padding: 0.4em 0.75em;
+        text-align: left;
+    }
+
+    .markdown-body th {
+        font-weight: 600;
+        background-color: rgba(128, 128, 128, 0.15);
+    }
+
+    .markdown-body a {
+        color: var(--mud-palette-primary);
+        text-decoration: none;
+    }
+
+    .markdown-body a:hover {
+        text-decoration: underline;
+    }
+
+    .markdown-body strong {
+        font-weight: 600;
+    }
+
+    .markdown-body hr {
+        border: none;
+        border-top: 1px solid var(--mud-palette-lines-default);
+        margin: 0.75em 0;
+    }
+</style>
+
+@code {
+    [Parameter]
+    public int? ConversationId { get; set; }
+
+    private ElementReference _messagesContainer;
+    private List<ChatConversation> _conversations = [];
+    private ChatConversation? _activeConversation;
+    private List<ChatMessage> _messages = [];
+    private List<string> _availableModels = [];
+    private string _selectedModel = "qwen3.5:9b";
+    private string _userInput = string.Empty;
+    private string _streamingContent = string.Empty;
+    private string _searchText = string.Empty;
+    private bool _isStreaming;
+    private bool _isSearching;
+    private bool _webSearchEnabled = true;
+    private CancellationTokenSource? _streamCts;
+
+    private IEnumerable<ChatConversation> FilteredConversations =>
+        string.IsNullOrWhiteSpace(_searchText)
+            ? _conversations
+            : _conversations.Where(c =>
+                c.Title?.Contains(_searchText, StringComparison.OrdinalIgnoreCase) == true);
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadConversations();
+        _availableModels = await Ollama.GetModelsAsync();
+
+        if (_availableModels.Any() && !_availableModels.Contains(_selectedModel))
+            _selectedModel = _availableModels.First();
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // Don't reload while streaming — SendMessage manages state directly
+        if (_isStreaming) return;
+
+        if (ConversationId.HasValue)
+        {
+            // Only reload if switching to a different conversation
+            if (_activeConversation?.Id != ConversationId.Value)
+                await LoadConversation(ConversationId.Value);
+        }
+        else
+        {
+            _activeConversation = null;
+            _messages = [];
+        }
+    }
+
+    private async Task LoadConversations()
+    {
+        _conversations = await Db.ChatConversations
+            .OrderByDescending(c => c.UpdatedAt)
+            .ToListAsync();
+    }
+
+    private async Task LoadConversation(int id)
+    {
+        _activeConversation = await Db.ChatConversations
+            .Include(c => c.Messages.OrderBy(m => m.CreatedAt))
+            .FirstOrDefaultAsync(c => c.Id == id);
+
+        if (_activeConversation is not null)
+        {
+            _messages = _activeConversation.Messages.ToList();
+            _selectedModel = _activeConversation.Model;
+        }
+        else
+        {
+            Nav.NavigateTo("/chat");
+        }
+    }
+
+    private void NewConversation()
+    {
+        Nav.NavigateTo("/chat");
+    }
+
+    private async Task DeleteConversation(int id)
+    {
+        var convo = await Db.ChatConversations.FindAsync(id);
+        if (convo is not null)
+        {
+            Db.ChatConversations.Remove(convo);
+            await Db.SaveChangesAsync();
+            await LoadConversations();
+
+            if (ConversationId == id)
+                Nav.NavigateTo("/chat");
+        }
+    }
+
+    private async Task HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !e.ShiftKey && !_isStreaming)
+        {
+            await SendMessage();
+        }
+    }
+
+    private async Task SendMessage()
+    {
+        var input = _userInput?.Trim();
+        if (string.IsNullOrEmpty(input)) return;
+
+        _userInput = string.Empty;
+        var isNewConversation = false;
+
+        // Create conversation if needed
+        if (_activeConversation is null)
+        {
+            _activeConversation = new ChatConversation
+            {
+                Model = _selectedModel,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            };
+            Db.ChatConversations.Add(_activeConversation);
+            await Db.SaveChangesAsync();
+            await LoadConversations();
+            isNewConversation = true;
+        }
+
+        // Save user message
+        var userMsg = new ChatMessage
+        {
+            ConversationId = _activeConversation.Id,
+            Role = "user",
+            Content = input,
+            CreatedAt = DateTime.UtcNow
+        };
+        Db.ChatMessages.Add(userMsg);
+        await Db.SaveChangesAsync();
+        _messages.Add(userMsg);
+
+        // Start streaming
+        _isStreaming = true;
+        _streamingContent = string.Empty;
+        _streamCts = new CancellationTokenSource();
+        StateHasChanged();
+
+        // Web search if enabled — inject results as context
+        string? searchContext = null;
+        if (_webSearchEnabled)
+        {
+            _isSearching = true;
+            StateHasChanged();
+
+            var searchResults = await Search.SearchAsync(input, maxResults: 5, _streamCts.Token);
+            searchContext = WebSearchService.FormatResultsAsContext(searchResults);
+
+            _isSearching = false;
+            StateHasChanged();
+        }
+
+        // Build message history for Ollama
+        var ollamaMessages = _messages.Select(m => new OllamaChatMessage
+        {
+            Role = m.Role,
+            Content = m.Content
+        }).ToList();
+
+        // Inject search context into the last user message so the model sees it
+        if (!string.IsNullOrEmpty(searchContext))
+        {
+            ollamaMessages[^1] = new OllamaChatMessage
+            {
+                Role = "user",
+                Content = $"{input}\n\n---\n{searchContext}"
+            };
+        }
+
+        try
+        {
+            await foreach (var chunk in Ollama.ChatStreamAsync(ollamaMessages, _selectedModel, _streamCts.Token))
+            {
+                if (!chunk.IsThinking)
+                {
+                    _streamingContent += chunk.Text;
+                    StateHasChanged();
+                }
+            }
+
+            // Save assistant message (response only, not thinking)
+            var assistantMsg = new ChatMessage
+            {
+                ConversationId = _activeConversation.Id,
+                Role = "assistant",
+                Content = _streamingContent,
+                CreatedAt = DateTime.UtcNow
+            };
+            Db.ChatMessages.Add(assistantMsg);
+            _activeConversation.UpdatedAt = DateTime.UtcNow;
+
+            // Auto-title from first message
+            if (_activeConversation.Title is null)
+            {
+                _activeConversation.Title = input.Length > 50 ? input[..50] + "..." : input;
+            }
+
+            await Db.SaveChangesAsync();
+            _messages.Add(assistantMsg);
+            await LoadConversations();
+        }
+        catch (OperationCanceledException)
+        {
+            // User stopped generation — save partial response if any
+            if (!string.IsNullOrEmpty(_streamingContent))
+            {
+                var partialMsg = new ChatMessage
+                {
+                    ConversationId = _activeConversation.Id,
+                    Role = "assistant",
+                    Content = _streamingContent + "\n\n_(generation stopped)_",
+                    CreatedAt = DateTime.UtcNow
+                };
+                Db.ChatMessages.Add(partialMsg);
+                _activeConversation.UpdatedAt = DateTime.UtcNow;
+
+                if (_activeConversation.Title is null)
+                    _activeConversation.Title = input.Length > 50 ? input[..50] + "..." : input;
+
+                await Db.SaveChangesAsync();
+                _messages.Add(partialMsg);
+                await LoadConversations();
+            }
+        }
+        catch (HttpRequestException)
+        {
+            _messages.Add(new ChatMessage
+            {
+                Role = "assistant",
+                Content = "Unable to reach Ollama. Make sure it's running at the configured address."
+            });
+        }
+        finally
+        {
+            _isStreaming = false;
+            _streamingContent = string.Empty;
+            _streamCts?.Dispose();
+            _streamCts = null;
+            StateHasChanged();
+
+            // Navigate after streaming completes so URL reflects the conversation
+            if (isNewConversation)
+                Nav.NavigateTo($"/chat/{_activeConversation.Id}", replace: true);
+        }
+    }
+
+    private static readonly MarkdownPipeline MarkdownPipeline = new MarkdownPipelineBuilder()
+        .UseAdvancedExtensions()
+        .Build();
+
+    private static string RenderMarkdown(string markdown)
+    {
+        if (string.IsNullOrEmpty(markdown)) return string.Empty;
+        return Markdown.ToHtml(markdown, MarkdownPipeline);
+    }
+
+    private void StopStreaming()
+    {
+        _streamCts?.Cancel();
+    }
+
+    public void Dispose()
+    {
+        _streamCts?.Cancel();
+        _streamCts?.Dispose();
+    }
+}

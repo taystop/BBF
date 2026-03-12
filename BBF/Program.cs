@@ -45,6 +45,9 @@ builder.Services.AddSingleton<IEmailSender<ApplicationUser>, IdentityNoOpEmailSe
 // Ollama LLM service
 builder.Services.AddHttpClient<OllamaService>();
 
+// SearXNG web search service
+builder.Services.AddHttpClient<WebSearchService>();
+
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
