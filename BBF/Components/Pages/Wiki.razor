@@ -1,0 +1,311 @@
+@page "/wiki"
+@page "/wiki/{ArticleId:int}"
+@using BBF.Data
+@using BBF.Data.Entities
+@using Microsoft.EntityFrameworkCore
+@using Markdig
+@inject ApplicationDbContext Db
+@inject NavigationManager Nav
+
+<PageTitle>Documentation - BBF</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="py-4">
+    @if (_editing)
+    {
+        @* Editor view *@
+        <MudStack Row AlignItems="AlignItems.Center" Class="mb-4">
+            <MudText Typo="Typo.h4">@(_editArticle.Id == 0 ? "New Article" : "Edit Article")</MudText>
+            <MudSpacer />
+            <MudButton Variant="Variant.Text" OnClick="CancelEdit"
+                       StartIcon="@Icons.Material.Filled.Close">Cancel</MudButton>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveArticle"
+                       StartIcon="@Icons.Material.Filled.Save"
+                       Disabled="@(string.IsNullOrWhiteSpace(_editArticle.Title))">Save</MudButton>
+        </MudStack>
+
+        <MudGrid>
+            <MudItem xs="12" md="6">
+                <MudTextField @bind-Value="_editArticle.Title" Label="Title" Required
+                              Variant="Variant.Outlined" Class="mb-3" />
+                <MudStack Row Spacing="2" Class="mb-3">
+                    <MudTextField @bind-Value="_editArticle.Category" Label="Category"
+                                  Variant="Variant.Outlined" Style="flex: 1;" />
+                    <MudTextField @bind-Value="_editArticle.Tags" Label="Tags (comma-separated)"
+                                  Variant="Variant.Outlined" Style="flex: 1;" />
+                </MudStack>
+                <MudTextField @bind-Value="_editArticle.Content" Label="Content (Markdown)"
+                              Variant="Variant.Outlined" Lines="20" autoGrow />
+            </MudItem>
+            <MudItem xs="12" md="6">
+                <MudText Typo="Typo.subtitle2" Color="Color.Secondary" Class="mb-2">Preview</MudText>
+                <MudPaper Class="pa-4 markdown-body" Elevation="1" Style="min-height: 400px;">
+                    @((MarkupString)RenderMarkdown(_editArticle.Content))
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
+    }
+    else if (_viewArticle is not null)
+    {
+        @* Article view *@
+        <MudStack Row AlignItems="AlignItems.Center" Class="mb-4">
+            <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" OnClick="BackToList" />
+            <MudText Typo="Typo.h4">@_viewArticle.Title</MudText>
+            <MudSpacer />
+            <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Edit"
+                       OnClick="@(() => StartEdit(_viewArticle))">Edit</MudButton>
+        </MudStack>
+
+        <MudStack Row Spacing="2" Class="mb-3">
+            @if (!string.IsNullOrEmpty(_viewArticle.Category))
+            {
+                <MudChip T="string" Color="Color.Primary" Size="Size.Small">@_viewArticle.Category</MudChip>
+            }
+            @if (!string.IsNullOrEmpty(_viewArticle.Tags))
+            {
+                @foreach (var tag in _viewArticle.Tags.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                {
+                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">@tag</MudChip>
+                }
+            }
+            <MudSpacer />
+            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                Updated @_viewArticle.UpdatedAt.ToString("MMM dd, yyyy")
+            </MudText>
+        </MudStack>
+
+        <MudPaper Class="pa-6 markdown-body" Elevation="2">
+            @((MarkupString)RenderMarkdown(_viewArticle.Content))
+        </MudPaper>
+    }
+    else
+    {
+        @* Article list *@
+        <MudStack Row AlignItems="AlignItems.Center" Class="mb-4">
+            <MudText Typo="Typo.h4">Documentation</MudText>
+            <MudSpacer />
+            <MudTextField @bind-Value="_searchText" Placeholder="Search articles..."
+                          Variant="Variant.Outlined" Adornment="Adornment.Start"
+                          AdornmentIcon="@Icons.Material.Filled.Search" Immediate
+                          Margin="Margin.Dense" Style="max-width: 300px;" />
+            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Add" OnClick="StartNew">
+                New Article
+            </MudButton>
+        </MudStack>
+
+        @if (!FilteredArticles.Any())
+        {
+            <MudPaper Class="pa-8 d-flex flex-column align-center" Elevation="2">
+                <MudIcon Icon="@Icons.Material.Filled.MenuBook" Size="Size.Large" Color="Color.Secondary" Class="mb-3" />
+                <MudText Typo="Typo.h6" Color="Color.Secondary">
+                    @(string.IsNullOrWhiteSpace(_searchText) ? "No articles yet" : "No matching articles")
+                </MudText>
+                <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mt-1">
+                    @(string.IsNullOrWhiteSpace(_searchText) ? "Create your first documentation article." : "Try a different search term.")
+                </MudText>
+            </MudPaper>
+        }
+        else
+        {
+            @foreach (var group in FilteredArticles.GroupBy(a => a.Category ?? "General").OrderBy(g => g.Key))
+            {
+                <MudText Typo="Typo.h6" Class="mb-2 mt-4" Color="Color.Secondary">@group.Key</MudText>
+                <MudGrid>
+                    @foreach (var article in group.OrderByDescending(a => a.UpdatedAt))
+                    {
+                        <MudItem xs="12" sm="6" md="4">
+                            <MudCard Elevation="2" Class="article-card" Style="cursor: pointer;"
+                                     @onclick="@(() => ViewArticle(article))">
+                                <MudCardContent>
+                                    <MudText Typo="Typo.subtitle1">@article.Title</MudText>
+                                    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mt-1"
+                                             Style="display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;">
+                                        @StripMarkdown(article.Content)
+                                    </MudText>
+                                </MudCardContent>
+                                <MudCardActions>
+                                    <MudStack Row Spacing="1">
+                                        @if (!string.IsNullOrEmpty(article.Tags))
+                                        {
+                                            @foreach (var tag in article.Tags.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Take(3))
+                                            {
+                                                <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">@tag</MudChip>
+                                            }
+                                        }
+                                    </MudStack>
+                                    <MudSpacer />
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                        @article.UpdatedAt.ToString("MMM dd")
+                                    </MudText>
+                                    <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                                                   OnClick="@(() => StartEdit(article))" onclick:stopPropagation />
+                                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small"
+                                                   Color="Color.Error"
+                                                   OnClick="@(() => DeleteArticle(article))" onclick:stopPropagation />
+                                </MudCardActions>
+                            </MudCard>
+                        </MudItem>
+                    }
+                </MudGrid>
+            }
+        }
+    }
+</MudContainer>
+
+<style>
+    .article-card {
+        height: 100%;
+        transition: transform 0.15s ease;
+    }
+
+    .article-card:hover {
+        transform: translateY(-2px);
+    }
+
+    .markdown-body {
+        word-break: break-word;
+        line-height: 1.6;
+    }
+
+    .markdown-body p { margin: 0 0 0.5em 0; }
+    .markdown-body p:last-child { margin-bottom: 0; }
+    .markdown-body ul, .markdown-body ol { margin: 0.25em 0 0.5em 0; padding-left: 1.5em; }
+    .markdown-body li { margin-bottom: 0.25em; }
+    .markdown-body h1, .markdown-body h2, .markdown-body h3,
+    .markdown-body h4, .markdown-body h5, .markdown-body h6 { margin: 0.75em 0 0.25em 0; font-weight: 600; }
+    .markdown-body h1 { font-size: 1.4em; }
+    .markdown-body h2 { font-size: 1.25em; }
+    .markdown-body h3 { font-size: 1.1em; }
+    .markdown-body code { background-color: rgba(128,128,128,0.2); padding: 0.15em 0.4em; border-radius: 4px; font-size: 0.9em; }
+    .markdown-body pre { background-color: rgba(0,0,0,0.3); padding: 0.75em 1em; border-radius: 6px; overflow-x: auto; margin: 0.5em 0; }
+    .markdown-body pre code { background: none; padding: 0; }
+    .markdown-body blockquote { border-left: 3px solid var(--mud-palette-primary); margin: 0.5em 0; padding: 0.25em 0.75em; opacity: 0.85; }
+    .markdown-body table { border-collapse: collapse; margin: 0.5em 0; width: 100%; }
+    .markdown-body th, .markdown-body td { border: 1px solid var(--mud-palette-lines-default); padding: 0.4em 0.75em; text-align: left; }
+    .markdown-body th { font-weight: 600; background-color: rgba(128,128,128,0.15); }
+    .markdown-body a { color: var(--mud-palette-primary); text-decoration: none; }
+    .markdown-body a:hover { text-decoration: underline; }
+    .markdown-body strong { font-weight: 600; }
+    .markdown-body hr { border: none; border-top: 1px solid var(--mud-palette-lines-default); margin: 0.75em 0; }
+</style>
+
+@code {
+    [Parameter]
+    public int? ArticleId { get; set; }
+
+    private List<WikiArticle> _articles = [];
+    private WikiArticle? _viewArticle;
+    private WikiArticle _editArticle = new();
+    private bool _editing;
+    private string _searchText = string.Empty;
+
+    private IEnumerable<WikiArticle> FilteredArticles =>
+        string.IsNullOrWhiteSpace(_searchText)
+            ? _articles
+            : _articles.Where(a =>
+                a.Title.Contains(_searchText, StringComparison.OrdinalIgnoreCase) ||
+                (a.Tags?.Contains(_searchText, StringComparison.OrdinalIgnoreCase) == true) ||
+                a.Content.Contains(_searchText, StringComparison.OrdinalIgnoreCase));
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadArticles();
+    }
+
+    protected override void OnParametersSet()
+    {
+        if (ArticleId.HasValue && !_editing)
+        {
+            _viewArticle = _articles.FirstOrDefault(a => a.Id == ArticleId.Value);
+        }
+    }
+
+    private async Task LoadArticles()
+    {
+        _articles = await Db.WikiArticles
+            .OrderByDescending(a => a.UpdatedAt)
+            .ToListAsync();
+    }
+
+    private void ViewArticle(WikiArticle article)
+    {
+        _viewArticle = article;
+        Nav.NavigateTo($"/wiki/{article.Id}", replace: true);
+    }
+
+    private void BackToList()
+    {
+        _viewArticle = null;
+        Nav.NavigateTo("/wiki", replace: true);
+    }
+
+    private void StartNew()
+    {
+        _editArticle = new WikiArticle();
+        _editing = true;
+    }
+
+    private void StartEdit(WikiArticle article)
+    {
+        _editArticle = article;
+        _editing = true;
+    }
+
+    private void CancelEdit()
+    {
+        _editing = false;
+        // Reload to discard unsaved changes on existing articles
+        if (_editArticle.Id != 0)
+        {
+            Db.Entry(_editArticle).Reload();
+        }
+    }
+
+    private async Task SaveArticle()
+    {
+        if (string.IsNullOrWhiteSpace(_editArticle.Title)) return;
+
+        _editArticle.UpdatedAt = DateTime.UtcNow;
+
+        if (_editArticle.Id == 0)
+        {
+            _editArticle.CreatedAt = DateTime.UtcNow;
+            Db.WikiArticles.Add(_editArticle);
+        }
+
+        await Db.SaveChangesAsync();
+        _editing = false;
+        _viewArticle = _editArticle;
+        await LoadArticles();
+        Nav.NavigateTo($"/wiki/{_editArticle.Id}", replace: true);
+    }
+
+    private async Task DeleteArticle(WikiArticle article)
+    {
+        Db.WikiArticles.Remove(article);
+        await Db.SaveChangesAsync();
+        await LoadArticles();
+
+        if (_viewArticle?.Id == article.Id)
+        {
+            _viewArticle = null;
+            Nav.NavigateTo("/wiki", replace: true);
+        }
+    }
+
+    private static readonly MarkdownPipeline MarkdownPipeline = new MarkdownPipelineBuilder()
+        .UseAdvancedExtensions()
+        .Build();
+
+    private static string RenderMarkdown(string? markdown)
+    {
+        if (string.IsNullOrEmpty(markdown)) return string.Empty;
+        return Markdown.ToHtml(markdown, MarkdownPipeline);
+    }
+
+    private static string StripMarkdown(string? markdown)
+    {
+        if (string.IsNullOrEmpty(markdown)) return string.Empty;
+        return Markdown.ToPlainText(markdown, MarkdownPipeline);
+    }
+}

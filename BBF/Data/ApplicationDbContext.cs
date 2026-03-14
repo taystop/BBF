@@ -31,6 +31,11 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
              .OnDelete(DeleteBehavior.Cascade);
         });
 
+        builder.Entity<ServiceHealthLog>(e =>
+        {
+            e.ToTable("ServiceHealthLog");
+        });
+
         builder.Entity<ServiceLink>(e =>
         {
             e.HasMany(s => s.HealthLogs)

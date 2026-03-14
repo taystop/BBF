@@ -1,0 +1,191 @@
+@page "/services"
+@using BBF.Data
+@using BBF.Data.Entities
+@using BBF.Services
+@using Microsoft.EntityFrameworkCore
+@inject ApplicationDbContext Db
+@inject IDialogService DialogService
+@inject HealthCheckService HealthChecker
+
+<PageTitle>Services - BBF</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="py-4">
+    <MudStack Row AlignItems="AlignItems.Center" Class="mb-4">
+        <MudText Typo="Typo.h4">Services</MudText>
+        <MudSpacer />
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Add" OnClick="OpenAddDialog">
+            Add Service
+        </MudButton>
+    </MudStack>
+
+    @if (!_services.Any())
+    {
+        <MudPaper Class="pa-8 d-flex flex-column align-center" Elevation="2">
+            <MudIcon Icon="@Icons.Material.Filled.Apps" Size="Size.Large" Color="Color.Secondary" Class="mb-3" />
+            <MudText Typo="Typo.h6" Color="Color.Secondary">No services configured</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mt-1">Add your first service to get started.</MudText>
+        </MudPaper>
+    }
+    else
+    {
+        @foreach (var group in _services.GroupBy(s => s.Category ?? "Uncategorized").OrderBy(g => g.Key))
+        {
+            <MudText Typo="Typo.h6" Class="mb-2 mt-4" Color="Color.Secondary">@group.Key</MudText>
+            <MudGrid>
+                @foreach (var svc in group.OrderBy(s => s.SortOrder))
+                {
+                    var lastHealth = svc.HealthLogs.OrderByDescending(h => h.CheckedAt).FirstOrDefault();
+                    <MudItem xs="12" sm="6" md="4" lg="3">
+                        <MudCard Elevation="2" Class="service-card">
+                            <MudCardHeader>
+                                <CardHeaderAvatar>
+                                    <MudAvatar Color="@(lastHealth?.IsHealthy == true ? Color.Success : lastHealth?.IsHealthy == false ? Color.Error : Color.Default)"
+                                               Size="Size.Medium">
+                                        <MudIcon Icon="@(svc.Icon ?? Icons.Material.Filled.Dns)" Size="Size.Small" />
+                                    </MudAvatar>
+                                </CardHeaderAvatar>
+                                <CardHeaderContent>
+                                    <MudText Typo="Typo.subtitle1">@svc.Name</MudText>
+                                    @if (lastHealth is not null)
+                                    {
+                                        <MudText Typo="Typo.caption" Color="@(lastHealth.IsHealthy ? Color.Success : Color.Error)">
+                                            @(lastHealth.IsHealthy ? "Online" : "Offline")
+                                            @if (lastHealth.ResponseTimeMs.HasValue)
+                                            {
+                                                <text> — @(lastHealth.ResponseTimeMs)ms</text>
+                                            }
+                                        </MudText>
+                                    }
+                                    else
+                                    {
+                                        <MudText Typo="Typo.caption" Color="Color.Secondary">Not checked</MudText>
+                                    }
+                                </CardHeaderContent>
+                                <CardHeaderActions>
+                                    <MudMenu Icon="@Icons.Material.Filled.MoreVert" Size="Size.Small">
+                                        <MudMenuItem OnClick="@(() => OpenEditDialog(svc))"
+                                                     Icon="@Icons.Material.Filled.Edit">Edit</MudMenuItem>
+                                        <MudMenuItem OnClick="@(() => CheckHealth(svc))"
+                                                     Icon="@Icons.Material.Filled.Refresh">Check Health</MudMenuItem>
+                                        <MudMenuItem OnClick="@(() => DeleteService(svc))"
+                                                     Icon="@Icons.Material.Filled.Delete" IconColor="Color.Error">Delete</MudMenuItem>
+                                    </MudMenu>
+                                </CardHeaderActions>
+                            </MudCardHeader>
+                            @if (!string.IsNullOrEmpty(svc.Description))
+                            {
+                                <MudCardContent>
+                                    <MudText Typo="Typo.body2">@svc.Description</MudText>
+                                </MudCardContent>
+                            }
+                            <MudCardActions>
+                                <MudButton Variant="Variant.Text" Color="Color.Primary"
+                                           Href="@svc.Url" Target="_blank"
+                                           EndIcon="@Icons.Material.Filled.OpenInNew">
+                                    Open
+                                </MudButton>
+                            </MudCardActions>
+                        </MudCard>
+                    </MudItem>
+                }
+            </MudGrid>
+        }
+
+        <MudDivider Class="my-4" />
+        <MudButton Variant="Variant.Outlined" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Refresh" OnClick="CheckAllHealth">
+            Check All Health
+        </MudButton>
+    }
+</MudContainer>
+
+<style>
+    .service-card {
+        height: 100%;
+        transition: transform 0.15s ease;
+    }
+
+    .service-card:hover {
+        transform: translateY(-2px);
+    }
+</style>
+
+@code {
+    private List<ServiceLink> _services = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadServices();
+    }
+
+    private async Task LoadServices()
+    {
+        _services = await Db.ServiceLinks
+            .Include(s => s.HealthLogs.OrderByDescending(h => h.CheckedAt).Take(1))
+            .Where(s => s.IsActive)
+            .OrderBy(s => s.SortOrder)
+            .ToListAsync();
+    }
+
+    private async Task OpenAddDialog()
+    {
+        var parameters = new DialogParameters<ServiceDialog> { { x => x.Service, new ServiceLink() } };
+        var dialog = await DialogService.ShowAsync<ServiceDialog>("Add Service", parameters);
+        var result = await dialog.Result;
+
+        if (result is not null && !result.Canceled && result.Data is ServiceLink newService)
+        {
+            Db.ServiceLinks.Add(newService);
+            await Db.SaveChangesAsync();
+            await LoadServices();
+        }
+    }
+
+    private async Task OpenEditDialog(ServiceLink svc)
+    {
+        var parameters = new DialogParameters<ServiceDialog> { { x => x.Service, svc } };
+        var dialog = await DialogService.ShowAsync<ServiceDialog>("Edit Service", parameters);
+        var result = await dialog.Result;
+
+        if (result is not null && !result.Canceled)
+        {
+            await Db.SaveChangesAsync();
+            await LoadServices();
+        }
+    }
+
+    private async Task DeleteService(ServiceLink svc)
+    {
+        var parameters = new DialogParameters<MessageBoxDialog>
+        {
+            { x => x.ContentText, $"Are you sure you want to delete '{svc.Name}'?" },
+            { x => x.ButtonText, "Delete" },
+            { x => x.Color, Color.Error }
+        };
+        var dialog = await DialogService.ShowAsync<MessageBoxDialog>("Delete Service", parameters);
+        var result = await dialog.Result;
+
+        if (result is not null && !result.Canceled)
+        {
+            Db.ServiceLinks.Remove(svc);
+            await Db.SaveChangesAsync();
+            await LoadServices();
+        }
+    }
+
+    private async Task CheckHealth(ServiceLink svc)
+    {
+        if (string.IsNullOrEmpty(svc.HealthCheckUrl)) return;
+        await HealthChecker.CheckAsync(svc);
+        await LoadServices();
+    }
+
+    private async Task CheckAllHealth()
+    {
+        foreach (var svc in _services.Where(s => !string.IsNullOrEmpty(s.HealthCheckUrl)))
+        {
+            await CheckHealth(svc);
+        }
+    }
+}

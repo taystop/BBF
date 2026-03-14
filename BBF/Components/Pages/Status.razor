@@ -1,0 +1,246 @@
+@page "/status"
+@using BBF.Data
+@using BBF.Data.Entities
+@using BBF.Services
+@using Microsoft.EntityFrameworkCore
+@inject ApplicationDbContext Db
+@inject HealthCheckService HealthChecker
+
+<PageTitle>Status - BBF</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="py-4">
+    <MudStack Row AlignItems="AlignItems.Center" Class="mb-4">
+        <MudText Typo="Typo.h4">Service Status</MudText>
+        <MudSpacer />
+        <MudButton Variant="Variant.Outlined" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Refresh" OnClick="RefreshAll"
+                   Disabled="_isChecking">
+            @(_isChecking ? "Checking..." : "Check All")
+        </MudButton>
+    </MudStack>
+
+    @if (!_services.Any())
+    {
+        <MudPaper Class="pa-8 d-flex flex-column align-center" Elevation="2">
+            <MudIcon Icon="@Icons.Material.Filled.MonitorHeart" Size="Size.Large" Color="Color.Secondary" Class="mb-3" />
+            <MudText Typo="Typo.h6" Color="Color.Secondary">No services with health checks</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mt-1">
+                Add a Health Check URL to your services to monitor them here.
+            </MudText>
+            <MudButton Variant="Variant.Outlined" Color="Color.Primary" Href="/services" Class="mt-3">
+                Go to Services
+            </MudButton>
+        </MudPaper>
+    }
+    else
+    {
+        @* Summary cards *@
+        <MudGrid Class="mb-4">
+            <MudItem xs="12" sm="4">
+                <MudPaper Class="pa-4 d-flex align-center" Elevation="2">
+                    <MudAvatar Color="Color.Success" Class="mr-3"><MudIcon Icon="@Icons.Material.Filled.CheckCircle" /></MudAvatar>
+                    <div>
+                        <MudText Typo="Typo.h4">@_services.Count(s => LatestHealth(s)?.IsHealthy == true)</MudText>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">Online</MudText>
+                    </div>
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12" sm="4">
+                <MudPaper Class="pa-4 d-flex align-center" Elevation="2">
+                    <MudAvatar Color="Color.Error" Class="mr-3"><MudIcon Icon="@Icons.Material.Filled.Error" /></MudAvatar>
+                    <div>
+                        <MudText Typo="Typo.h4">@_services.Count(s => LatestHealth(s)?.IsHealthy == false)</MudText>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">Offline</MudText>
+                    </div>
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12" sm="4">
+                <MudPaper Class="pa-4 d-flex align-center" Elevation="2">
+                    <MudAvatar Color="Color.Default" Class="mr-3"><MudIcon Icon="@Icons.Material.Filled.HelpOutline" /></MudAvatar>
+                    <div>
+                        <MudText Typo="Typo.h4">@_services.Count(s => LatestHealth(s) is null)</MudText>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">Unknown</MudText>
+                    </div>
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
+
+        @* Service status table *@
+        <MudTable Items="_services" Hover Elevation="2">
+            <HeaderContent>
+                <MudTh>Status</MudTh>
+                <MudTh>Service</MudTh>
+                <MudTh>Category</MudTh>
+                <MudTh>Response Time</MudTh>
+                <MudTh>Last Checked</MudTh>
+                <MudTh>Uptime (24h)</MudTh>
+                <MudTh>Actions</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                @{
+                    var latest = LatestHealth(context);
+                    var uptime = GetUptime(context);
+                }
+                <MudTd>
+                    @if (latest is null)
+                    {
+                        <MudIcon Icon="@Icons.Material.Filled.HelpOutline" Color="Color.Default" Size="Size.Small" />
+                    }
+                    else if (latest.IsHealthy)
+                    {
+                        <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Success" Size="Size.Small" />
+                    }
+                    else
+                    {
+                        <MudIcon Icon="@Icons.Material.Filled.Cancel" Color="Color.Error" Size="Size.Small" />
+                    }
+                </MudTd>
+                <MudTd>
+                    <MudLink Href="@context.Url" Target="_blank">@context.Name</MudLink>
+                </MudTd>
+                <MudTd>
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">@(context.Category ?? "—")</MudText>
+                </MudTd>
+                <MudTd>
+                    @if (latest?.ResponseTimeMs is not null)
+                    {
+                        <MudChip T="string" Size="Size.Small"
+                                 Color="@(latest.ResponseTimeMs < 200 ? Color.Success : latest.ResponseTimeMs < 1000 ? Color.Warning : Color.Error)"
+                                 Variant="Variant.Outlined">
+                            @(latest.ResponseTimeMs)ms
+                        </MudChip>
+                    }
+                    else
+                    {
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">—</MudText>
+                    }
+                </MudTd>
+                <MudTd>
+                    @if (latest is not null)
+                    {
+                        <MudTooltip Text="@latest.CheckedAt.ToString("yyyy-MM-dd HH:mm:ss UTC")">
+                            <MudText Typo="Typo.body2">@FormatTimeAgo(latest.CheckedAt)</MudText>
+                        </MudTooltip>
+                    }
+                    else
+                    {
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">Never</MudText>
+                    }
+                </MudTd>
+                <MudTd>
+                    @if (uptime.HasValue)
+                    {
+                        <MudChip T="string" Size="Size.Small"
+                                 Color="@(uptime >= 99 ? Color.Success : uptime >= 90 ? Color.Warning : Color.Error)"
+                                 Variant="Variant.Filled">
+                            @uptime.Value.ToString("F0")%
+                        </MudChip>
+                    }
+                    else
+                    {
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">—</MudText>
+                    }
+                </MudTd>
+                <MudTd>
+                    <MudIconButton Icon="@Icons.Material.Filled.Refresh" Size="Size.Small"
+                                   OnClick="@(() => CheckHealth(context))" title="Check now" />
+                </MudTd>
+            </RowTemplate>
+        </MudTable>
+
+        @* Recent health check history *@
+        @if (_recentLogs.Any())
+        {
+            <MudText Typo="Typo.h6" Class="mt-6 mb-3">Recent Health Checks</MudText>
+            <MudTimeline TimelinePosition="TimelinePosition.Start">
+                @foreach (var log in _recentLogs)
+                {
+                    <MudTimelineItem Color="@(log.IsHealthy ? Color.Success : Color.Error)"
+                                     Size="Size.Small">
+                        <MudStack Row AlignItems="AlignItems.Center" Spacing="2">
+                            <MudText Typo="Typo.body2">
+                                <strong>@log.ServiceLink.Name</strong> —
+                                @(log.IsHealthy ? "Online" : "Offline")
+                                @if (log.ResponseTimeMs.HasValue)
+                                {
+                                    <text> (@(log.ResponseTimeMs)ms)</text>
+                                }
+                            </MudText>
+                            <MudSpacer />
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                @FormatTimeAgo(log.CheckedAt)
+                            </MudText>
+                        </MudStack>
+                    </MudTimelineItem>
+                }
+            </MudTimeline>
+        }
+    }
+</MudContainer>
+
+@code {
+    private List<ServiceLink> _services = [];
+    private List<ServiceHealthLog> _recentLogs = [];
+    private bool _isChecking;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        _services = await Db.ServiceLinks
+            .Include(s => s.HealthLogs.OrderByDescending(h => h.CheckedAt).Take(100))
+            .Where(s => s.IsActive && s.HealthCheckUrl != null && s.HealthCheckUrl != "")
+            .OrderBy(s => s.SortOrder)
+            .ToListAsync();
+
+        _recentLogs = await Db.ServiceHealthLogs
+            .Include(h => h.ServiceLink)
+            .OrderByDescending(h => h.CheckedAt)
+            .Take(20)
+            .ToListAsync();
+    }
+
+    private static ServiceHealthLog? LatestHealth(ServiceLink svc) =>
+        svc.HealthLogs.OrderByDescending(h => h.CheckedAt).FirstOrDefault();
+
+    private static double? GetUptime(ServiceLink svc)
+    {
+        var cutoff = DateTime.UtcNow.AddHours(-24);
+        var recent = svc.HealthLogs.Where(h => h.CheckedAt >= cutoff).ToList();
+        if (recent.Count == 0) return null;
+        return (double)recent.Count(h => h.IsHealthy) / recent.Count * 100;
+    }
+
+    private async Task CheckHealth(ServiceLink svc)
+    {
+        if (string.IsNullOrEmpty(svc.HealthCheckUrl)) return;
+        await HealthChecker.CheckAsync(svc);
+        await LoadData();
+    }
+
+    private async Task RefreshAll()
+    {
+        _isChecking = true;
+        StateHasChanged();
+
+        foreach (var svc in _services)
+        {
+            await CheckHealth(svc);
+        }
+
+        _isChecking = false;
+        StateHasChanged();
+    }
+
+    private static string FormatTimeAgo(DateTime utcTime)
+    {
+        var span = DateTime.UtcNow - utcTime;
+        if (span.TotalMinutes < 1) return "just now";
+        if (span.TotalMinutes < 60) return $"{(int)span.TotalMinutes}m ago";
+        if (span.TotalHours < 24) return $"{(int)span.TotalHours}h ago";
+        return $"{(int)span.TotalDays}d ago";
+    }
+}

@@ -48,6 +48,9 @@ builder.Services.AddHttpClient<OllamaService>();
 // SearXNG web search service
 builder.Services.AddHttpClient<WebSearchService>();
 
+// Health check service
+builder.Services.AddScoped<HealthCheckService>();
+
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
