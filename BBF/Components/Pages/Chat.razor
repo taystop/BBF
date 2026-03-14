@@ -10,7 +10,9 @@
 @inject ApplicationDbContext Db
 @inject OllamaService Ollama
 @inject WebSearchService Search
+@inject WikiSearchService WikiSearch
 @inject NavigationManager Nav
+@inject ISnackbar Snackbar
 @implements IDisposable
 
 <PageTitle>AI Chat - BBF</PageTitle>
@@ -72,9 +74,16 @@
                     @(_activeConversation?.Title ?? "New Chat")
                 </MudText>
                 <MudSpacer />
+                <MudTooltip Text="@(_docsSearchEnabled ? "Docs search enabled" : "Docs search disabled")">
+                    <MudToggleIconButton @bind-Toggled="_docsSearchEnabled"
+                                         Icon="@Icons.Material.Filled.MenuBook"
+                                         ToggledIcon="@Icons.Material.Filled.MenuBook"
+                                         Color="Color.Default" ToggledColor="Color.Info"
+                                         Size="Size.Medium" />
+                </MudTooltip>
                 <MudTooltip Text="@(_webSearchEnabled ? "Web search enabled" : "Web search disabled")">
                     <MudToggleIconButton @bind-Toggled="_webSearchEnabled"
-                                         Icon="@Icons.Material.Filled.SearchOff"
+                                         Icon="@Icons.Material.Filled.TravelExplore"
                                          ToggledIcon="@Icons.Material.Filled.TravelExplore"
                                          Color="Color.Default" ToggledColor="Color.Success"
                                          Size="Size.Medium" />
@@ -114,7 +123,20 @@
                                 }
                                 else
                                 {
-                                    <div class="markdown-body">@((MarkupString)RenderMarkdown(msg.Content))</div>
+                                    <div class="markdown-body">@((MarkupString)RenderMarkdown(StripWikiBlocks(msg.Content)))</div>
+                                    @if (HasWikiBlock(msg.Content))
+                                    {
+                                        <MudAlert Severity="Severity.Success" Dense Class="mt-2" NoIcon>
+                                            Wiki article created automatically
+                                        </MudAlert>
+                                    }
+                                    <MudStack Row Class="mt-2" Spacing="1">
+                                        <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Primary"
+                                                   StartIcon="@Icons.Material.Filled.MenuBook"
+                                                   OnClick="@(() => SaveToWiki(msg))">
+                                            Save to Wiki
+                                        </MudButton>
+                                    </MudStack>
                                 }
                             </MudPaper>
                             @if (msg.Role == "user")
@@ -142,7 +164,7 @@
                                     <MudStack Row AlignItems="AlignItems.Center" Spacing="2">
                                         <MudProgressCircular Size="Size.Small" Color="Color.Primary" Indeterminate />
                                         <MudText Typo="Typo.body2" Color="Color.Secondary">
-                                            @(_isSearching ? "Searching the web..." : "Generating...")
+                                            @(_isSearching ? "Searching for context..." : "Generating...")
                                         </MudText>
                                     </MudStack>
                                 }
@@ -339,6 +361,7 @@
     private bool _isStreaming;
     private bool _isSearching;
     private bool _webSearchEnabled = true;
+    private bool _docsSearchEnabled = true;
     private CancellationTokenSource? _streamCts;
 
     private IEnumerable<ChatConversation> FilteredConversations =>
@@ -466,15 +489,26 @@
         _streamCts = new CancellationTokenSource();
         StateHasChanged();
 
-        // Web search if enabled — inject results as context
-        string? searchContext = null;
-        if (_webSearchEnabled)
+        // Search for context — docs and/or web
+        string? docsContext = null;
+        string? webContext = null;
+
+        if (_docsSearchEnabled || _webSearchEnabled)
         {
             _isSearching = true;
             StateHasChanged();
 
-            var searchResults = await Search.SearchAsync(input, maxResults: 5, _streamCts.Token);
-            searchContext = WebSearchService.FormatResultsAsContext(searchResults);
+            if (_docsSearchEnabled)
+            {
+                var ragResults = await WikiSearch.SearchAllAsync(input, maxResults: 5, _streamCts.Token);
+                docsContext = WikiSearchService.FormatAsContext(ragResults);
+            }
+
+            if (_webSearchEnabled)
+            {
+                var searchResults = await Search.SearchAsync(input, maxResults: 5, _streamCts.Token);
+                webContext = WebSearchService.FormatResultsAsContext(searchResults);
+            }
 
             _isSearching = false;
             StateHasChanged();
@@ -487,13 +521,17 @@
             Content = m.Content
         }).ToList();
 
-        // Inject search context into the last user message so the model sees it
-        if (!string.IsNullOrEmpty(searchContext))
+        // Inject context into the last user message so the model sees it
+        var contextParts = new List<string>();
+        if (!string.IsNullOrEmpty(docsContext)) contextParts.Add(docsContext);
+        if (!string.IsNullOrEmpty(webContext)) contextParts.Add(webContext);
+
+        if (contextParts.Count > 0)
         {
             ollamaMessages[^1] = new OllamaChatMessage
             {
                 Role = "user",
-                Content = $"{input}\n\n---\n{searchContext}"
+                Content = $"{input}\n\n---\n{string.Join("\n\n---\n", contextParts)}"
             };
         }
 
@@ -528,6 +566,9 @@
             await Db.SaveChangesAsync();
             _messages.Add(assistantMsg);
             await LoadConversations();
+
+            // Auto-create wiki articles from [WIKI_CREATE] blocks
+            await ProcessWikiBlocks(_streamingContent);
         }
         catch (OperationCanceledException)
         {
@@ -587,6 +628,82 @@
     private void StopStreaming()
     {
         _streamCts?.Cancel();
+    }
+
+    // --- Wiki integration ---
+
+    private static readonly System.Text.RegularExpressions.Regex WikiBlockRegex = new(
+        @"\[WIKI_CREATE\]\s*\ntitle:\s*(.+)\ncategory:\s*(.+)\ntags:\s*(.+)\n---\n([\s\S]*?)\[/WIKI_CREATE\]",
+        System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    private static bool HasWikiBlock(string content) =>
+        content.Contains("[WIKI_CREATE]");
+
+    private static string StripWikiBlocks(string content) =>
+        WikiBlockRegex.Replace(content, "").Trim();
+
+    private async Task ProcessWikiBlocks(string content)
+    {
+        var matches = WikiBlockRegex.Matches(content);
+        foreach (System.Text.RegularExpressions.Match match in matches)
+        {
+            var title = match.Groups[1].Value.Trim();
+            var category = match.Groups[2].Value.Trim();
+            var tags = match.Groups[3].Value.Trim();
+            var body = match.Groups[4].Value.Trim();
+
+            if (string.IsNullOrEmpty(title) || string.IsNullOrEmpty(body))
+                continue;
+
+            // Check for duplicate title
+            var exists = await Db.WikiArticles.AnyAsync(a => a.Title == title);
+            if (exists)
+            {
+                Snackbar.Add($"Wiki article '{title}' already exists — skipped.", Severity.Warning);
+                continue;
+            }
+
+            Db.WikiArticles.Add(new WikiArticle
+            {
+                Title = title,
+                Content = body,
+                Category = string.IsNullOrWhiteSpace(category) ? null : category,
+                Tags = string.IsNullOrWhiteSpace(tags) ? null : tags,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            });
+            await Db.SaveChangesAsync();
+            Snackbar.Add($"Wiki article '{title}' created!", Severity.Success);
+        }
+    }
+
+    private async Task SaveToWiki(ChatMessage msg)
+    {
+        // Use first line as title, or first 60 chars
+        var lines = msg.Content.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        var title = lines.FirstOrDefault()?.TrimStart('#', ' ') ?? "Untitled";
+        if (title.Length > 80) title = title[..80] + "...";
+
+        var content = StripWikiBlocks(msg.Content);
+
+        var exists = await Db.WikiArticles.AnyAsync(a => a.Title == title);
+        if (exists)
+        {
+            Snackbar.Add($"Wiki article '{title}' already exists.", Severity.Warning);
+            return;
+        }
+
+        Db.WikiArticles.Add(new WikiArticle
+        {
+            Title = title,
+            Content = content,
+            Category = "AI Generated",
+            Tags = "chat,ai-generated",
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        });
+        await Db.SaveChangesAsync();
+        Snackbar.Add($"Saved to wiki: '{title}'", Severity.Success);
     }
 
     public void Dispose()

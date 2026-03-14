@@ -1,0 +1,34 @@
+@using BBF.Data.Entities
+
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">Edit Document</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudTextField @bind-Value="Document.FileName" Label="File Name" Required
+                      Variant="Variant.Outlined" Class="mb-3" />
+        <MudTextField @bind-Value="Document.Category" Label="Category"
+                      Variant="Variant.Outlined" Class="mb-3"
+                      Placeholder="General, Network, Guides..." />
+        <MudTextField @bind-Value="Document.Description" Label="Description"
+                      Variant="Variant.Outlined" Class="mb-3" autoGrow Lines="2" />
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Submit"
+                   Disabled="@(string.IsNullOrWhiteSpace(Document.FileName))">
+            Save
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance MudDialog { get; set; } = null!;
+
+    [Parameter]
+    public Document Document { get; set; } = new();
+
+    private void Cancel() => MudDialog.Cancel();
+    private void Submit() => MudDialog.Close(DialogResult.Ok(Document));
+}

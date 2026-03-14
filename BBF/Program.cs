@@ -55,6 +55,12 @@ builder.Services.AddHttpClient<HomeAssistantService>();
 // Health check service
 builder.Services.AddScoped<HealthCheckService>();
 
+// Wiki RAG search service
+builder.Services.AddScoped<WikiSearchService>();
+
+// Document storage service
+builder.Services.AddScoped<DocumentService>();
+
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
@@ -75,6 +81,18 @@ app.UseAntiforgery();
 app.MapStaticAssets();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
+
+// Document download endpoint (behind auth)
+app.MapGet("/api/documents/{id:int}/download", async (int id, DocumentService docs) =>
+{
+    var doc = await docs.GetByIdAsync(id);
+    if (doc is null) return Results.NotFound();
+
+    var path = docs.GetFilePath(doc);
+    if (path is null) return Results.NotFound();
+
+    return Results.File(path, doc.ContentType, doc.FileName);
+}).RequireAuthorization();
 
 // Add additional endpoints required by the Identity /Account Razor components.
 app.MapAdditionalIdentityEndpoints();

@@ -12,6 +12,7 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
     public DbSet<WikiArticle> WikiArticles => Set<WikiArticle>();
     public DbSet<ServiceHealthLog> ServiceHealthLogs => Set<ServiceHealthLog>();
     public DbSet<AppSetting> AppSettings => Set<AppSetting>();
+    public DbSet<Document> Documents => Set<Document>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {

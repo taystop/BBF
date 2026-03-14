@@ -1,0 +1,296 @@
+@page "/documents"
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@using BBF.Data.Entities
+@using BBF.Services
+@inject DocumentService Docs
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<PageTitle>Documents - BBF</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="py-4">
+    <MudStack Row AlignItems="AlignItems.Center" Class="mb-4">
+        <MudIcon Icon="@Icons.Material.Filled.Folder" Size="Size.Large" Color="Color.Primary" />
+        <MudText Typo="Typo.h4">Documents</MudText>
+        <MudSpacer />
+        <MudTextField @bind-Value="_searchText" Placeholder="Search files..."
+                      Variant="Variant.Outlined" Adornment="Adornment.Start"
+                      AdornmentIcon="@Icons.Material.Filled.Search" Immediate
+                      Margin="Margin.Dense" Style="max-width: 300px;" />
+    </MudStack>
+
+    @* Upload area *@
+    <MudPaper Class="pa-4 mb-4" Elevation="2">
+        <MudStack Row AlignItems="AlignItems.Center" Spacing="3">
+            <MudIcon Icon="@Icons.Material.Filled.CloudUpload" Color="Color.Secondary" />
+            <MudText Typo="Typo.subtitle1">Upload Files</MudText>
+            <MudSpacer />
+            <MudTextField @bind-Value="_uploadCategory" Placeholder="Category (optional)"
+                          Variant="Variant.Outlined" Margin="Margin.Dense"
+                          Style="max-width: 200px;" />
+        </MudStack>
+        <MudFileUpload T="IReadOnlyList<IBrowserFile>" FilesChanged="OnFilesSelected"
+                       Accept="@AcceptedTypes" MaximumFileCount="20" Class="mt-3">
+            <CustomContent>
+                <MudButton Variant="Variant.Outlined" Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.AttachFile"
+                           Disabled="_uploading"
+                           OnClick="@context.OpenFilePickerAsync">
+                    @(_uploading ? "Uploading..." : "Choose Files")
+                </MudButton>
+            </CustomContent>
+        </MudFileUpload>
+        @if (_uploading)
+        {
+            <MudProgressLinear Color="Color.Primary" Indeterminate Class="mt-2" />
+        }
+    </MudPaper>
+
+    @* Category filter chips *@
+    @if (_categories.Any())
+    {
+        <MudStack Row Class="mb-3" Spacing="1">
+            <MudChip T="string" Color="@(_filterCategory is null ? Color.Primary : Color.Default)"
+                     Variant="Variant.Filled" OnClick="@(() => _filterCategory = null)">All</MudChip>
+            @foreach (var cat in _categories)
+            {
+                var c = cat;
+                <MudChip T="string" Color="@(_filterCategory == c ? Color.Primary : Color.Default)"
+                         Variant="Variant.Filled" OnClick="@(() => _filterCategory = c)">@c</MudChip>
+            }
+        </MudStack>
+    }
+
+    @* File table *@
+    <MudTable Items="FilteredDocuments" Hover Elevation="2" Loading="_loading">
+        <HeaderContent>
+            <MudTh>Name</MudTh>
+            <MudTh>Category</MudTh>
+            <MudTh>Description</MudTh>
+            <MudTh>Size</MudTh>
+            <MudTh>Uploaded</MudTh>
+            <MudTh Style="width: 160px;">Actions</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Name">
+                <MudStack Row AlignItems="AlignItems.Center" Spacing="2">
+                    <MudIcon Icon="@GetFileIcon(context.FileName)" Size="Size.Small"
+                             Color="@GetFileIconColor(context.FileName)" />
+                    <MudText Typo="Typo.body2">@context.FileName</MudText>
+                </MudStack>
+            </MudTd>
+            <MudTd DataLabel="Category">
+                @if (!string.IsNullOrEmpty(context.Category))
+                {
+                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined"
+                             Color="Color.Primary">@context.Category</MudChip>
+                }
+            </MudTd>
+            <MudTd DataLabel="Description">
+                <MudText Typo="Typo.body2" Color="Color.Secondary">
+                    @(context.Description ?? "—")
+                </MudText>
+            </MudTd>
+            <MudTd DataLabel="Size">
+                <MudText Typo="Typo.body2">@DocumentService.FormatFileSize(context.Size)</MudText>
+            </MudTd>
+            <MudTd DataLabel="Uploaded">
+                <MudText Typo="Typo.body2">@context.UploadedAt.ToLocalTime().ToString("MMM d, yyyy")</MudText>
+            </MudTd>
+            <MudTd>
+                <MudStack Row Spacing="0">
+                    <MudIconButton Icon="@Icons.Material.Filled.Download" Size="Size.Small"
+                                   Href="@($"/api/documents/{context.Id}/download")" Target="_blank"
+                                   title="Download" />
+                    <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                                   OnClick="@(() => EditDocument(context))" title="Edit" />
+                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small"
+                                   Color="Color.Error"
+                                   OnClick="@(() => DeleteDocument(context))" title="Delete" />
+                </MudStack>
+            </MudTd>
+        </RowTemplate>
+        <NoRecordsContent>
+            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="pa-4">
+                No documents uploaded yet. Use the upload area above to add files.
+            </MudText>
+        </NoRecordsContent>
+    </MudTable>
+</MudContainer>
+
+@code {
+    private List<Document> _documents = [];
+    private List<string> _categories = [];
+    private string _searchText = string.Empty;
+    private string? _filterCategory;
+    private string _uploadCategory = string.Empty;
+    private bool _loading;
+    private bool _uploading;
+
+    private const string AcceptedTypes =
+        ".jpg,.jpeg,.png,.gif,.bmp,.webp,.svg,.ico," +
+        ".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.odt,.ods,.odp," +
+        ".txt,.md,.csv,.json,.xml,.yaml,.yml,.log,.ini,.conf,.cfg," +
+        ".zip,.7z,.tar,.gz," +
+        ".html,.css,.js";
+
+    private IEnumerable<Document> FilteredDocuments
+    {
+        get
+        {
+            var docs = _documents.AsEnumerable();
+
+            if (_filterCategory is not null)
+                docs = docs.Where(d => d.Category == _filterCategory);
+
+            if (!string.IsNullOrWhiteSpace(_searchText))
+                docs = docs.Where(d =>
+                    d.FileName.Contains(_searchText, StringComparison.OrdinalIgnoreCase) ||
+                    (d.Description?.Contains(_searchText, StringComparison.OrdinalIgnoreCase) == true) ||
+                    (d.Category?.Contains(_searchText, StringComparison.OrdinalIgnoreCase) == true));
+
+            return docs;
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadDocuments();
+    }
+
+    private async Task LoadDocuments()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        _documents = await Docs.GetAllAsync();
+        _categories = _documents
+            .Where(d => !string.IsNullOrEmpty(d.Category))
+            .Select(d => d.Category!)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(c => c)
+            .ToList();
+
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private async Task OnFilesSelected(IReadOnlyList<IBrowserFile> files)
+    {
+        if (files.Count == 0) return;
+
+        _uploading = true;
+        StateHasChanged();
+
+        var category = string.IsNullOrWhiteSpace(_uploadCategory) ? null : _uploadCategory.Trim();
+        var uploaded = 0;
+        var skipped = 0;
+
+        foreach (var file in files)
+        {
+            if (!Docs.IsAllowedExtension(file.Name))
+            {
+                skipped++;
+                continue;
+            }
+
+            try
+            {
+                await using var stream = file.OpenReadStream(maxAllowedSize: 100 * 1024 * 1024); // 100MB
+                await Docs.UploadAsync(stream, file.Name, file.ContentType, category);
+                uploaded++;
+            }
+            catch (Exception ex)
+            {
+                Snackbar.Add($"Failed to upload {file.Name}: {ex.Message}", Severity.Error);
+            }
+        }
+
+        _uploading = false;
+
+        if (uploaded > 0)
+            Snackbar.Add($"Uploaded {uploaded} file(s)", Severity.Success);
+        if (skipped > 0)
+            Snackbar.Add($"Skipped {skipped} file(s) with unsupported extensions", Severity.Warning);
+
+        await LoadDocuments();
+    }
+
+    private async Task EditDocument(Document doc)
+    {
+        var parameters = new DialogParameters<DocumentDialog>
+        {
+            { x => x.Document, new Document
+                {
+                    Id = doc.Id,
+                    FileName = doc.FileName,
+                    StoredFileName = doc.StoredFileName,
+                    ContentType = doc.ContentType,
+                    Size = doc.Size,
+                    Category = doc.Category,
+                    Description = doc.Description,
+                    UploadedAt = doc.UploadedAt
+                }
+            }
+        };
+
+        var dialog = await DialogService.ShowAsync<DocumentDialog>("Edit Document", parameters);
+        var result = await dialog.Result;
+
+        if (result is not null && !result.Canceled && result.Data is Document updated)
+        {
+            doc.FileName = updated.FileName;
+            doc.Category = updated.Category;
+            doc.Description = updated.Description;
+            await Docs.UpdateAsync(doc);
+            await LoadDocuments();
+        }
+    }
+
+    private async Task DeleteDocument(Document doc)
+    {
+        var parameters = new DialogParameters<MessageBoxDialog>
+        {
+            { x => x.ContentText, $"Delete '{doc.FileName}'? This will also remove the file from storage." },
+            { x => x.ButtonText, "Delete" },
+            { x => x.Color, Color.Error }
+        };
+
+        var dialog = await DialogService.ShowAsync<MessageBoxDialog>("Delete Document", parameters);
+        var result = await dialog.Result;
+
+        if (result is not null && !result.Canceled)
+        {
+            await Docs.DeleteAsync(doc.Id);
+            await LoadDocuments();
+        }
+    }
+
+    private static string GetFileIcon(string fileName) => Path.GetExtension(fileName).ToLowerInvariant() switch
+    {
+        ".jpg" or ".jpeg" or ".png" or ".gif" or ".bmp" or ".webp" or ".svg" or ".ico"
+            => Icons.Material.Filled.Image,
+        ".pdf" => Icons.Material.Filled.PictureAsPdf,
+        ".doc" or ".docx" or ".odt" => Icons.Material.Filled.Description,
+        ".xls" or ".xlsx" or ".ods" or ".csv" => Icons.Material.Filled.TableChart,
+        ".ppt" or ".pptx" or ".odp" => Icons.Material.Filled.Slideshow,
+        ".zip" or ".7z" or ".tar" or ".gz" => Icons.Material.Filled.FolderZip,
+        ".txt" or ".md" or ".log" => Icons.Material.Filled.TextSnippet,
+        ".json" or ".xml" or ".yaml" or ".yml" or ".ini" or ".conf" or ".cfg"
+            => Icons.Material.Filled.Code,
+        ".html" or ".css" or ".js" => Icons.Material.Filled.Web,
+        _ => Icons.Material.Filled.InsertDriveFile
+    };
+
+    private static Color GetFileIconColor(string fileName) => Path.GetExtension(fileName).ToLowerInvariant() switch
+    {
+        ".jpg" or ".jpeg" or ".png" or ".gif" or ".bmp" or ".webp" or ".svg" or ".ico"
+            => Color.Success,
+        ".pdf" => Color.Error,
+        ".doc" or ".docx" or ".odt" => Color.Info,
+        ".xls" or ".xlsx" or ".ods" or ".csv" => Color.Success,
+        ".zip" or ".7z" or ".tar" or ".gz" => Color.Warning,
+        _ => Color.Default
+    };
+}
