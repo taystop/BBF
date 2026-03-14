@@ -48,6 +48,9 @@ builder.Services.AddHttpClient<OllamaService>();
 // SearXNG web search service
 builder.Services.AddHttpClient<WebSearchService>();
 
+// Home Assistant integration
+builder.Services.AddHttpClient<HomeAssistantService>();
+
 // Health check service
 builder.Services.AddScoped<HealthCheckService>();
 

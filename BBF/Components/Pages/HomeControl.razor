@@ -1,0 +1,311 @@
+@page "/home"
+@using BBF.Services
+@inject HomeAssistantService HA
+
+<PageTitle>Home Control - BBF</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="py-4">
+    <MudStack Row AlignItems="AlignItems.Center" Class="mb-4">
+        <MudText Typo="Typo.h4">Home Control</MudText>
+        <MudSpacer />
+        @if (_isConnected.HasValue)
+        {
+            <MudChip T="string" Color="@(_isConnected.Value ? Color.Success : Color.Error)"
+                     Size="Size.Small" Variant="Variant.Outlined">
+                @(_isConnected.Value ? "Connected" : "Disconnected")
+            </MudChip>
+        }
+        <MudButton Variant="Variant.Outlined" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Refresh" OnClick="LoadEntities"
+                   Disabled="_loading">
+            @(_loading ? "Loading..." : "Refresh")
+        </MudButton>
+    </MudStack>
+
+    @if (_loading && !_entities.Any())
+    {
+        <MudProgressLinear Color="Color.Primary" Indeterminate Class="mb-4" />
+    }
+    else if (!_isConnected.GetValueOrDefault() && !_entities.Any())
+    {
+        <MudPaper Class="pa-8 d-flex flex-column align-center" Elevation="2">
+            <MudIcon Icon="@Icons.Material.Filled.WifiOff" Size="Size.Large" Color="Color.Error" Class="mb-3" />
+            <MudText Typo="Typo.h6" Color="Color.Secondary">Cannot connect to Home Assistant</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mt-1">
+                Check that HA is running at the configured address and the token is valid.
+            </MudText>
+        </MudPaper>
+    }
+    else
+    {
+        @* Filter chips *@
+        <MudStack Row Spacing="2" Class="mb-4" Style="flex-wrap: wrap;">
+            <MudChip T="string" Color="@(_filter == null ? Color.Primary : Color.Default)"
+                     Variant="@(_filter == null ? Variant.Filled : Variant.Outlined)"
+                     OnClick="@(() => _filter = null)">All (@_entities.Count)</MudChip>
+            @foreach (var domain in _domainCounts.OrderBy(d => d.Key))
+            {
+                <MudChip T="string" Color="@(_filter == domain.Key ? Color.Primary : Color.Default)"
+                         Variant="@(_filter == domain.Key ? Variant.Filled : Variant.Outlined)"
+                         OnClick="@(() => _filter = domain.Key)">
+                    @DomainLabel(domain.Key) (@domain.Value)
+                </MudChip>
+            }
+        </MudStack>
+
+        @* Device grid *@
+        <MudGrid>
+            @foreach (var entity in FilteredEntities)
+            {
+                <MudItem xs="12" sm="6" md="4" lg="3">
+                    <MudCard Elevation="2" Class="device-card">
+                        <MudCardContent>
+                            <MudStack Row AlignItems="AlignItems.Center" Class="mb-2">
+                                <MudAvatar Color="@StateColor(entity)" Size="Size.Small" Class="mr-2">
+                                    <MudIcon Icon="@DomainIcon(entity.Domain)" Size="Size.Small" />
+                                </MudAvatar>
+                                <div style="flex: 1; min-width: 0;">
+                                    <MudText Typo="Typo.subtitle2" Class="text-truncate">@entity.FriendlyName</MudText>
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary">@entity.EntityId</MudText>
+                                </div>
+                            </MudStack>
+
+                            @* State display *@
+                            <MudText Typo="Typo.body1" Class="mb-2">
+                                <strong>@FormatState(entity)</strong>
+                                @if (entity.UnitOfMeasurement is not null)
+                                {
+                                    <text> @entity.UnitOfMeasurement</text>
+                                }
+                            </MudText>
+
+                            @* Climate controls *@
+                            @if (entity.Domain == "climate")
+                            {
+                                @if (entity.CurrentTemperature.HasValue)
+                                {
+                                    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-2">
+                                        Current: @entity.CurrentTemperature.Value.ToString("F1")°
+                                    </MudText>
+                                }
+                                @if (entity.TargetTemperature.HasValue)
+                                {
+                                    <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Class="mb-2">
+                                        <MudText Typo="Typo.body2">Target:</MudText>
+                                        <MudIconButton Icon="@Icons.Material.Filled.Remove" Size="Size.Small"
+                                                       OnClick="@(() => AdjustTemp(entity, -1))" />
+                                        <MudText Typo="Typo.body1"><strong>@entity.TargetTemperature.Value.ToString("F0")°</strong></MudText>
+                                        <MudIconButton Icon="@Icons.Material.Filled.Add" Size="Size.Small"
+                                                       OnClick="@(() => AdjustTemp(entity, 1))" />
+                                    </MudStack>
+                                }
+                                @if (entity.HvacModes.Any())
+                                {
+                                    <MudSelect T="string" Value="@entity.State" Variant="Variant.Outlined"
+                                               Dense Margin="Margin.Dense" Label="Mode"
+                                               ValueChanged="@(mode => SetHvacMode(entity, mode))">
+                                        @foreach (var mode in entity.HvacModes)
+                                        {
+                                            <MudSelectItem Value="@mode">@CapFirst(mode)</MudSelectItem>
+                                        }
+                                    </MudSelect>
+                                }
+                            }
+
+                            @* Fan controls *@
+                            @if (entity.Domain == "fan" && entity.FanPercentage.HasValue)
+                            {
+                                <MudStack Row AlignItems="AlignItems.Center" Spacing="2" Class="mb-2">
+                                    <MudText Typo="Typo.body2">Speed:</MudText>
+                                    <MudSlider T="int" Value="entity.FanPercentage.Value" Min="0" Max="100" Step="25"
+                                               ValueChanged="@(pct => SetFanSpeed(entity, pct))"
+                                               Style="flex: 1;" />
+                                    <MudText Typo="Typo.body2">@(entity.FanPercentage)%</MudText>
+                                </MudStack>
+                            }
+                        </MudCardContent>
+
+                        @* Toggle controls for switches, lights, fans *@
+                        @if (IsToggleable(entity))
+                        {
+                            <MudCardActions>
+                                <MudButton Variant="Variant.Text" Color="Color.Success" Size="Size.Small"
+                                           StartIcon="@Icons.Material.Filled.PowerSettingsNew"
+                                           OnClick="@(() => TurnOn(entity))"
+                                           Disabled="@(entity.State == "on")">On</MudButton>
+                                <MudButton Variant="Variant.Text" Color="Color.Error" Size="Size.Small"
+                                           StartIcon="@Icons.Material.Filled.PowerOff"
+                                           OnClick="@(() => TurnOff(entity))"
+                                           Disabled="@(entity.State == "off")">Off</MudButton>
+                                <MudSpacer />
+                                <MudIconButton Icon="@Icons.Material.Filled.ToggleOn" Size="Size.Small"
+                                               Color="Color.Primary" OnClick="@(() => Toggle(entity))"
+                                               title="Toggle" />
+                            </MudCardActions>
+                        }
+                    </MudCard>
+                </MudItem>
+            }
+        </MudGrid>
+    }
+</MudContainer>
+
+<style>
+    .device-card {
+        height: 100%;
+        transition: transform 0.15s ease;
+    }
+
+    .device-card:hover {
+        transform: translateY(-2px);
+    }
+
+    .text-truncate {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+</style>
+
+@code {
+    private List<HaEntity> _entities = [];
+    private Dictionary<string, int> _domainCounts = new();
+    private string? _filter;
+    private bool _loading;
+    private bool? _isConnected;
+
+    // Domains to show — controllable and useful sensor types
+    private static readonly HashSet<string> RelevantDomains =
+        ["switch", "light", "fan", "climate", "sensor", "binary_sensor", "camera", "media_player", "automation"];
+
+    private IEnumerable<HaEntity> FilteredEntities =>
+        _filter is null ? _entities : _entities.Where(e => e.Domain == _filter);
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadEntities();
+    }
+
+    private async Task LoadEntities()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        _isConnected = await HA.IsHealthyAsync();
+
+        if (_isConnected == true)
+        {
+            var all = await HA.GetEntitiesAsync();
+            _entities = all
+                .Where(e => RelevantDomains.Contains(e.Domain))
+                .Where(e => e.State != "unavailable")
+                .OrderBy(e => e.Domain)
+                .ThenBy(e => e.FriendlyName)
+                .ToList();
+
+            _domainCounts = _entities.GroupBy(e => e.Domain)
+                .ToDictionary(g => g.Key, g => g.Count());
+        }
+
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private async Task TurnOn(HaEntity entity)
+    {
+        await HA.TurnOnAsync(entity.EntityId);
+        await RefreshEntity(entity);
+    }
+
+    private async Task TurnOff(HaEntity entity)
+    {
+        await HA.TurnOffAsync(entity.EntityId);
+        await RefreshEntity(entity);
+    }
+
+    private async Task Toggle(HaEntity entity)
+    {
+        await HA.ToggleAsync(entity.EntityId);
+        await RefreshEntity(entity);
+    }
+
+    private async Task AdjustTemp(HaEntity entity, double delta)
+    {
+        if (entity.TargetTemperature.HasValue)
+        {
+            await HA.SetTemperatureAsync(entity.EntityId, entity.TargetTemperature.Value + delta);
+            await RefreshEntity(entity);
+        }
+    }
+
+    private async Task SetHvacMode(HaEntity entity, string mode)
+    {
+        await HA.SetHvacModeAsync(entity.EntityId, mode);
+        await RefreshEntity(entity);
+    }
+
+    private async Task SetFanSpeed(HaEntity entity, int percentage)
+    {
+        await HA.SetFanSpeedAsync(entity.EntityId, percentage.ToString());
+        await RefreshEntity(entity);
+    }
+
+    private async Task RefreshEntity(HaEntity entity)
+    {
+        // Small delay for HA to process the state change
+        await Task.Delay(500);
+        var updated = await HA.GetEntityAsync(entity.EntityId);
+        if (updated is not null)
+        {
+            var idx = _entities.FindIndex(e => e.EntityId == entity.EntityId);
+            if (idx >= 0) _entities[idx] = updated;
+            StateHasChanged();
+        }
+    }
+
+    private static bool IsToggleable(HaEntity entity) =>
+        entity.Domain is "switch" or "light" or "fan" or "automation" or "media_player";
+
+    private static Color StateColor(HaEntity entity) => entity.State switch
+    {
+        "on" => Color.Success,
+        "off" => Color.Default,
+        "home" => Color.Success,
+        "heat" or "cool" or "heat_cool" or "auto" => Color.Warning,
+        "idle" => Color.Info,
+        _ when entity.Domain == "sensor" => Color.Info,
+        _ => Color.Default
+    };
+
+    private static string DomainIcon(string domain) => domain switch
+    {
+        "switch" => Icons.Material.Filled.ToggleOn,
+        "light" => Icons.Material.Filled.Lightbulb,
+        "fan" => Icons.Material.Filled.Air,
+        "climate" => Icons.Material.Filled.Thermostat,
+        "sensor" => Icons.Material.Filled.Sensors,
+        "binary_sensor" => Icons.Material.Filled.Sensors,
+        "camera" => Icons.Material.Filled.Videocam,
+        "media_player" => Icons.Material.Filled.MusicNote,
+        "automation" => Icons.Material.Filled.SmartToy,
+        _ => Icons.Material.Filled.Devices
+    };
+
+    private static string DomainLabel(string domain) => domain switch
+    {
+        "binary_sensor" => "Binary Sensors",
+        "media_player" => "Media Players",
+        _ => CapFirst(domain) + "s"
+    };
+
+    private static string FormatState(HaEntity entity)
+    {
+        var state = entity.State;
+        if (double.TryParse(state, out var num))
+            return num.ToString("G4");
+        return CapFirst(state);
+    }
+
+    private static string CapFirst(string s) =>
+        string.IsNullOrEmpty(s) ? s : char.ToUpper(s[0]) + s[1..];
+}
