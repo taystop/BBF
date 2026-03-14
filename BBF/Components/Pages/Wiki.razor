@@ -1,5 +1,7 @@
 @page "/wiki"
 @page "/wiki/{ArticleId:int}"
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
 @using BBF.Data
 @using BBF.Data.Entities
 @using Microsoft.EntityFrameworkCore

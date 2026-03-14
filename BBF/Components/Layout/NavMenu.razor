@@ -1,23 +1,28 @@
 <MudNavMenu>
     <MudNavLink Href="/" Match="NavLinkMatch.All"
                 Icon="@Icons.Material.Filled.Dashboard">Dashboard</MudNavLink>
-    <MudNavLink Href="/chat"
-                Icon="@Icons.Material.Filled.Chat">AI Chat</MudNavLink>
-    <MudNavLink Href="/home"
-                Icon="@Icons.Material.Filled.Home">Home Control</MudNavLink>
-    <MudNavLink Href="/services"
-                Icon="@Icons.Material.Filled.Apps">Services</MudNavLink>
-    <MudNavLink Href="/wiki"
-                Icon="@Icons.Material.Filled.MenuBook">Documentation</MudNavLink>
-    <MudNavLink Href="/status"
-                Icon="@Icons.Material.Filled.MonitorHeart">Status</MudNavLink>
-    <MudDivider Class="my-2" />
     <AuthorizeView>
         <Authorized>
+            <MudNavLink Href="/chat"
+                        Icon="@Icons.Material.Filled.Chat">AI Chat</MudNavLink>
+            <MudNavLink Href="/home"
+                        Icon="@Icons.Material.Filled.Home">Home Control</MudNavLink>
+            <MudNavLink Href="/services"
+                        Icon="@Icons.Material.Filled.Apps">Services</MudNavLink>
+            <MudNavLink Href="/wiki"
+                        Icon="@Icons.Material.Filled.MenuBook">Documentation</MudNavLink>
+            <MudNavLink Href="/status"
+                        Icon="@Icons.Material.Filled.MonitorHeart">Status</MudNavLink>
+            <MudDivider Class="my-2" />
+            <AuthorizeView Roles="Admin" Context="adminContext">
+                <MudNavLink Href="/users"
+                            Icon="@Icons.Material.Filled.SupervisedUserCircle">Users</MudNavLink>
+            </AuthorizeView>
             <MudNavLink Href="Account/Manage"
                         Icon="@Icons.Material.Filled.Person">Account</MudNavLink>
         </Authorized>
         <NotAuthorized>
+            <MudDivider Class="my-2" />
             <MudNavLink Href="Account/Login"
                         Icon="@Icons.Material.Filled.Login">Login</MudNavLink>
         </NotAuthorized>

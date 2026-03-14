@@ -1,5 +1,7 @@
 @page "/chat"
 @page "/chat/{ConversationId:int}"
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
 @using BBF.Data
 @using BBF.Data.Entities
 @using BBF.Services
@@ -16,7 +18,7 @@
 <MudGrid Spacing="0" Class="chat-layout">
     @* Conversation sidebar *@
     <MudItem xs="12" md="3" Class="chat-sidebar">
-        <MudPaper Class="pa-3 d-flex flex-column" Style="height: calc(100vh - 100px);" Elevation="2">
+        <MudPaper Class="pa-3 d-flex flex-column" Style="height: calc(100vh - 64px - 16px);" Elevation="2">
             <MudButton Variant="Variant.Filled" Color="Color.Primary" FullWidth
                        StartIcon="@Icons.Material.Filled.Add" OnClick="NewConversation"
                        Class="mb-3">
@@ -63,7 +65,7 @@
 
     @* Chat area *@
     <MudItem xs="12" md="9" Class="chat-main">
-        <MudPaper Class="d-flex flex-column" Style="height: calc(100vh - 100px);" Elevation="2">
+        <MudPaper Class="d-flex flex-column" Style="height: calc(100vh - 64px - 16px);" Elevation="2">
             @* Header *@
             <MudToolBar Dense Class="border-b">
                 <MudText Typo="Typo.h6">
@@ -190,7 +192,7 @@
 
 <style>
     .chat-layout {
-        height: calc(100vh - 100px);
+        height: calc(100vh - 64px - 16px);
     }
 
     .chat-messages::-webkit-scrollbar {

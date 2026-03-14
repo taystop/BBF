@@ -2,7 +2,7 @@
 
 <MudThemeProvider @bind-IsDarkMode="_isDarkMode" Theme="_theme" />
 <MudPopoverProvider />
-<MudDialogProvider />
+<MudDialogProvider MaxWidth="MaxWidth.Large" FullWidth="true" />
 <MudSnackbarProvider />
 
 <MudLayout>
@@ -16,7 +16,7 @@
                 <MudText Typo="Typo.body2" Class="mr-3">@context.User.Identity?.Name</MudText>
                 <form action="Account/Logout" method="post">
                     <AntiforgeryToken />
-                    <input type="hidden" name="ReturnUrl" value="/" />
+                    <input type="hidden" name="ReturnUrl" value="" />
                     <MudIconButton Icon="@Icons.Material.Filled.Logout" Color="Color.Inherit"
                                    ButtonType="ButtonType.Submit" title="Log out" />
                 </form>
@@ -30,10 +30,8 @@
         <NavMenu />
     </MudDrawer>
 
-    <MudMainContent>
-        <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="my-4">
-            @Body
-        </MudContainer>
+    <MudMainContent Class="px-4 pb-4">
+        @Body
     </MudMainContent>
 </MudLayout>
 

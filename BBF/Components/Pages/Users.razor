@@ -1,0 +1,306 @@
+@page "/users"
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Identity
+@attribute [Authorize(Roles = "Admin")]
+@using BBF.Data
+@using Microsoft.EntityFrameworkCore
+@inject UserManager<ApplicationUser> UserManager
+@inject RoleManager<IdentityRole> RoleManager
+@inject IDialogService DialogService
+
+<PageTitle>Users - BBF</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="py-4">
+    <MudStack Row AlignItems="AlignItems.Center" Class="mb-4">
+        <MudText Typo="Typo.h4">User Management</MudText>
+        <MudSpacer />
+        <MudTextField @bind-Value="_searchText" Placeholder="Search users..."
+                      Variant="Variant.Outlined" Adornment="Adornment.Start"
+                      AdornmentIcon="@Icons.Material.Filled.Search" Immediate
+                      Margin="Margin.Dense" Style="max-width: 300px;" />
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.PersonAdd" OnClick="OpenCreateDialog">
+            Add User
+        </MudButton>
+    </MudStack>
+
+    @* Role management *@
+    <MudPaper Class="pa-4 mb-4" Elevation="2">
+        <MudStack Row AlignItems="AlignItems.Center" Spacing="2">
+            <MudIcon Icon="@Icons.Material.Filled.AdminPanelSettings" Color="Color.Secondary" />
+            <MudText Typo="Typo.subtitle1">Roles</MudText>
+            <MudSpacer />
+            @foreach (var role in _roles)
+            {
+                <MudChip T="string" Size="Size.Small" Color="Color.Primary" Variant="Variant.Outlined"
+                         OnClose="@(() => DeleteRole(role))">@role</MudChip>
+            }
+            <MudTextField @bind-Value="_newRoleName" Placeholder="New role..."
+                          Variant="Variant.Outlined" Margin="Margin.Dense"
+                          Style="max-width: 180px;"
+                          Immediate />
+            <MudIconButton Icon="@Icons.Material.Filled.Add" Color="Color.Primary"
+                           OnClick="AddRole"
+                           Disabled="@(string.IsNullOrWhiteSpace(_newRoleName))" />
+        </MudStack>
+    </MudPaper>
+
+    @* Users table *@
+    <MudTable Items="FilteredUsers" Hover Elevation="2" Loading="_loading">
+        <HeaderContent>
+            <MudTh>Email</MudTh>
+            <MudTh>Email Confirmed</MudTh>
+            <MudTh>Roles</MudTh>
+            <MudTh>Lockout</MudTh>
+            <MudTh Style="width: 120px;">Actions</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Email">
+                <MudText Typo="Typo.body2">@context.User.Email</MudText>
+            </MudTd>
+            <MudTd DataLabel="Email Confirmed">
+                @if (context.User.EmailConfirmed)
+                {
+                    <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Success" Size="Size.Small" />
+                }
+                else
+                {
+                    <MudIcon Icon="@Icons.Material.Filled.Cancel" Color="Color.Error" Size="Size.Small" />
+                }
+            </MudTd>
+            <MudTd DataLabel="Roles">
+                @if (context.Roles.Any())
+                {
+                    @foreach (var role in context.Roles)
+                    {
+                        <MudChip T="string" Size="Size.Small" Color="Color.Primary"
+                                 Variant="Variant.Outlined" Class="mr-1">@role</MudChip>
+                    }
+                }
+                else
+                {
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">None</MudText>
+                }
+            </MudTd>
+            <MudTd DataLabel="Lockout">
+                @if (context.User.LockoutEnd.HasValue && context.User.LockoutEnd > DateTimeOffset.UtcNow)
+                {
+                    <MudChip T="string" Size="Size.Small" Color="Color.Error" Variant="Variant.Filled">Locked</MudChip>
+                }
+                else
+                {
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">Active</MudText>
+                }
+            </MudTd>
+            <MudTd>
+                <MudStack Row Spacing="0">
+                    <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                                   OnClick="@(() => OpenEditDialog(context))" title="Edit user" />
+                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small"
+                                   Color="Color.Error"
+                                   OnClick="@(() => DeleteUser(context))" title="Delete user" />
+                </MudStack>
+            </MudTd>
+        </RowTemplate>
+        <NoRecordsContent>
+            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="pa-4">
+                @(string.IsNullOrWhiteSpace(_searchText) ? "No users found." : "No matching users.")
+            </MudText>
+        </NoRecordsContent>
+    </MudTable>
+</MudContainer>
+
+@code {
+    private List<UserRow> _users = [];
+    private List<string> _roles = [];
+    private string _searchText = string.Empty;
+    private string _newRoleName = string.Empty;
+    private bool _loading;
+
+    private IEnumerable<UserRow> FilteredUsers =>
+        string.IsNullOrWhiteSpace(_searchText)
+            ? _users
+            : _users.Where(u =>
+                (u.User.Email?.Contains(_searchText, StringComparison.OrdinalIgnoreCase) == true) ||
+                u.Roles.Any(r => r.Contains(_searchText, StringComparison.OrdinalIgnoreCase)));
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        _roles = await RoleManager.Roles
+            .Select(r => r.Name!)
+            .OrderBy(r => r)
+            .ToListAsync();
+
+        var users = await UserManager.Users.OrderBy(u => u.Email).ToListAsync();
+        _users = [];
+        foreach (var user in users)
+        {
+            var roles = await UserManager.GetRolesAsync(user);
+            _users.Add(new UserRow { User = user, Roles = roles.ToList() });
+        }
+
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private async Task OpenCreateDialog()
+    {
+        var parameters = new DialogParameters<UserDialog>
+        {
+            { x => x.IsNew, true },
+            { x => x.AllRoles, _roles.ToList() },
+            { x => x.SelectedRoles, new List<string>() }
+        };
+        var dialog = await DialogService.ShowAsync<UserDialog>("Create User", parameters);
+        var result = await dialog.Result;
+
+        if (result is not null && !result.Canceled && result.Data is UserDialog.UserDialogResult data)
+        {
+            var user = new ApplicationUser();
+            await UserManager.SetUserNameAsync(user, data.Email);
+            await UserManager.SetEmailAsync(user, data.Email);
+
+            var createResult = await UserManager.CreateAsync(user, data.Password!);
+            if (!createResult.Succeeded)
+            {
+                var errors = string.Join(", ", createResult.Errors.Select(e => e.Description));
+                await DialogService.ShowAsync<MessageBoxDialog>("Error", new DialogParameters<MessageBoxDialog>
+                {
+                    { x => x.ContentText, errors },
+                    { x => x.ButtonText, "OK" }
+                });
+                return;
+            }
+
+            // Confirm email automatically for admin-created users
+            var token = await UserManager.GenerateEmailConfirmationTokenAsync(user);
+            await UserManager.ConfirmEmailAsync(user, token);
+
+            if (data.Roles.Any())
+                await UserManager.AddToRolesAsync(user, data.Roles);
+
+            await LoadData();
+        }
+    }
+
+    private async Task OpenEditDialog(UserRow row)
+    {
+        var parameters = new DialogParameters<UserDialog>
+        {
+            { x => x.IsNew, false },
+            { x => x.UserId, row.User.Id },
+            { x => x.Email, row.User.Email ?? string.Empty },
+            { x => x.AllRoles, _roles.ToList() },
+            { x => x.SelectedRoles, row.Roles.ToList() }
+        };
+        var dialog = await DialogService.ShowAsync<UserDialog>("Edit User", parameters);
+        var result = await dialog.Result;
+
+        if (result is not null && !result.Canceled && result.Data is UserDialog.UserDialogResult data)
+        {
+            var user = await UserManager.FindByIdAsync(row.User.Id);
+            if (user is null) return;
+
+            // Update email
+            if (user.Email != data.Email)
+            {
+                await UserManager.SetUserNameAsync(user, data.Email);
+                await UserManager.SetEmailAsync(user, data.Email);
+            }
+
+            // Update password if provided
+            if (!string.IsNullOrEmpty(data.Password))
+            {
+                var resetToken = await UserManager.GeneratePasswordResetTokenAsync(user);
+                var pwResult = await UserManager.ResetPasswordAsync(user, resetToken, data.Password);
+                if (!pwResult.Succeeded)
+                {
+                    var errors = string.Join(", ", pwResult.Errors.Select(e => e.Description));
+                    await DialogService.ShowAsync<MessageBoxDialog>("Error", new DialogParameters<MessageBoxDialog>
+                    {
+                        { x => x.ContentText, errors },
+                        { x => x.ButtonText, "OK" }
+                    });
+                    return;
+                }
+            }
+
+            // Sync roles
+            var currentRoles = await UserManager.GetRolesAsync(user);
+            var toRemove = currentRoles.Except(data.Roles).ToList();
+            var toAdd = data.Roles.Except(currentRoles).ToList();
+
+            if (toRemove.Any()) await UserManager.RemoveFromRolesAsync(user, toRemove);
+            if (toAdd.Any()) await UserManager.AddToRolesAsync(user, toAdd);
+
+            await LoadData();
+        }
+    }
+
+    private async Task DeleteUser(UserRow row)
+    {
+        var parameters = new DialogParameters<MessageBoxDialog>
+        {
+            { x => x.ContentText, $"Are you sure you want to delete '{row.User.Email}'? This cannot be undone." },
+            { x => x.ButtonText, "Delete" },
+            { x => x.Color, Color.Error }
+        };
+        var dialog = await DialogService.ShowAsync<MessageBoxDialog>("Delete User", parameters);
+        var result = await dialog.Result;
+
+        if (result is not null && !result.Canceled)
+        {
+            await UserManager.DeleteAsync(row.User);
+            await LoadData();
+        }
+    }
+
+    private async Task AddRole()
+    {
+        var name = _newRoleName.Trim();
+        if (string.IsNullOrEmpty(name)) return;
+
+        if (!await RoleManager.RoleExistsAsync(name))
+        {
+            await RoleManager.CreateAsync(new IdentityRole(name));
+            _newRoleName = string.Empty;
+            await LoadData();
+        }
+    }
+
+    private async Task DeleteRole(string roleName)
+    {
+        var parameters = new DialogParameters<MessageBoxDialog>
+        {
+            { x => x.ContentText, $"Delete role '{roleName}'? Users in this role will lose it." },
+            { x => x.ButtonText, "Delete" },
+            { x => x.Color, Color.Error }
+        };
+        var dialog = await DialogService.ShowAsync<MessageBoxDialog>("Delete Role", parameters);
+        var result = await dialog.Result;
+
+        if (result is not null && !result.Canceled)
+        {
+            var role = await RoleManager.FindByNameAsync(roleName);
+            if (role is not null)
+            {
+                await RoleManager.DeleteAsync(role);
+                await LoadData();
+            }
+        }
+    }
+
+    private record UserRow
+    {
+        public ApplicationUser User { get; init; } = null!;
+        public List<string> Roles { get; init; } = [];
+    }
+}

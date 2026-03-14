@@ -2,112 +2,169 @@
 @using BBF.Data
 @using BBF.Data.Entities
 @using BBF.Services
-@inject ApplicationDbContext Db
+@using Microsoft.AspNetCore.Authorization
 @using Microsoft.EntityFrameworkCore
+@inject ApplicationDbContext Db
 @inject OllamaService Ollama
 
-<PageTitle>Dashboard - BBF</PageTitle>
+<PageTitle>BBF</PageTitle>
 
-<MudText Typo="Typo.h4" Class="mb-4">Dashboard</MudText>
+<AuthorizeView>
+    <Authorized>
+        <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="py-4">
+        <MudText Typo="Typo.h4" Class="mb-4">Dashboard</MudText>
 
-<MudGrid>
-    <MudItem xs="12" sm="6" md="3">
-        <MudPaper Class="pa-4" Elevation="2">
-            <MudStack Row AlignItems="AlignItems.Center" Spacing="3">
-                <MudIcon Icon="@Icons.Material.Filled.Psychology" Size="Size.Large"
-                         Color="@(_ollamaOnline ? Color.Success : Color.Error)" />
-                <div>
-                    <MudText Typo="Typo.h6">Ollama</MudText>
-                    <MudText Typo="Typo.body2" Color="@(_ollamaOnline ? Color.Success : Color.Error)">
-                        @(_ollamaOnline ? "Online" : "Offline")
+        <MudGrid>
+            <MudItem xs="12" sm="6" md="3">
+                <MudPaper Class="pa-4" Elevation="2">
+                    <MudStack Row AlignItems="AlignItems.Center" Spacing="3">
+                        <MudIcon Icon="@Icons.Material.Filled.Psychology" Size="Size.Large"
+                                 Color="@(_ollamaOnline ? Color.Success : Color.Error)" />
+                        <div>
+                            <MudText Typo="Typo.h6">Ollama</MudText>
+                            <MudText Typo="Typo.body2" Color="@(_ollamaOnline ? Color.Success : Color.Error)">
+                                @(_ollamaOnline ? "Online" : "Offline")
+                            </MudText>
+                        </div>
+                    </MudStack>
+                </MudPaper>
+            </MudItem>
+
+            <MudItem xs="12" sm="6" md="3">
+                <MudPaper Class="pa-4" Elevation="2">
+                    <MudStack Row AlignItems="AlignItems.Center" Spacing="3">
+                        <MudIcon Icon="@Icons.Material.Filled.Chat" Size="Size.Large" Color="Color.Primary" />
+                        <div>
+                            <MudText Typo="Typo.h6">Conversations</MudText>
+                            <MudText Typo="Typo.body2">@_conversationCount total</MudText>
+                        </div>
+                    </MudStack>
+                </MudPaper>
+            </MudItem>
+
+            <MudItem xs="12" sm="6" md="3">
+                <MudPaper Class="pa-4" Elevation="2">
+                    <MudStack Row AlignItems="AlignItems.Center" Spacing="3">
+                        <MudIcon Icon="@Icons.Material.Filled.Apps" Size="Size.Large" Color="Color.Secondary" />
+                        <div>
+                            <MudText Typo="Typo.h6">Services</MudText>
+                            <MudText Typo="Typo.body2">@_serviceCount tracked</MudText>
+                        </div>
+                    </MudStack>
+                </MudPaper>
+            </MudItem>
+
+            <MudItem xs="12" sm="6" md="3">
+                <MudPaper Class="pa-4" Elevation="2">
+                    <MudStack Row AlignItems="AlignItems.Center" Spacing="3">
+                        <MudIcon Icon="@Icons.Material.Filled.MenuBook" Size="Size.Large" Color="Color.Tertiary" />
+                        <div>
+                            <MudText Typo="Typo.h6">Wiki Articles</MudText>
+                            <MudText Typo="Typo.body2">@_articleCount published</MudText>
+                        </div>
+                    </MudStack>
+                </MudPaper>
+            </MudItem>
+
+            <MudItem xs="12" md="6">
+                <MudPaper Class="pa-4" Elevation="2">
+                    <MudText Typo="Typo.h6" Class="mb-3">Quick Links</MudText>
+                    @if (_services.Any())
+                    {
+                        <MudList T="ServiceLink" Dense>
+                            @foreach (var svc in _services)
+                            {
+                                <MudListItem Icon="@Icons.Material.Filled.OpenInNew"
+                                             Href="@svc.Url" Target="_blank">
+                                    <MudText>@svc.Name</MudText>
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary">@svc.Description</MudText>
+                                </MudListItem>
+                            }
+                        </MudList>
+                    }
+                    else
+                    {
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">No services configured yet.</MudText>
+                    }
+                </MudPaper>
+            </MudItem>
+
+            <MudItem xs="12" md="6">
+                <MudPaper Class="pa-4" Elevation="2">
+                    <MudText Typo="Typo.h6" Class="mb-3">Available Models</MudText>
+                    @if (_models.Any())
+                    {
+                        <MudList T="string" Dense>
+                            @foreach (var model in _models)
+                            {
+                                <MudListItem Icon="@Icons.Material.Filled.SmartToy">
+                                    @model
+                                </MudListItem>
+                            }
+                        </MudList>
+                    }
+                    else
+                    {
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">
+                            @(_ollamaOnline ? "No models found." : "Ollama is offline.")
+                        </MudText>
+                    }
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
+        </MudContainer>
+    </Authorized>
+
+    <NotAuthorized>
+        <div class="welcome-container">
+            <div class="welcome-overlay">
+                <MudStack AlignItems="AlignItems.Center" Spacing="4">
+                    <MudImage Src="images/LogoIconNB.png" Width="120" Alt="BBF" Class="mb-2" />
+                    <MudText Typo="Typo.h2" Align="Align.Center" Style="font-weight: 700;">
+                        Welcome to BBF
                     </MudText>
-                </div>
-            </MudStack>
-        </MudPaper>
-    </MudItem>
+                    <MudText Typo="Typo.h6" Align="Align.Center" Color="Color.Secondary" Style="max-width: 500px;">
+                        Your home network command center. AI chat, device control, service monitoring, and more.
+                    </MudText>
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Large"
+                               Href="Account/Login" StartIcon="@Icons.Material.Filled.Login"
+                               Class="mt-4">
+                        Sign In
+                    </MudButton>
+                </MudStack>
+            </div>
+            <div class="welcome-bg" style="background-image: url('images/@_splashImage');"></div>
+        </div>
+    </NotAuthorized>
+</AuthorizeView>
 
-    <MudItem xs="12" sm="6" md="3">
-        <MudPaper Class="pa-4" Elevation="2">
-            <MudStack Row AlignItems="AlignItems.Center" Spacing="3">
-                <MudIcon Icon="@Icons.Material.Filled.Chat" Size="Size.Large" Color="Color.Primary" />
-                <div>
-                    <MudText Typo="Typo.h6">Conversations</MudText>
-                    <MudText Typo="Typo.body2">@_conversationCount total</MudText>
-                </div>
-            </MudStack>
-        </MudPaper>
-    </MudItem>
+<style>
+    .welcome-container {
+        position: relative;
+        min-height: calc(100vh - 64px - 16px);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+        border-radius: 8px;
+    }
 
-    <MudItem xs="12" sm="6" md="3">
-        <MudPaper Class="pa-4" Elevation="2">
-            <MudStack Row AlignItems="AlignItems.Center" Spacing="3">
-                <MudIcon Icon="@Icons.Material.Filled.Apps" Size="Size.Large" Color="Color.Secondary" />
-                <div>
-                    <MudText Typo="Typo.h6">Services</MudText>
-                    <MudText Typo="Typo.body2">@_serviceCount tracked</MudText>
-                </div>
-            </MudStack>
-        </MudPaper>
-    </MudItem>
+    .welcome-bg {
+        position: absolute;
+        inset: 0;
+        background-size: cover;
+        background-position: center;
+        opacity: 0.2;
+        z-index: 0;
+    }
 
-    <MudItem xs="12" sm="6" md="3">
-        <MudPaper Class="pa-4" Elevation="2">
-            <MudStack Row AlignItems="AlignItems.Center" Spacing="3">
-                <MudIcon Icon="@Icons.Material.Filled.MenuBook" Size="Size.Large" Color="Color.Tertiary" />
-                <div>
-                    <MudText Typo="Typo.h6">Wiki Articles</MudText>
-                    <MudText Typo="Typo.body2">@_articleCount published</MudText>
-                </div>
-            </MudStack>
-        </MudPaper>
-    </MudItem>
-
-    <MudItem xs="12" md="6">
-        <MudPaper Class="pa-4" Elevation="2">
-            <MudText Typo="Typo.h6" Class="mb-3">Quick Links</MudText>
-            @if (_services.Any())
-            {
-                <MudList T="ServiceLink" Dense>
-                    @foreach (var svc in _services)
-                    {
-                        <MudListItem Icon="@Icons.Material.Filled.OpenInNew"
-                                     Href="@svc.Url" Target="_blank">
-                            <MudText>@svc.Name</MudText>
-                            <MudText Typo="Typo.caption" Color="Color.Secondary">@svc.Description</MudText>
-                        </MudListItem>
-                    }
-                </MudList>
-            }
-            else
-            {
-                <MudText Typo="Typo.body2" Color="Color.Secondary">No services configured yet.</MudText>
-            }
-        </MudPaper>
-    </MudItem>
-
-    <MudItem xs="12" md="6">
-        <MudPaper Class="pa-4" Elevation="2">
-            <MudText Typo="Typo.h6" Class="mb-3">Available Models</MudText>
-            @if (_models.Any())
-            {
-                <MudList T="string" Dense>
-                    @foreach (var model in _models)
-                    {
-                        <MudListItem Icon="@Icons.Material.Filled.SmartToy">
-                            @model
-                        </MudListItem>
-                    }
-                </MudList>
-            }
-            else
-            {
-                <MudText Typo="Typo.body2" Color="Color.Secondary">
-                    @(_ollamaOnline ? "No models found." : "Ollama is offline.")
-                </MudText>
-            }
-        </MudPaper>
-    </MudItem>
-</MudGrid>
+    .welcome-overlay {
+        position: relative;
+        z-index: 1;
+        padding: 3rem;
+        text-align: center;
+    }
+</style>
 
 @code {
     private bool _ollamaOnline;
@@ -116,6 +173,10 @@
     private int _articleCount;
     private List<ServiceLink> _services = [];
     private List<string> _models = [];
+
+    private static readonly string[] SplashImages =
+        ["FuturisticSplash1.jpg", "FuturisticSplash2.jpg", "MedievalSplash1.jpg"];
+    private string _splashImage = SplashImages[Random.Shared.Next(SplashImages.Length)];
 
     protected override async Task OnInitializedAsync()
     {

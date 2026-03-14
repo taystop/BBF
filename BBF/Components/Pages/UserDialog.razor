@@ -1,0 +1,96 @@
+@using Microsoft.AspNetCore.Identity
+@using BBF.Data
+
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">@(IsNew ? "Create User" : "Edit User")</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudTextField @bind-Value="Email" Label="Email" Required Variant="Variant.Outlined" Class="mb-3"
+                      InputType="InputType.Email" />
+        <MudTextField @bind-Value="Password" Label="@(IsNew ? "Password" : "New Password (leave blank to keep)")"
+                      Variant="Variant.Outlined" Class="mb-3"
+                      InputType="InputType.Password"
+                      Required="@IsNew" />
+        @if (!string.IsNullOrEmpty(Password))
+        {
+            <MudTextField @bind-Value="ConfirmPassword" Label="Confirm Password"
+                          Variant="Variant.Outlined" Class="mb-3"
+                          InputType="InputType.Password" Required />
+        }
+
+        <MudText Typo="Typo.subtitle2" Class="mb-2 mt-2">Roles</MudText>
+        @foreach (var role in AllRoles)
+        {
+            var isChecked = SelectedRoles.Contains(role);
+            <MudCheckBox T="bool" Value="isChecked"
+                         ValueChanged="@(v => ToggleRole(role, v))"
+                         Label="@role" Color="Color.Primary" />
+        }
+
+        @if (!string.IsNullOrEmpty(ErrorMessage))
+        {
+            <MudAlert Severity="Severity.Error" Class="mt-3">@ErrorMessage</MudAlert>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Submit"
+                   Disabled="@(!IsValid)">
+            @(IsNew ? "Create" : "Save")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance MudDialog { get; set; } = null!;
+
+    [Parameter] public bool IsNew { get; set; }
+    [Parameter] public string Email { get; set; } = string.Empty;
+    [Parameter] public string? UserId { get; set; }
+    [Parameter] public List<string> AllRoles { get; set; } = [];
+    [Parameter] public List<string> SelectedRoles { get; set; } = [];
+
+    private string Password { get; set; } = string.Empty;
+    private string ConfirmPassword { get; set; } = string.Empty;
+    private string? ErrorMessage { get; set; }
+
+    private bool IsValid =>
+        !string.IsNullOrWhiteSpace(Email) &&
+        (IsNew ? !string.IsNullOrWhiteSpace(Password) && Password == ConfirmPassword : true) &&
+        (!string.IsNullOrEmpty(Password) ? Password == ConfirmPassword : true);
+
+    private void ToggleRole(string role, bool add)
+    {
+        if (add && !SelectedRoles.Contains(role))
+            SelectedRoles.Add(role);
+        else if (!add)
+            SelectedRoles.Remove(role);
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+
+    private void Submit()
+    {
+        if (!string.IsNullOrEmpty(Password) && Password != ConfirmPassword)
+        {
+            ErrorMessage = "Passwords do not match.";
+            return;
+        }
+
+        MudDialog.Close(DialogResult.Ok(new UserDialogResult
+        {
+            Email = Email,
+            Password = string.IsNullOrEmpty(Password) ? null : Password,
+            Roles = SelectedRoles
+        }));
+    }
+
+    public class UserDialogResult
+    {
+        public string Email { get; set; } = string.Empty;
+        public string? Password { get; set; }
+        public List<string> Roles { get; set; } = [];
+    }
+}
