@@ -1,0 +1,63 @@
+@using BBF.Data.Entities
+
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">@(IsNew ? "Add Transaction" : "Edit Transaction")</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudNumericField @bind-Value="Amount" Label="Amount ($)" Required
+                         Variant="Variant.Outlined" Class="mb-3" Format="N2" />
+        <MudDatePicker @bind-Date="SelectedDate" Label="Date" Required
+                       Variant="Variant.Outlined" Class="mb-3" />
+        <MudTextField @bind-Value="Description" Label="Description" Required
+                      Variant="Variant.Outlined" Class="mb-3" />
+        <MudTextField @bind-Value="MerchantName" Label="Merchant (optional)"
+                      Variant="Variant.Outlined" Class="mb-3" />
+        <MudSelect T="int?" @bind-Value="CategoryId" Label="Category"
+                   Variant="Variant.Outlined" Class="mb-3" Clearable>
+            @foreach (var cat in Categories)
+            {
+                <MudSelectItem T="int?" Value="@cat.Id">@cat.Name</MudSelectItem>
+            }
+        </MudSelect>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Submit"
+                   Disabled="@(Amount == 0 || SelectedDate is null || string.IsNullOrWhiteSpace(Description))">
+            Save
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance MudDialog { get; set; } = null!;
+
+    [Parameter] public bool IsNew { get; set; } = true;
+    [Parameter] public decimal Amount { get; set; }
+    [Parameter] public DateTime? SelectedDate { get; set; } = DateTime.Today;
+    [Parameter] public string Description { get; set; } = string.Empty;
+    [Parameter] public string? MerchantName { get; set; }
+    [Parameter] public int? CategoryId { get; set; }
+    [Parameter] public List<BudgetCategory> Categories { get; set; } = [];
+
+    private void Cancel() => MudDialog.Cancel();
+    private void Submit() => MudDialog.Close(DialogResult.Ok(new TransactionResult
+    {
+        Amount = Amount,
+        Date = SelectedDate!.Value,
+        Description = Description,
+        MerchantName = MerchantName,
+        CategoryId = CategoryId
+    }));
+
+    public class TransactionResult
+    {
+        public decimal Amount { get; set; }
+        public DateTime Date { get; set; }
+        public string Description { get; set; } = string.Empty;
+        public string? MerchantName { get; set; }
+        public int? CategoryId { get; set; }
+    }
+}

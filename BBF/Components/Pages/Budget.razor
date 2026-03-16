@@ -1,0 +1,684 @@
+@page "/budget"
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@using BBF.Data
+@using BBF.Data.Entities
+@using BBF.Services
+@using Microsoft.EntityFrameworkCore
+@inject ApplicationDbContext Db
+@inject PlaidService Plaid
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+@implements IDisposable
+
+<PageTitle>Budget - BBF</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="py-4">
+    <MudStack Row AlignItems="AlignItems.Center" Class="mb-4">
+        <MudIcon Icon="@Icons.Material.Filled.AccountBalance" Size="Size.Large" Color="Color.Primary" />
+        <MudText Typo="Typo.h4">Budget</MudText>
+        <MudSpacer />
+        <MudIconButton Icon="@Icons.Material.Filled.ChevronLeft" OnClick="PreviousMonth" />
+        <MudText Typo="Typo.h6">@_selectedMonth.ToString("MMMM yyyy")</MudText>
+        <MudIconButton Icon="@Icons.Material.Filled.ChevronRight" OnClick="NextMonth"
+                       Disabled="@(_selectedMonth >= new DateTime(DateTime.Now.Year, DateTime.Now.Month, 1))" />
+    </MudStack>
+
+    @* Summary cards *@
+    <MudGrid Class="mb-4">
+        <MudItem xs="12" sm="4">
+            <MudPaper Class="pa-4" Elevation="2">
+                <MudText Typo="Typo.subtitle2" Color="Color.Secondary">Total Budget</MudText>
+                <MudText Typo="Typo.h5">@_totalBudget.ToString("C")</MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" sm="4">
+            <MudPaper Class="pa-4" Elevation="2">
+                <MudText Typo="Typo.subtitle2" Color="Color.Secondary">Total Spent</MudText>
+                <MudText Typo="Typo.h5" Color="@(_totalSpent > _totalBudget ? Color.Error : Color.Default)">
+                    @_totalSpent.ToString("C")
+                </MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" sm="4">
+            <MudPaper Class="pa-4" Elevation="2">
+                <MudText Typo="Typo.subtitle2" Color="Color.Secondary">Remaining</MudText>
+                <MudText Typo="Typo.h5" Color="@(_totalBudget - _totalSpent >= 0 ? Color.Success : Color.Error)">
+                    @((_totalBudget - _totalSpent).ToString("C"))
+                </MudText>
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+
+    @* Tabs *@
+    <MudTabs Elevation="2" Rounded ApplyEffectsToContainer Class="mb-4">
+        <MudTabPanel Text="Categories" Icon="@Icons.Material.Filled.Category">
+            <MudPaper Class="pa-4" Elevation="0">
+                <MudStack Row AlignItems="AlignItems.Center" Class="mb-3">
+                    <MudText Typo="Typo.h6">Budget Categories</MudText>
+                    <MudSpacer />
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                               StartIcon="@Icons.Material.Filled.Add" OnClick="AddCategory">
+                        Add Category
+                    </MudButton>
+                </MudStack>
+
+                @foreach (var item in _categorySpending)
+                {
+                    var pct = item.Category.MonthlyLimit > 0
+                        ? (double)(item.Spent / item.Category.MonthlyLimit) * 100
+                        : 0;
+                    var remaining = item.Category.MonthlyLimit - item.Spent;
+                    var color = pct >= 100 ? Color.Error : pct >= 80 ? Color.Warning : Color.Success;
+
+                    <MudPaper Class="pa-3 mb-2" Elevation="1">
+                        <MudStack Row AlignItems="AlignItems.Center" Spacing="3">
+                            <div style="width: 8px; height: 40px; border-radius: 4px; background-color: @item.Category.Color;"></div>
+                            <MudStack Spacing="0" Style="min-width: 150px;">
+                                <MudText Typo="Typo.subtitle2">@item.Category.Name</MudText>
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                    @item.Spent.ToString("C") / @item.Category.MonthlyLimit.ToString("C")
+                                </MudText>
+                            </MudStack>
+                            <MudProgressLinear Value="@Math.Min(pct, 100)" Color="@color"
+                                              Style="flex: 1;" Size="Size.Large" Rounded />
+                            <MudText Typo="Typo.body2" Color="@(remaining >= 0 ? Color.Success : Color.Error)"
+                                     Style="min-width: 80px; text-align: right;">
+                                @remaining.ToString("C")
+                            </MudText>
+                            <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                                           OnClick="@(() => EditCategory(item.Category))" />
+                            <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small"
+                                           Color="Color.Error"
+                                           OnClick="@(() => DeleteCategory(item.Category))" />
+                        </MudStack>
+                    </MudPaper>
+                }
+
+                @if (!_categorySpending.Any())
+                {
+                    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="pa-4 text-center">
+                        No budget categories yet. Add one to start tracking spending.
+                    </MudText>
+                }
+            </MudPaper>
+        </MudTabPanel>
+
+        <MudTabPanel Text="Transactions" Icon="@Icons.Material.Filled.Receipt">
+            <MudPaper Class="pa-4" Elevation="0">
+                <MudStack Row AlignItems="AlignItems.Center" Class="mb-3">
+                    <MudText Typo="Typo.h6">Transactions</MudText>
+                    <MudSpacer />
+                    <MudButton Variant="Variant.Outlined" Color="Color.Primary"
+                               StartIcon="@Icons.Material.Filled.Sync" OnClick="SyncTransactions"
+                               Disabled="_syncing">
+                        @(_syncing ? "Syncing..." : "Sync from Bank")
+                    </MudButton>
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                               StartIcon="@Icons.Material.Filled.Add" OnClick="AddTransaction">
+                        Add Manual
+                    </MudButton>
+                    <MudFileUpload T="IBrowserFile" FilesChanged="OnCsvSelected" Accept=".csv">
+                        <CustomContent>
+                            <MudButton Variant="Variant.Outlined" Color="Color.Secondary"
+                                       StartIcon="@Icons.Material.Filled.UploadFile"
+                                       OnClick="@context.OpenFilePickerAsync"
+                                       Disabled="_importing">
+                                @(_importing ? "Importing..." : "Import CSV")
+                            </MudButton>
+                        </CustomContent>
+                    </MudFileUpload>
+                </MudStack>
+
+                <MudTable Items="_transactions" Hover Dense>
+                    <HeaderContent>
+                        <MudTh>Date</MudTh>
+                        <MudTh>Description</MudTh>
+                        <MudTh>Category</MudTh>
+                        <MudTh Style="text-align: right;">Amount</MudTh>
+                        <MudTh>Source</MudTh>
+                        <MudTh Style="width: 100px;">Actions</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="Date">
+                            <MudText Typo="Typo.body2">@context.Date.ToString("MMM d")</MudText>
+                        </MudTd>
+                        <MudTd DataLabel="Description">
+                            <MudText Typo="Typo.body2">@context.Description</MudText>
+                            @if (!string.IsNullOrEmpty(context.MerchantName) && context.MerchantName != context.Description)
+                            {
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">@context.MerchantName</MudText>
+                            }
+                        </MudTd>
+                        <MudTd DataLabel="Category">
+                            @if (context.Category is not null)
+                            {
+                                <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined"
+                                         Style="@($"border-color: {context.Category.Color}; color: {context.Category.Color};")">
+                                    @context.Category.Name
+                                </MudChip>
+                            }
+                            else
+                            {
+                                <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Secondary"
+                                           OnClick="@(() => CategorizeTransaction(context))">
+                                    Categorize
+                                </MudButton>
+                            }
+                        </MudTd>
+                        <MudTd DataLabel="Amount" Style="text-align: right;">
+                            <MudText Typo="Typo.body2"
+                                     Color="@(context.Amount >= 0 ? Color.Error : Color.Success)">
+                                @context.Amount.ToString("C")
+                            </MudText>
+                        </MudTd>
+                        <MudTd DataLabel="Source">
+                            <MudChip T="string" Size="Size.Small" Variant="Variant.Filled"
+                                     Color="@(context.Source == "Plaid" ? Color.Info : Color.Default)">
+                                @context.Source
+                            </MudChip>
+                        </MudTd>
+                        <MudTd>
+                            <MudStack Row Spacing="0">
+                                <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                                               OnClick="@(() => EditTransaction(context))" />
+                                <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small"
+                                               Color="Color.Error"
+                                               OnClick="@(() => DeleteTransaction(context))" />
+                            </MudStack>
+                        </MudTd>
+                    </RowTemplate>
+                    <NoRecordsContent>
+                        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="pa-4">
+                            No transactions for @_selectedMonth.ToString("MMMM yyyy").
+                        </MudText>
+                    </NoRecordsContent>
+                </MudTable>
+            </MudPaper>
+        </MudTabPanel>
+
+        <MudTabPanel Text="Bank Connections" Icon="@Icons.Material.Filled.AccountBalance">
+            <MudPaper Class="pa-4" Elevation="0">
+                <MudStack Row AlignItems="AlignItems.Center" Class="mb-3">
+                    <MudText Typo="Typo.h6">Connected Accounts</MudText>
+                    <MudSpacer />
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                               StartIcon="@Icons.Material.Filled.AddLink" OnClick="ConnectBank">
+                        Connect Bank
+                    </MudButton>
+                </MudStack>
+
+                @if (_connections.Any())
+                {
+                    @foreach (var conn in _connections)
+                    {
+                        <MudPaper Class="pa-3 mb-2" Elevation="1">
+                            <MudStack Row AlignItems="AlignItems.Center">
+                                <MudIcon Icon="@Icons.Material.Filled.AccountBalance" Color="Color.Primary" />
+                                <MudStack Spacing="0">
+                                    <MudText Typo="Typo.subtitle2">@conn.InstitutionName</MudText>
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                        Last synced: @(conn.LastSynced?.ToLocalTime().ToString("g") ?? "Never")
+                                    </MudText>
+                                </MudStack>
+                                <MudSpacer />
+                                <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Error"
+                                           OnClick="@(() => DisconnectBank(conn))">
+                                    Disconnect
+                                </MudButton>
+                            </MudStack>
+                        </MudPaper>
+                    }
+                }
+                else
+                {
+                    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="pa-4 text-center">
+                        No bank accounts connected. Click "Connect Bank" to link your account via Plaid.
+                    </MudText>
+                }
+            </MudPaper>
+        </MudTabPanel>
+    </MudTabs>
+</MudContainer>
+
+@code {
+    private DateTime _selectedMonth = new(DateTime.Now.Year, DateTime.Now.Month, 1);
+    private List<CategorySpending> _categorySpending = [];
+    private List<Transaction> _transactions = [];
+    private List<BudgetCategory> _categories = [];
+    private List<PlaidConnection> _connections = [];
+    private decimal _totalBudget;
+    private decimal _totalSpent;
+    private bool _syncing;
+    private bool _importing;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        var monthEnd = _selectedMonth.AddMonths(1);
+
+        _categories = await Db.BudgetCategories
+            .Where(c => c.IsActive)
+            .OrderBy(c => c.SortOrder)
+            .ToListAsync();
+
+        _transactions = await Db.Transactions
+            .Include(t => t.Category)
+            .Where(t => t.Date >= _selectedMonth && t.Date < monthEnd)
+            .OrderByDescending(t => t.Date)
+            .ToListAsync();
+
+        _connections = await Plaid.GetConnectionsAsync();
+
+        // Calculate spending per category
+        _categorySpending = _categories.Select(c => new CategorySpending
+        {
+            Category = c,
+            Spent = _transactions
+                .Where(t => t.CategoryId == c.Id && t.Amount > 0)
+                .Sum(t => t.Amount)
+        }).ToList();
+
+        _totalBudget = _categories.Sum(c => c.MonthlyLimit);
+        _totalSpent = _transactions.Where(t => t.Amount > 0).Sum(t => t.Amount);
+
+        StateHasChanged();
+    }
+
+    private void PreviousMonth() { _selectedMonth = _selectedMonth.AddMonths(-1); _ = LoadData(); }
+    private void NextMonth() { _selectedMonth = _selectedMonth.AddMonths(1); _ = LoadData(); }
+
+    // --- Category CRUD ---
+
+    private async Task AddCategory()
+    {
+        var parameters = new DialogParameters<BudgetCategoryDialog>
+        {
+            { x => x.Category, new BudgetCategory() }
+        };
+        var dialog = await DialogService.ShowAsync<BudgetCategoryDialog>("Add Category", parameters);
+        var result = await dialog.Result;
+
+        if (result is not null && !result.Canceled && result.Data is BudgetCategory cat)
+        {
+            Db.BudgetCategories.Add(cat);
+            await Db.SaveChangesAsync();
+            await LoadData();
+        }
+    }
+
+    private async Task EditCategory(BudgetCategory category)
+    {
+        var parameters = new DialogParameters<BudgetCategoryDialog>
+        {
+            { x => x.Category, new BudgetCategory
+                {
+                    Id = category.Id, Name = category.Name, MonthlyLimit = category.MonthlyLimit,
+                    Color = category.Color, Icon = category.Icon, SortOrder = category.SortOrder,
+                    IsActive = category.IsActive
+                }
+            }
+        };
+        var dialog = await DialogService.ShowAsync<BudgetCategoryDialog>("Edit Category", parameters);
+        var result = await dialog.Result;
+
+        if (result is not null && !result.Canceled && result.Data is BudgetCategory updated)
+        {
+            category.Name = updated.Name;
+            category.MonthlyLimit = updated.MonthlyLimit;
+            category.Color = updated.Color;
+            category.Icon = updated.Icon;
+            category.SortOrder = updated.SortOrder;
+            category.IsActive = updated.IsActive;
+            await Db.SaveChangesAsync();
+            await LoadData();
+        }
+    }
+
+    private async Task DeleteCategory(BudgetCategory category)
+    {
+        var parameters = new DialogParameters<MessageBoxDialog>
+        {
+            { x => x.ContentText, $"Delete category '{category.Name}'? Transactions will become uncategorized." },
+            { x => x.ButtonText, "Delete" },
+            { x => x.Color, Color.Error }
+        };
+        var dialog = await DialogService.ShowAsync<MessageBoxDialog>("Delete Category", parameters);
+        var result = await dialog.Result;
+
+        if (result is not null && !result.Canceled)
+        {
+            Db.BudgetCategories.Remove(category);
+            await Db.SaveChangesAsync();
+            await LoadData();
+        }
+    }
+
+    // --- Transaction CRUD ---
+
+    private async Task AddTransaction()
+    {
+        var parameters = new DialogParameters<TransactionDialog>
+        {
+            { x => x.IsNew, true },
+            { x => x.Categories, _categories }
+        };
+        var dialog = await DialogService.ShowAsync<TransactionDialog>("Add Transaction", parameters);
+        var result = await dialog.Result;
+
+        if (result is not null && !result.Canceled && result.Data is TransactionDialog.TransactionResult data)
+        {
+            Db.Transactions.Add(new Transaction
+            {
+                Amount = data.Amount,
+                Date = data.Date,
+                Description = data.Description,
+                MerchantName = data.MerchantName,
+                CategoryId = data.CategoryId,
+                Source = "Manual"
+            });
+            await Db.SaveChangesAsync();
+            await LoadData();
+        }
+    }
+
+    private async Task EditTransaction(Transaction txn)
+    {
+        var parameters = new DialogParameters<TransactionDialog>
+        {
+            { x => x.IsNew, false },
+            { x => x.Amount, txn.Amount },
+            { x => x.SelectedDate, txn.Date },
+            { x => x.Description, txn.Description },
+            { x => x.MerchantName, txn.MerchantName },
+            { x => x.CategoryId, txn.CategoryId },
+            { x => x.Categories, _categories }
+        };
+        var dialog = await DialogService.ShowAsync<TransactionDialog>("Edit Transaction", parameters);
+        var result = await dialog.Result;
+
+        if (result is not null && !result.Canceled && result.Data is TransactionDialog.TransactionResult data)
+        {
+            txn.Amount = data.Amount;
+            txn.Date = data.Date;
+            txn.Description = data.Description;
+            txn.MerchantName = data.MerchantName;
+            txn.CategoryId = data.CategoryId;
+            await Db.SaveChangesAsync();
+            await LoadData();
+        }
+    }
+
+    private async Task CategorizeTransaction(Transaction txn)
+    {
+        var parameters = new DialogParameters<TransactionDialog>
+        {
+            { x => x.IsNew, false },
+            { x => x.Amount, txn.Amount },
+            { x => x.SelectedDate, txn.Date },
+            { x => x.Description, txn.Description },
+            { x => x.MerchantName, txn.MerchantName },
+            { x => x.CategoryId, txn.CategoryId },
+            { x => x.Categories, _categories }
+        };
+        var dialog = await DialogService.ShowAsync<TransactionDialog>("Categorize Transaction", parameters);
+        var result = await dialog.Result;
+
+        if (result is not null && !result.Canceled && result.Data is TransactionDialog.TransactionResult data)
+        {
+            txn.CategoryId = data.CategoryId;
+            await Db.SaveChangesAsync();
+            await LoadData();
+        }
+    }
+
+    private async Task DeleteTransaction(Transaction txn)
+    {
+        var parameters = new DialogParameters<MessageBoxDialog>
+        {
+            { x => x.ContentText, $"Delete transaction '{txn.Description}' for {txn.Amount:C}?" },
+            { x => x.ButtonText, "Delete" },
+            { x => x.Color, Color.Error }
+        };
+        var dialog = await DialogService.ShowAsync<MessageBoxDialog>("Delete Transaction", parameters);
+        var result = await dialog.Result;
+
+        if (result is not null && !result.Canceled)
+        {
+            Db.Transactions.Remove(txn);
+            await Db.SaveChangesAsync();
+            await LoadData();
+        }
+    }
+
+    // --- Plaid ---
+
+    private DotNetObjectReference<Budget>? _dotNetRef;
+
+    private async Task ConnectBank()
+    {
+        try
+        {
+            _dotNetRef ??= DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("plaidLink.open", _dotNetRef);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error: {ex.Message}", Severity.Error);
+        }
+    }
+
+    [JSInvokable]
+    public async Task OnPlaidSuccess()
+    {
+        Snackbar.Add("Bank account connected! Syncing transactions...", Severity.Success);
+        await LoadData();
+        await SyncTransactions();
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public void OnPlaidError(string message)
+    {
+        Snackbar.Add($"Plaid: {message}", Severity.Warning);
+    }
+
+    private async Task SyncTransactions()
+    {
+        if (!_connections.Any())
+        {
+            Snackbar.Add("No bank accounts connected.", Severity.Warning);
+            return;
+        }
+
+        _syncing = true;
+        StateHasChanged();
+
+        var totalAdded = 0;
+        foreach (var conn in _connections)
+        {
+            try
+            {
+                totalAdded += await Plaid.SyncTransactionsAsync(conn);
+            }
+            catch (Exception ex)
+            {
+                Snackbar.Add($"Error syncing {conn.InstitutionName}: {ex.Message}", Severity.Error);
+            }
+        }
+
+        _syncing = false;
+        Snackbar.Add($"Synced {totalAdded} new transactions.", Severity.Success);
+        await LoadData();
+    }
+
+    private async Task DisconnectBank(PlaidConnection conn)
+    {
+        var parameters = new DialogParameters<MessageBoxDialog>
+        {
+            { x => x.ContentText, $"Disconnect '{conn.InstitutionName}'? Existing transactions will remain." },
+            { x => x.ButtonText, "Disconnect" },
+            { x => x.Color, Color.Error }
+        };
+        var dialog = await DialogService.ShowAsync<MessageBoxDialog>("Disconnect Bank", parameters);
+        var result = await dialog.Result;
+
+        if (result is not null && !result.Canceled)
+        {
+            await Plaid.RemoveConnectionAsync(conn.Id);
+            await LoadData();
+        }
+    }
+
+    // --- CSV Import ---
+
+    private async Task OnCsvSelected(IBrowserFile file)
+    {
+        if (file is null) return;
+
+        _importing = true;
+        StateHasChanged();
+
+        try
+        {
+            using var reader = new System.IO.StreamReader(file.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024));
+            var headerLine = await reader.ReadLineAsync();
+            if (headerLine is null)
+            {
+                Snackbar.Add("CSV file is empty.", Severity.Warning);
+                return;
+            }
+
+            // Detect column layout from header
+            var headers = headerLine.Split(',')
+                .Select(h => h.Trim().Trim('"').ToLowerInvariant())
+                .ToList();
+
+            var dateIdx = headers.FindIndex(h => h.Contains("date") || h.Contains("posted"));
+            var descIdx = headers.FindIndex(h => h.Contains("description") || h.Contains("memo") || h.Contains("payee"));
+            var amountIdx = headers.FindIndex(h => h.Contains("amount"));
+            var debitIdx = headers.FindIndex(h => h.Contains("debit"));
+            var creditIdx = headers.FindIndex(h => h.Contains("credit"));
+
+            if (dateIdx < 0 || (amountIdx < 0 && debitIdx < 0))
+            {
+                Snackbar.Add("Could not detect Date and Amount columns in CSV. Expected headers like 'Date', 'Description', 'Amount' or 'Debit'/'Credit'.", Severity.Error);
+                return;
+            }
+
+            if (descIdx < 0) descIdx = dateIdx + 1; // fallback: assume description is next column
+
+            var imported = 0;
+            var skipped = 0;
+            string? line;
+
+            while ((line = await reader.ReadLineAsync()) is not null)
+            {
+                if (string.IsNullOrWhiteSpace(line)) continue;
+
+                var cols = ParseCsvLine(line);
+                if (cols.Count <= Math.Max(dateIdx, Math.Max(descIdx, amountIdx >= 0 ? amountIdx : debitIdx)))
+                {
+                    skipped++;
+                    continue;
+                }
+
+                if (!DateTime.TryParse(cols[dateIdx], out var date))
+                {
+                    skipped++;
+                    continue;
+                }
+
+                decimal amount;
+                if (amountIdx >= 0)
+                {
+                    if (!decimal.TryParse(cols[amountIdx], System.Globalization.NumberStyles.Any,
+                        System.Globalization.CultureInfo.InvariantCulture, out amount))
+                    {
+                        skipped++;
+                        continue;
+                    }
+                }
+                else
+                {
+                    // Debit/Credit columns
+                    decimal.TryParse(debitIdx >= 0 && debitIdx < cols.Count ? cols[debitIdx] : "",
+                        System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var debit);
+                    decimal.TryParse(creditIdx >= 0 && creditIdx < cols.Count ? cols[creditIdx] : "",
+                        System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var credit);
+                    amount = debit > 0 ? debit : -credit;
+                }
+
+                var desc = descIdx < cols.Count ? cols[descIdx] : "Unknown";
+
+                Db.Transactions.Add(new Transaction
+                {
+                    Amount = amount,
+                    Date = date,
+                    Description = desc,
+                    Source = "CSV",
+                    CreatedAt = DateTime.UtcNow
+                });
+                imported++;
+            }
+
+            if (imported > 0)
+                await Db.SaveChangesAsync();
+
+            Snackbar.Add($"Imported {imported} transactions" + (skipped > 0 ? $", skipped {skipped} rows" : ""), Severity.Success);
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Import failed: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _importing = false;
+            StateHasChanged();
+        }
+    }
+
+    private static List<string> ParseCsvLine(string line)
+    {
+        var result = new List<string>();
+        var inQuotes = false;
+        var field = new System.Text.StringBuilder();
+
+        for (var i = 0; i < line.Length; i++)
+        {
+            var c = line[i];
+            if (c == '"')
+            {
+                inQuotes = !inQuotes;
+            }
+            else if (c == ',' && !inQuotes)
+            {
+                result.Add(field.ToString().Trim().Trim('"'));
+                field.Clear();
+            }
+            else
+            {
+                field.Append(c);
+            }
+        }
+        result.Add(field.ToString().Trim().Trim('"'));
+        return result;
+    }
+
+    public void Dispose()
+    {
+        _dotNetRef?.Dispose();
+    }
+
+    private record CategorySpending
+    {
+        public BudgetCategory Category { get; init; } = null!;
+        public decimal Spent { get; init; }
+    }
+}

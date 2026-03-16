@@ -61,6 +61,9 @@ builder.Services.AddScoped<WikiSearchService>();
 // Document storage service
 builder.Services.AddScoped<DocumentService>();
 
+// Plaid banking integration
+builder.Services.AddScoped<PlaidService>();
+
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
@@ -94,7 +97,31 @@ app.MapGet("/api/documents/{id:int}/download", async (int id, DocumentService do
     return Results.File(path, doc.ContentType, doc.FileName);
 }).RequireAuthorization();
 
+// Plaid Link endpoints (behind auth)
+app.MapPost("/api/plaid/create-link-token", async (PlaidService plaid, System.Security.Claims.ClaimsPrincipal user, ILogger<Program> logger) =>
+{
+    try
+    {
+        var userId = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "default";
+        var token = await plaid.CreateLinkTokenAsync(userId);
+        return Results.Ok(new { linkToken = token });
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Plaid create-link-token failed");
+        return Results.Problem(ex.Message);
+    }
+}).RequireAuthorization().DisableAntiforgery();
+
+app.MapPost("/api/plaid/exchange-token", async (PlaidService plaid, PlaidExchangeRequest request) =>
+{
+    var connection = await plaid.ExchangePublicTokenAsync(request.PublicToken, request.InstitutionName, request.InstitutionId);
+    return Results.Ok(new { connectionId = connection.Id });
+}).RequireAuthorization().DisableAntiforgery();
+
 // Add additional endpoints required by the Identity /Account Razor components.
 app.MapAdditionalIdentityEndpoints();
 
 app.Run();
+
+public record PlaidExchangeRequest(string PublicToken, string InstitutionName, string InstitutionId);

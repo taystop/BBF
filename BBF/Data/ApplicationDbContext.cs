@@ -13,6 +13,9 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
     public DbSet<ServiceHealthLog> ServiceHealthLogs => Set<ServiceHealthLog>();
     public DbSet<AppSetting> AppSettings => Set<AppSetting>();
     public DbSet<Document> Documents => Set<Document>();
+    public DbSet<BudgetCategory> BudgetCategories => Set<BudgetCategory>();
+    public DbSet<Transaction> Transactions => Set<Transaction>();
+    public DbSet<PlaidConnection> PlaidConnections => Set<PlaidConnection>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -43,6 +46,27 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
              .WithOne(h => h.ServiceLink)
              .HasForeignKey(h => h.ServiceLinkId)
              .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<BudgetCategory>(e =>
+        {
+            e.Property(b => b.MonthlyLimit).HasColumnType("decimal(18,2)");
+            e.HasMany(b => b.Transactions)
+             .WithOne(t => t.Category)
+             .HasForeignKey(t => t.CategoryId)
+             .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        builder.Entity<Transaction>(e =>
+        {
+            e.Property(t => t.Amount).HasColumnType("decimal(18,2)");
+            e.HasIndex(t => t.PlaidTransactionId).IsUnique().HasFilter("[PlaidTransactionId] IS NOT NULL");
+            e.HasIndex(t => t.Date);
+        });
+
+        builder.Entity<PlaidConnection>(e =>
+        {
+            e.HasIndex(p => p.ItemId).IsUnique();
         });
     }
 }
