@@ -1,11 +1,14 @@
 using System.Diagnostics;
 using BBF.Data;
 using BBF.Data.Entities;
+using Microsoft.EntityFrameworkCore;
 
 namespace BBF.Services;
 
-public class HealthCheckService(ApplicationDbContext db)
+public class HealthCheckService
 {
+    private readonly IDbContextFactory<ApplicationDbContext> _dbFactory;
+
     private static readonly HttpClient HttpClient = new(new HttpClientHandler
     {
         // Accept self-signed certs for internal services (e.g. EdgeRouter)
@@ -14,6 +17,11 @@ public class HealthCheckService(ApplicationDbContext db)
     {
         Timeout = TimeSpan.FromSeconds(10)
     };
+
+    public HealthCheckService(IDbContextFactory<ApplicationDbContext> dbFactory)
+    {
+        _dbFactory = dbFactory;
+    }
 
     public async Task<ServiceHealthLog> CheckAsync(ServiceLink svc)
     {
@@ -43,6 +51,7 @@ public class HealthCheckService(ApplicationDbContext db)
             log.IsHealthy = false;
         }
 
+        await using var db = await _dbFactory.CreateDbContextAsync();
         db.ServiceHealthLogs.Add(log);
         await db.SaveChangesAsync();
 

@@ -5,7 +5,7 @@
 @using BBF.Data.Entities
 @using BBF.Services
 @using Microsoft.EntityFrameworkCore
-@inject ApplicationDbContext Db
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
 @inject UserContextService UserContext
 @inject IDialogService DialogService
 @inject ISnackbar Snackbar
@@ -115,7 +115,8 @@
     {
         if (UserContext.UserId is null) return;
 
-        _groups = await Db.UserGroupMembers
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _groups = await db.UserGroupMembers
             .Where(m => m.UserId == UserContext.UserId)
             .Include(m => m.Group)
                 .ThenInclude(g => g.Members)
@@ -137,22 +138,23 @@
 
         if (result is not null && !result.Canceled && result.Data is string name)
         {
+            await using var db = await DbFactory.CreateDbContextAsync();
             var group = new UserGroup
             {
                 Name = name,
                 CreatedAt = DateTime.UtcNow
             };
-            Db.UserGroups.Add(group);
-            await Db.SaveChangesAsync();
+            db.UserGroups.Add(group);
+            await db.SaveChangesAsync();
 
-            Db.UserGroupMembers.Add(new UserGroupMember
+            db.UserGroupMembers.Add(new UserGroupMember
             {
                 GroupId = group.Id,
                 UserId = UserContext.UserId!,
                 Role = "Owner",
                 JoinedAt = DateTime.UtcNow
             });
-            await Db.SaveChangesAsync();
+            await db.SaveChangesAsync();
 
             await UserContext.RefreshGroupsAsync();
             await LoadGroups();
@@ -172,8 +174,13 @@
 
         if (result is not null && !result.Canceled && result.Data is string name)
         {
-            group.Name = name;
-            await Db.SaveChangesAsync();
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var entity = await db.UserGroups.FindAsync(group.Id);
+            if (entity is not null)
+            {
+                entity.Name = name;
+                await db.SaveChangesAsync();
+            }
             await UserContext.RefreshGroupsAsync();
             await LoadGroups();
         }
@@ -192,8 +199,13 @@
 
         if (result is not null && !result.Canceled)
         {
-            Db.UserGroups.Remove(group);
-            await Db.SaveChangesAsync();
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var entity = await db.UserGroups.FindAsync(group.Id);
+            if (entity is not null)
+            {
+                db.UserGroups.Remove(entity);
+                await db.SaveChangesAsync();
+            }
             await UserContext.RefreshGroupsAsync();
             await LoadGroups();
             Snackbar.Add($"Group '{group.Name}' deleted.", Severity.Info);

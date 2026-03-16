@@ -4,8 +4,15 @@ using Microsoft.EntityFrameworkCore;
 
 namespace BBF.Services;
 
-public class WikiSearchService(ApplicationDbContext db)
+public class WikiSearchService
 {
+    private readonly IDbContextFactory<ApplicationDbContext> _dbFactory;
+
+    public WikiSearchService(IDbContextFactory<ApplicationDbContext> dbFactory)
+    {
+        _dbFactory = dbFactory;
+    }
+
     public async Task<RagSearchResult> SearchAllAsync(string query, int maxResults = 5, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(query))
@@ -18,6 +25,8 @@ public class WikiSearchService(ApplicationDbContext db)
 
         if (terms.Count == 0)
             return new RagSearchResult();
+
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
 
         // Score wiki articles
         var articles = await db.WikiArticles.ToListAsync(ct);

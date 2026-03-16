@@ -7,7 +7,7 @@
 @using BBF.Services
 @using Microsoft.EntityFrameworkCore
 @using Markdig
-@inject ApplicationDbContext Db
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
 @inject OllamaService Ollama
 @inject WebSearchService Search
 @inject WikiSearchService WikiSearch
@@ -467,10 +467,11 @@
 
     private async Task LoadConversations()
     {
+        await using var db = await DbFactory.CreateDbContextAsync();
         var userId = UserContext.UserId;
         if (userId is null)
         {
-            _conversations = await Db.ChatConversations
+            _conversations = await db.ChatConversations
                 .OrderByDescending(c => c.UpdatedAt)
                 .ToListAsync();
             return;
@@ -478,7 +479,7 @@
 
         var groupIds = UserContext.Groups.Select(g => g.Id).ToList();
 
-        _conversations = await Db.ChatConversations
+        _conversations = await db.ChatConversations
             .Include(c => c.Shares)
             .Where(c => c.UserId == userId
                 || c.Shares.Any(s => s.SharedWithUserId == userId)
@@ -489,7 +490,8 @@
 
     private async Task LoadConversation(int id)
     {
-        _activeConversation = await Db.ChatConversations
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _activeConversation = await db.ChatConversations
             .Include(c => c.Messages.OrderBy(m => m.CreatedAt))
             .Include(c => c.Shares)
             .FirstOrDefaultAsync(c => c.Id == id);
@@ -526,13 +528,14 @@
 
     private async Task DeleteConversation(int id)
     {
-        var convo = await Db.ChatConversations.FindAsync(id);
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var convo = await db.ChatConversations.FindAsync(id);
         if (convo is not null)
         {
             if (convo.UserId != UserContext.UserId && convo.UserId is not null) return;
 
-            Db.ChatConversations.Remove(convo);
-            await Db.SaveChangesAsync();
+            db.ChatConversations.Remove(convo);
+            await db.SaveChangesAsync();
             await LoadConversations();
 
             if (ConversationId == id)
@@ -553,6 +556,8 @@
         var input = _userInput?.Trim();
         if (string.IsNullOrEmpty(input)) return;
 
+        await using var db = await DbFactory.CreateDbContextAsync();
+
         _userInput = string.Empty;
         var isNewConversation = false;
 
@@ -565,8 +570,8 @@
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
             };
-            Db.ChatConversations.Add(_activeConversation);
-            await Db.SaveChangesAsync();
+            db.ChatConversations.Add(_activeConversation);
+            await db.SaveChangesAsync();
             await LoadConversations();
             isNewConversation = true;
         }
@@ -578,8 +583,8 @@
             Content = input,
             CreatedAt = DateTime.UtcNow
         };
-        Db.ChatMessages.Add(userMsg);
-        await Db.SaveChangesAsync();
+        db.ChatMessages.Add(userMsg);
+        await db.SaveChangesAsync();
         _messages.Add(userMsg);
 
         _isStreaming = true;
@@ -648,7 +653,7 @@
                 Content = _streamingContent,
                 CreatedAt = DateTime.UtcNow
             };
-            Db.ChatMessages.Add(assistantMsg);
+            db.ChatMessages.Add(assistantMsg);
             _activeConversation.UpdatedAt = DateTime.UtcNow;
 
             if (_activeConversation.Title is null)
@@ -656,7 +661,7 @@
                 _activeConversation.Title = input.Length > 50 ? input[..50] + "..." : input;
             }
 
-            await Db.SaveChangesAsync();
+            await db.SaveChangesAsync();
             _messages.Add(assistantMsg);
             await LoadConversations();
 
@@ -673,13 +678,13 @@
                     Content = _streamingContent + "\n\n_(generation stopped)_",
                     CreatedAt = DateTime.UtcNow
                 };
-                Db.ChatMessages.Add(partialMsg);
+                db.ChatMessages.Add(partialMsg);
                 _activeConversation.UpdatedAt = DateTime.UtcNow;
 
                 if (_activeConversation.Title is null)
                     _activeConversation.Title = input.Length > 50 ? input[..50] + "..." : input;
 
-                await Db.SaveChangesAsync();
+                await db.SaveChangesAsync();
                 _messages.Add(partialMsg);
                 await LoadConversations();
             }
@@ -759,6 +764,7 @@
 
     private async Task ProcessWikiBlocks(string content)
     {
+        await using var db = await DbFactory.CreateDbContextAsync();
         var matches = WikiBlockRegex.Matches(content);
         foreach (System.Text.RegularExpressions.Match match in matches)
         {
@@ -770,14 +776,14 @@
             if (string.IsNullOrEmpty(title) || string.IsNullOrEmpty(body))
                 continue;
 
-            var exists = await Db.WikiArticles.AnyAsync(a => a.Title == title);
+            var exists = await db.WikiArticles.AnyAsync(a => a.Title == title);
             if (exists)
             {
                 Snackbar.Add($"Wiki article '{title}' already exists — skipped.", Severity.Warning);
                 continue;
             }
 
-            Db.WikiArticles.Add(new WikiArticle
+            db.WikiArticles.Add(new WikiArticle
             {
                 Title = title,
                 Content = body,
@@ -786,27 +792,28 @@
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
             });
-            await Db.SaveChangesAsync();
+            await db.SaveChangesAsync();
             Snackbar.Add($"Wiki article '{title}' created!", Severity.Success);
         }
     }
 
     private async Task SaveToWiki(ChatMessage msg)
     {
+        await using var db = await DbFactory.CreateDbContextAsync();
         var lines = msg.Content.Split('\n', StringSplitOptions.RemoveEmptyEntries);
         var title = lines.FirstOrDefault()?.TrimStart('#', ' ') ?? "Untitled";
         if (title.Length > 80) title = title[..80] + "...";
 
         var content = StripWikiBlocks(msg.Content);
 
-        var exists = await Db.WikiArticles.AnyAsync(a => a.Title == title);
+        var exists = await db.WikiArticles.AnyAsync(a => a.Title == title);
         if (exists)
         {
             Snackbar.Add($"Wiki article '{title}' already exists.", Severity.Warning);
             return;
         }
 
-        Db.WikiArticles.Add(new WikiArticle
+        db.WikiArticles.Add(new WikiArticle
         {
             Title = title,
             Content = content,
@@ -815,7 +822,7 @@
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         });
-        await Db.SaveChangesAsync();
+        await db.SaveChangesAsync();
         Snackbar.Add($"Saved to wiki: '{title}'", Severity.Success);
     }
 

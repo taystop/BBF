@@ -2,7 +2,7 @@
 @using BBF.Data.Entities
 @using Microsoft.AspNetCore.Identity
 @using Microsoft.EntityFrameworkCore
-@inject ApplicationDbContext Db
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
 @inject UserManager<ApplicationUser> UserManager
 @inject ISnackbar Snackbar
 
@@ -81,7 +81,8 @@
 
     private async Task LoadMembers()
     {
-        _members = await Db.UserGroupMembers
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _members = await db.UserGroupMembers
             .Where(m => m.GroupId == Group.Id)
             .Include(m => m.User)
             .OrderByDescending(m => m.Role)
@@ -107,14 +108,15 @@
             return;
         }
 
-        Db.UserGroupMembers.Add(new UserGroupMember
+        await using var db = await DbFactory.CreateDbContextAsync();
+        db.UserGroupMembers.Add(new UserGroupMember
         {
             GroupId = Group.Id,
             UserId = user.Id,
             Role = "Member",
             JoinedAt = DateTime.UtcNow
         });
-        await Db.SaveChangesAsync();
+        await db.SaveChangesAsync();
 
         _addEmail = string.Empty;
         Snackbar.Add($"Added {user.UserName ?? email} to group.", Severity.Success);
@@ -123,16 +125,26 @@
 
     private async Task RemoveMember(UserGroupMember member)
     {
-        Db.UserGroupMembers.Remove(member);
-        await Db.SaveChangesAsync();
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var entity = await db.UserGroupMembers.FindAsync(member.Id);
+        if (entity is not null)
+        {
+            db.UserGroupMembers.Remove(entity);
+            await db.SaveChangesAsync();
+        }
         Snackbar.Add($"Removed {member.User?.UserName ?? "user"} from group.", Severity.Info);
         await LoadMembers();
     }
 
     private async Task ChangeRole(UserGroupMember member, string newRole)
     {
-        member.Role = newRole;
-        await Db.SaveChangesAsync();
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var entity = await db.UserGroupMembers.FindAsync(member.Id);
+        if (entity is not null)
+        {
+            entity.Role = newRole;
+            await db.SaveChangesAsync();
+        }
         await LoadMembers();
     }
 

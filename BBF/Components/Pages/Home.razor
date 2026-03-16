@@ -4,7 +4,7 @@
 @using BBF.Services
 @using Microsoft.AspNetCore.Authorization
 @using Microsoft.EntityFrameworkCore
-@inject ApplicationDbContext Db
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
 @inject OllamaService Ollama
 
 <PageTitle>BBF</PageTitle>
@@ -180,11 +180,11 @@
 
     protected override async Task OnInitializedAsync()
     {
-        // Run all DB queries sequentially (DbContext is not thread-safe)
-        _conversationCount = await Db.ChatConversations.CountAsync();
-        _serviceCount = await Db.ServiceLinks.CountAsync(s => s.IsActive);
-        _articleCount = await Db.WikiArticles.CountAsync();
-        _services = await Db.ServiceLinks.Where(s => s.IsActive).OrderBy(s => s.SortOrder).ToListAsync();
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _conversationCount = await db.ChatConversations.CountAsync();
+        _serviceCount = await db.ServiceLinks.CountAsync(s => s.IsActive);
+        _articleCount = await db.WikiArticles.CountAsync();
+        _services = await db.ServiceLinks.Where(s => s.IsActive).OrderBy(s => s.SortOrder).ToListAsync();
 
         // HTTP calls are fine after DB work is done
         _ollamaOnline = await Ollama.IsHealthyAsync();

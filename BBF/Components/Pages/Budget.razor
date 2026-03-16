@@ -5,7 +5,7 @@
 @using BBF.Data.Entities
 @using BBF.Services
 @using Microsoft.EntityFrameworkCore
-@inject ApplicationDbContext Db
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
 @inject PlaidService Plaid
 @inject UserContextService UserContext
 @inject IDialogService DialogService
@@ -358,14 +358,16 @@
         var groupId = UserContext.ActiveGroupId;
         if (groupId is null) return;
 
+        await using var db = await DbFactory.CreateDbContextAsync();
+
         var monthEnd = _selectedMonth.AddMonths(1);
 
-        _categories = await Db.BudgetCategories
+        _categories = await db.BudgetCategories
             .Where(c => c.IsActive && c.GroupId == groupId)
             .OrderBy(c => c.SortOrder)
             .ToListAsync();
 
-        _transactions = await Db.Transactions
+        _transactions = await db.Transactions
             .Include(t => t.Category)
             .Where(t => t.GroupId == groupId && t.Date >= _selectedMonth && t.Date < monthEnd)
             .OrderByDescending(t => t.Date)
@@ -404,9 +406,10 @@
 
         if (result is not null && !result.Canceled && result.Data is BudgetCategory cat)
         {
+            await using var db = await DbFactory.CreateDbContextAsync();
             cat.GroupId = UserContext.ActiveGroupId;
-            Db.BudgetCategories.Add(cat);
-            await Db.SaveChangesAsync();
+            db.BudgetCategories.Add(cat);
+            await db.SaveChangesAsync();
             await LoadData();
         }
     }
@@ -428,13 +431,18 @@
 
         if (result is not null && !result.Canceled && result.Data is BudgetCategory updated)
         {
-            category.Name = updated.Name;
-            category.MonthlyLimit = updated.MonthlyLimit;
-            category.Color = updated.Color;
-            category.Icon = updated.Icon;
-            category.SortOrder = updated.SortOrder;
-            category.IsActive = updated.IsActive;
-            await Db.SaveChangesAsync();
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var entity = await db.BudgetCategories.FindAsync(category.Id);
+            if (entity is not null)
+            {
+                entity.Name = updated.Name;
+                entity.MonthlyLimit = updated.MonthlyLimit;
+                entity.Color = updated.Color;
+                entity.Icon = updated.Icon;
+                entity.SortOrder = updated.SortOrder;
+                entity.IsActive = updated.IsActive;
+                await db.SaveChangesAsync();
+            }
             await LoadData();
         }
     }
@@ -452,8 +460,13 @@
 
         if (result is not null && !result.Canceled)
         {
-            Db.BudgetCategories.Remove(category);
-            await Db.SaveChangesAsync();
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var entity = await db.BudgetCategories.FindAsync(category.Id);
+            if (entity is not null)
+            {
+                db.BudgetCategories.Remove(entity);
+                await db.SaveChangesAsync();
+            }
             await LoadData();
         }
     }
@@ -472,7 +485,8 @@
 
         if (result is not null && !result.Canceled && result.Data is TransactionDialog.TransactionResult data)
         {
-            Db.Transactions.Add(new Transaction
+            await using var db = await DbFactory.CreateDbContextAsync();
+            db.Transactions.Add(new Transaction
             {
                 Amount = data.Amount,
                 Date = data.Date,
@@ -482,7 +496,7 @@
                 GroupId = UserContext.ActiveGroupId,
                 Source = "Manual"
             });
-            await Db.SaveChangesAsync();
+            await db.SaveChangesAsync();
             await LoadData();
         }
     }
@@ -504,12 +518,17 @@
 
         if (result is not null && !result.Canceled && result.Data is TransactionDialog.TransactionResult data)
         {
-            txn.Amount = data.Amount;
-            txn.Date = data.Date;
-            txn.Description = data.Description;
-            txn.MerchantName = data.MerchantName;
-            txn.CategoryId = data.CategoryId;
-            await Db.SaveChangesAsync();
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var entity = await db.Transactions.FindAsync(txn.Id);
+            if (entity is not null)
+            {
+                entity.Amount = data.Amount;
+                entity.Date = data.Date;
+                entity.Description = data.Description;
+                entity.MerchantName = data.MerchantName;
+                entity.CategoryId = data.CategoryId;
+                await db.SaveChangesAsync();
+            }
             await LoadData();
         }
     }
@@ -531,8 +550,13 @@
 
         if (result is not null && !result.Canceled && result.Data is TransactionDialog.TransactionResult data)
         {
-            txn.CategoryId = data.CategoryId;
-            await Db.SaveChangesAsync();
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var entity = await db.Transactions.FindAsync(txn.Id);
+            if (entity is not null)
+            {
+                entity.CategoryId = data.CategoryId;
+                await db.SaveChangesAsync();
+            }
             await LoadData();
         }
     }
@@ -550,8 +574,13 @@
 
         if (result is not null && !result.Canceled)
         {
-            Db.Transactions.Remove(txn);
-            await Db.SaveChangesAsync();
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var entity = await db.Transactions.FindAsync(txn.Id);
+            if (entity is not null)
+            {
+                db.Transactions.Remove(entity);
+                await db.SaveChangesAsync();
+            }
             await LoadData();
         }
     }
@@ -661,6 +690,7 @@
 
         try
         {
+            await using var db = await DbFactory.CreateDbContextAsync();
             using var reader = new System.IO.StreamReader(file.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024));
             var headerLine = await reader.ReadLineAsync();
             if (headerLine is null)
@@ -731,7 +761,7 @@
 
                 var desc = descIdx < cols.Count ? cols[descIdx] : "Unknown";
 
-                Db.Transactions.Add(new Transaction
+                db.Transactions.Add(new Transaction
                 {
                     Amount = amount,
                     Date = date,
@@ -744,7 +774,7 @@
             }
 
             if (imported > 0)
-                await Db.SaveChangesAsync();
+                await db.SaveChangesAsync();
 
             Snackbar.Add($"Imported {imported} transactions" + (skipped > 0 ? $", skipped {skipped} rows" : ""), Severity.Success);
             await LoadData();

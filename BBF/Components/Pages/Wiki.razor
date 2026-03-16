@@ -6,7 +6,7 @@
 @using BBF.Data.Entities
 @using Microsoft.EntityFrameworkCore
 @using Markdig
-@inject ApplicationDbContext Db
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
 @inject NavigationManager Nav
 
 <PageTitle>Documentation - BBF</PageTitle>
@@ -224,7 +224,8 @@
 
     private async Task LoadArticles()
     {
-        _articles = await Db.WikiArticles
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _articles = await db.WikiArticles
             .OrderByDescending(a => a.UpdatedAt)
             .ToListAsync();
     }
@@ -256,10 +257,10 @@
     private void CancelEdit()
     {
         _editing = false;
-        // Reload to discard unsaved changes on existing articles
+        // Reload from list to discard unsaved changes
         if (_editArticle.Id != 0)
         {
-            Db.Entry(_editArticle).Reload();
+            _editArticle = _articles.FirstOrDefault(a => a.Id == _editArticle.Id) ?? _editArticle;
         }
     }
 
@@ -267,15 +268,20 @@
     {
         if (string.IsNullOrWhiteSpace(_editArticle.Title)) return;
 
+        await using var db = await DbFactory.CreateDbContextAsync();
         _editArticle.UpdatedAt = DateTime.UtcNow;
 
         if (_editArticle.Id == 0)
         {
             _editArticle.CreatedAt = DateTime.UtcNow;
-            Db.WikiArticles.Add(_editArticle);
+            db.WikiArticles.Add(_editArticle);
+        }
+        else
+        {
+            db.WikiArticles.Update(_editArticle);
         }
 
-        await Db.SaveChangesAsync();
+        await db.SaveChangesAsync();
         _editing = false;
         _viewArticle = _editArticle;
         await LoadArticles();
@@ -284,8 +290,13 @@
 
     private async Task DeleteArticle(WikiArticle article)
     {
-        Db.WikiArticles.Remove(article);
-        await Db.SaveChangesAsync();
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var entity = await db.WikiArticles.FindAsync(article.Id);
+        if (entity is not null)
+        {
+            db.WikiArticles.Remove(entity);
+            await db.SaveChangesAsync();
+        }
         await LoadArticles();
 
         if (_viewArticle?.Id == article.Id)

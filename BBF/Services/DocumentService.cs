@@ -4,10 +4,10 @@ using Microsoft.EntityFrameworkCore;
 
 namespace BBF.Services;
 
-public class DocumentService(ApplicationDbContext db, IConfiguration config)
+public class DocumentService
 {
-    private readonly string _storagePath = config["Documents:StoragePath"]
-        ?? Path.Combine(AppContext.BaseDirectory, "DocumentStorage");
+    private readonly IDbContextFactory<ApplicationDbContext> _dbFactory;
+    private readonly string _storagePath;
 
     private static readonly HashSet<string> AllowedExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -24,6 +24,13 @@ public class DocumentService(ApplicationDbContext db, IConfiguration config)
         // Other
         ".html", ".css", ".js"
     };
+
+    public DocumentService(IDbContextFactory<ApplicationDbContext> dbFactory, IConfiguration config)
+    {
+        _dbFactory = dbFactory;
+        _storagePath = config["Documents:StoragePath"]
+            ?? Path.Combine(AppContext.BaseDirectory, "DocumentStorage");
+    }
 
     public string StoragePath => _storagePath;
 
@@ -62,6 +69,7 @@ public class DocumentService(ApplicationDbContext db, IConfiguration config)
             UploadedAt = DateTime.UtcNow
         };
 
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
         db.Documents.Add(doc);
         await db.SaveChangesAsync(ct);
         return doc;
@@ -69,6 +77,7 @@ public class DocumentService(ApplicationDbContext db, IConfiguration config)
 
     public async Task<List<Document>> GetAllAsync(CancellationToken ct = default)
     {
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
         return await db.Documents
             .OrderByDescending(d => d.UploadedAt)
             .ToListAsync(ct);
@@ -76,6 +85,7 @@ public class DocumentService(ApplicationDbContext db, IConfiguration config)
 
     public async Task<Document?> GetByIdAsync(int id, CancellationToken ct = default)
     {
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
         return await db.Documents.FindAsync([id], ct);
     }
 
@@ -87,6 +97,7 @@ public class DocumentService(ApplicationDbContext db, IConfiguration config)
 
     public async Task<bool> DeleteAsync(int id, CancellationToken ct = default)
     {
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
         var doc = await db.Documents.FindAsync([id], ct);
         if (doc is null) return false;
 
@@ -101,6 +112,7 @@ public class DocumentService(ApplicationDbContext db, IConfiguration config)
 
     public async Task UpdateAsync(Document doc, CancellationToken ct = default)
     {
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
         db.Documents.Update(doc);
         await db.SaveChangesAsync(ct);
     }

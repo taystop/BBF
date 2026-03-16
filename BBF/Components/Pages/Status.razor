@@ -5,7 +5,7 @@
 @using BBF.Data.Entities
 @using BBF.Services
 @using Microsoft.EntityFrameworkCore
-@inject ApplicationDbContext Db
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
 @inject HealthCheckService HealthChecker
 
 <PageTitle>Status - BBF</PageTitle>
@@ -194,13 +194,14 @@
 
     private async Task LoadData()
     {
-        _services = await Db.ServiceLinks
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _services = await db.ServiceLinks
             .Include(s => s.HealthLogs.OrderByDescending(h => h.CheckedAt).Take(100))
             .Where(s => s.IsActive && s.HealthCheckUrl != null && s.HealthCheckUrl != "")
             .OrderBy(s => s.SortOrder)
             .ToListAsync();
 
-        _recentLogs = await Db.ServiceHealthLogs
+        _recentLogs = await db.ServiceHealthLogs
             .Include(h => h.ServiceLink)
             .OrderByDescending(h => h.CheckedAt)
             .Take(20)

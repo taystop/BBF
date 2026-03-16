@@ -5,7 +5,7 @@
 @using BBF.Data.Entities
 @using BBF.Services
 @using Microsoft.EntityFrameworkCore
-@inject ApplicationDbContext Db
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
 @inject IDialogService DialogService
 @inject HealthCheckService HealthChecker
 
@@ -123,7 +123,8 @@
 
     private async Task LoadServices()
     {
-        _services = await Db.ServiceLinks
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _services = await db.ServiceLinks
             .Include(s => s.HealthLogs.OrderByDescending(h => h.CheckedAt).Take(1))
             .Where(s => s.IsActive)
             .OrderBy(s => s.SortOrder)
@@ -138,8 +139,9 @@
 
         if (result is not null && !result.Canceled && result.Data is ServiceLink newService)
         {
-            Db.ServiceLinks.Add(newService);
-            await Db.SaveChangesAsync();
+            await using var db = await DbFactory.CreateDbContextAsync();
+            db.ServiceLinks.Add(newService);
+            await db.SaveChangesAsync();
             await LoadServices();
         }
     }
@@ -152,7 +154,9 @@
 
         if (result is not null && !result.Canceled)
         {
-            await Db.SaveChangesAsync();
+            await using var db = await DbFactory.CreateDbContextAsync();
+            db.ServiceLinks.Update(svc);
+            await db.SaveChangesAsync();
             await LoadServices();
         }
     }
@@ -170,8 +174,13 @@
 
         if (result is not null && !result.Canceled)
         {
-            Db.ServiceLinks.Remove(svc);
-            await Db.SaveChangesAsync();
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var entity = await db.ServiceLinks.FindAsync(svc.Id);
+            if (entity is not null)
+            {
+                db.ServiceLinks.Remove(entity);
+                await db.SaveChangesAsync();
+            }
             await LoadServices();
         }
     }

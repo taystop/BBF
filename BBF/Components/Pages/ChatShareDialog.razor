@@ -1,7 +1,7 @@
 @using BBF.Data
 @using BBF.Data.Entities
 @using Microsoft.EntityFrameworkCore
-@inject ApplicationDbContext Db
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
 
 <MudDialog>
     <DialogContent>
@@ -69,11 +69,18 @@
 
     private async Task Save()
     {
+        await using var db = await DbFactory.CreateDbContextAsync();
+
         // Remove shares that were unchecked
-        var toRemove = CurrentShares
+        var toRemoveIds = CurrentShares
             .Where(s => s.SharedWithGroupId.HasValue && !_sharedGroupIds.Contains(s.SharedWithGroupId.Value))
+            .Select(s => s.Id)
             .ToList();
-        Db.ChatConversationShares.RemoveRange(toRemove);
+        if (toRemoveIds.Any())
+        {
+            var toRemove = await db.ChatConversationShares.Where(s => toRemoveIds.Contains(s.Id)).ToListAsync();
+            db.ChatConversationShares.RemoveRange(toRemove);
+        }
 
         // Add new shares
         var existingGroupIds = CurrentShares
@@ -83,7 +90,7 @@
 
         foreach (var groupId in _sharedGroupIds.Where(id => !existingGroupIds.Contains(id)))
         {
-            Db.ChatConversationShares.Add(new ChatConversationShare
+            db.ChatConversationShares.Add(new ChatConversationShare
             {
                 ConversationId = ConversationId,
                 SharedWithGroupId = groupId,
@@ -91,7 +98,7 @@
             });
         }
 
-        await Db.SaveChangesAsync();
+        await db.SaveChangesAsync();
         MudDialog.Close(DialogResult.Ok(true));
     }
 

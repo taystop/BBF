@@ -29,8 +29,6 @@ builder.Services.AddAuthentication(options =>
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection") ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
 builder.Services.AddDbContextFactory<ApplicationDbContext>(options =>
     options.UseSqlServer(connectionString));
-builder.Services.AddDbContext<ApplicationDbContext>(options =>
-    options.UseSqlServer(connectionString));
 builder.Services.AddDatabaseDeveloperPageExceptionFilter();
 
 builder.Services.AddIdentityCore<ApplicationUser>(options =>
@@ -131,7 +129,7 @@ app.MapPost("/api/plaid/exchange-token", async (PlaidService plaid, PlaidExchang
 }).RequireAuthorization().DisableAntiforgery();
 
 // One-time data migration endpoint: assigns existing data to admin user/default group
-app.MapPost("/api/admin/migrate-tenancy", async (ApplicationDbContext db, System.Security.Claims.ClaimsPrincipal user) =>
+app.MapPost("/api/admin/migrate-tenancy", async (IDbContextFactory<ApplicationDbContext> dbFactory, System.Security.Claims.ClaimsPrincipal user) =>
 {
     var userId = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
     if (userId is null) return Results.Unauthorized();
@@ -141,6 +139,8 @@ app.MapPost("/api/admin/migrate-tenancy", async (ApplicationDbContext db, System
     var appUser = await userManager.FindByIdAsync(userId);
     if (appUser is null || !await userManager.IsInRoleAsync(appUser, "Admin"))
         return Results.Forbid();
+
+    await using var db = await dbFactory.CreateDbContextAsync();
 
     // Find or create user's first group
     var group = await db.UserGroupMembers

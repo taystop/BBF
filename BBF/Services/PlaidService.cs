@@ -13,11 +13,11 @@ namespace BBF.Services;
 public class PlaidService
 {
     private readonly PlaidClient _client;
-    private readonly ApplicationDbContext _db;
+    private readonly IDbContextFactory<ApplicationDbContext> _dbFactory;
 
-    public PlaidService(IConfiguration config, ApplicationDbContext db)
+    public PlaidService(IConfiguration config, IDbContextFactory<ApplicationDbContext> dbFactory)
     {
-        _db = db;
+        _dbFactory = dbFactory;
 
         _redirectUri = config["Plaid:RedirectUri"] ?? "";
 
@@ -73,8 +73,9 @@ public class PlaidService
             CreatedAt = DateTime.UtcNow
         };
 
-        _db.PlaidConnections.Add(connection);
-        await _db.SaveChangesAsync();
+        await using var db = await _dbFactory.CreateDbContextAsync();
+        db.PlaidConnections.Add(connection);
+        await db.SaveChangesAsync();
 
         // Fetch and store linked accounts
         await SyncAccountsAsync(connection);
@@ -92,7 +93,9 @@ public class PlaidService
         if (response.Error is not null)
             throw new Exception($"Plaid error: {response.Error.ErrorMessage}");
 
-        var existingAccounts = await _db.PlaidAccounts
+        await using var db = await _dbFactory.CreateDbContextAsync();
+
+        var existingAccounts = await db.PlaidAccounts
             .Where(a => a.PlaidConnectionId == connection.Id)
             .ToListAsync();
 
@@ -110,7 +113,7 @@ public class PlaidService
             }
             else
             {
-                _db.PlaidAccounts.Add(new PlaidAccount
+                db.PlaidAccounts.Add(new PlaidAccount
                 {
                     PlaidConnectionId = connection.Id,
                     PlaidAccountId = account.AccountId,
@@ -124,18 +127,21 @@ public class PlaidService
             }
         }
 
-        await _db.SaveChangesAsync();
+        await db.SaveChangesAsync();
     }
 
     public async Task<int> SyncTransactionsAsync(PlaidConnection connection)
     {
+        // SyncTransactionsAsync is long-running with multiple operations - use a single context
+        await using var db = await _dbFactory.CreateDbContextAsync();
+
         // Ensure accounts are populated
-        var accountCount = await _db.PlaidAccounts.CountAsync(a => a.PlaidConnectionId == connection.Id);
+        var accountCount = await db.PlaidAccounts.CountAsync(a => a.PlaidConnectionId == connection.Id);
         if (accountCount == 0)
             await SyncAccountsAsync(connection);
 
         // Build account lookup for display names
-        var accounts = await _db.PlaidAccounts
+        var accounts = await db.PlaidAccounts
             .Where(a => a.PlaidConnectionId == connection.Id)
             .ToDictionaryAsync(a => a.PlaidAccountId, a => a.DisplayName);
 
@@ -162,16 +168,16 @@ public class PlaidService
             {
                 if (txn.TransactionId is null) continue;
 
-                var exists = await _db.Transactions
+                var exists = await db.Transactions
                     .AnyAsync(t => t.PlaidTransactionId == txn.TransactionId);
                 if (exists) continue;
 
-                var category = await MatchCategoryAsync(txn, connection.GroupId);
+                var category = await MatchCategoryAsync(db, txn, connection.GroupId);
                 var source = txn.AccountId is not null && accounts.TryGetValue(txn.AccountId, out var acctName)
                     ? acctName
                     : connection.InstitutionName;
 
-                _db.Transactions.Add(new Data.Entities.Transaction
+                db.Transactions.Add(new Data.Entities.Transaction
                 {
                     PlaidTransactionId = txn.TransactionId,
                     Amount = (decimal)(txn.Amount ?? 0), // Plaid: positive = money out, negative = money in
@@ -191,7 +197,7 @@ public class PlaidService
             {
                 if (txn.TransactionId is null) continue;
 
-                var existing = await _db.Transactions
+                var existing = await db.Transactions
                     .FirstOrDefaultAsync(t => t.PlaidTransactionId == txn.TransactionId);
                 if (existing is null) continue;
 
@@ -209,10 +215,10 @@ public class PlaidService
             {
                 if (removed.TransactionId is null) continue;
 
-                var existing = await _db.Transactions
+                var existing = await db.Transactions
                     .FirstOrDefaultAsync(t => t.PlaidTransactionId == removed.TransactionId);
                 if (existing is not null)
-                    _db.Transactions.Remove(existing);
+                    db.Transactions.Remove(existing);
             }
 
             connection.Cursor = response.NextCursor;
@@ -220,13 +226,14 @@ public class PlaidService
             hasMore = response.HasMore;
         }
 
-        await _db.SaveChangesAsync();
+        await db.SaveChangesAsync();
         return added;
     }
 
     public async Task<List<PlaidConnection>> GetConnectionsAsync(int groupId)
     {
-        return await _db.PlaidConnections
+        await using var db = await _dbFactory.CreateDbContextAsync();
+        return await db.PlaidConnections
             .Include(c => c.Accounts)
             .Where(c => c.IsActive && c.GroupId == groupId)
             .OrderBy(c => c.InstitutionName)
@@ -235,16 +242,18 @@ public class PlaidService
 
     public async Task UpdateAccountNameAsync(int accountId, string customName)
     {
-        var account = await _db.PlaidAccounts.FindAsync(accountId);
+        await using var db = await _dbFactory.CreateDbContextAsync();
+        var account = await db.PlaidAccounts.FindAsync(accountId);
         if (account is null) return;
 
         account.CustomName = string.IsNullOrWhiteSpace(customName) ? null : customName.Trim();
-        await _db.SaveChangesAsync();
+        await db.SaveChangesAsync();
     }
 
     public async Task RemoveConnectionAsync(int connectionId)
     {
-        var connection = await _db.PlaidConnections.FindAsync(connectionId);
+        await using var db = await _dbFactory.CreateDbContextAsync();
+        var connection = await db.PlaidConnections.FindAsync(connectionId);
         if (connection is null) return;
 
         try
@@ -257,21 +266,21 @@ public class PlaidService
         catch { /* Best effort removal from Plaid */ }
 
         connection.IsActive = false;
-        await _db.SaveChangesAsync();
+        await db.SaveChangesAsync();
     }
 
-    private async Task<BudgetCategory?> MatchCategoryAsync(Going.Plaid.Entity.Transaction txn, int? groupId)
+    private static async Task<BudgetCategory?> MatchCategoryAsync(ApplicationDbContext db, Going.Plaid.Entity.Transaction txn, int? groupId)
     {
         // Try to match by merchant name against existing categorized transactions within the same group
         if (!string.IsNullOrEmpty(txn.MerchantName))
         {
-            var previousMatch = await _db.Transactions
+            var previousMatch = await db.Transactions
                 .Where(t => t.MerchantName == txn.MerchantName && t.CategoryId != null && t.GroupId == groupId)
                 .OrderByDescending(t => t.Date)
                 .FirstOrDefaultAsync();
 
             if (previousMatch?.CategoryId is not null)
-                return await _db.BudgetCategories.FindAsync(previousMatch.CategoryId);
+                return await db.BudgetCategories.FindAsync(previousMatch.CategoryId);
         }
 
         return null;
