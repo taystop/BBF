@@ -6,11 +6,11 @@ namespace BBF.Services;
 
 public class UserContextService
 {
-    private readonly ApplicationDbContext _db;
+    private readonly IDbContextFactory<ApplicationDbContext> _dbFactory;
 
-    public UserContextService(ApplicationDbContext db)
+    public UserContextService(IDbContextFactory<ApplicationDbContext> dbFactory)
     {
-        _db = db;
+        _dbFactory = dbFactory;
     }
 
     public string? UserId { get; private set; }
@@ -26,8 +26,10 @@ public class UserContextService
 
         UserId = userId;
 
+        await using var db = await _dbFactory.CreateDbContextAsync();
+
         // Load user's groups
-        Groups = await _db.UserGroupMembers
+        Groups = await db.UserGroupMembers
             .Where(m => m.UserId == userId)
             .Include(m => m.Group)
             .Select(m => m.Group)
@@ -37,7 +39,7 @@ public class UserContextService
         // Auto-create "Personal" group if user has no groups
         if (Groups.Count == 0)
         {
-            var user = await _db.Users.FindAsync(userId);
+            var user = await db.Users.FindAsync(userId);
             var displayName = user?.UserName ?? "User";
 
             var personalGroup = new UserGroup
@@ -45,17 +47,17 @@ public class UserContextService
                 Name = $"{displayName}'s Budget",
                 CreatedAt = DateTime.UtcNow
             };
-            _db.UserGroups.Add(personalGroup);
-            await _db.SaveChangesAsync();
+            db.UserGroups.Add(personalGroup);
+            await db.SaveChangesAsync();
 
-            _db.UserGroupMembers.Add(new UserGroupMember
+            db.UserGroupMembers.Add(new UserGroupMember
             {
                 GroupId = personalGroup.Id,
                 UserId = userId,
                 Role = "Owner",
                 JoinedAt = DateTime.UtcNow
             });
-            await _db.SaveChangesAsync();
+            await db.SaveChangesAsync();
 
             Groups = [personalGroup];
         }
@@ -78,7 +80,9 @@ public class UserContextService
     {
         if (UserId is null) return;
 
-        Groups = await _db.UserGroupMembers
+        await using var db = await _dbFactory.CreateDbContextAsync();
+
+        Groups = await db.UserGroupMembers
             .Where(m => m.UserId == UserId)
             .Include(m => m.Group)
             .Select(m => m.Group)
