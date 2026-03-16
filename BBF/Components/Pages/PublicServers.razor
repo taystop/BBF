@@ -1,0 +1,206 @@
+@page "/servers"
+@using BBF.Services
+@inject AmpService Amp
+@implements IDisposable
+
+<PageTitle>Game Servers - BBF</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="py-4">
+    <MudStack AlignItems="AlignItems.Center" Class="mb-6">
+        <MudImage Src="images/LogoIconNB.png" Width="64" Alt="BBF" />
+        <MudText Typo="Typo.h4" Align="Align.Center">Game Servers</MudText>
+        <MudText Typo="Typo.body2" Color="Color.Secondary" Align="Align.Center">
+            Live status &middot; auto-refreshes every 30s
+        </MudText>
+    </MudStack>
+
+    @if (_loading && !_instances.Any())
+    {
+        <MudStack AlignItems="AlignItems.Center" Class="pa-8">
+            <MudProgressCircular Color="Color.Primary" Indeterminate Size="Size.Large" />
+            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mt-3">Loading servers...</MudText>
+        </MudStack>
+    }
+    else if (_instances.Any())
+    {
+        <MudGrid Justify="Justify.Center">
+            @foreach (var inst in _instances)
+            {
+                var status = _statuses.GetValueOrDefault(inst.InstanceId);
+                var isOnline = status?.IsOnline == true;
+
+                <MudItem xs="12" sm="6" md="4">
+                    <MudCard Elevation="3" Class="server-card">
+                        <MudCardHeader>
+                            <CardHeaderAvatar>
+                                <MudAvatar Size="Size.Large"
+                                           Color="@(isOnline ? Color.Success : Color.Default)"
+                                           Variant="Variant.Outlined">
+                                    <MudIcon Icon="@GetGameIcon(inst.Module)" />
+                                </MudAvatar>
+                            </CardHeaderAvatar>
+                            <CardHeaderContent>
+                                <MudText Typo="Typo.h6">@inst.FriendlyName</MudText>
+                                <MudStack Row AlignItems="AlignItems.Center" Spacing="1">
+                                    <MudIcon Icon="@Icons.Material.Filled.Circle" Size="Size.Small"
+                                             Color="@(isOnline ? Color.Success : Color.Error)"
+                                             Style="font-size: 10px;" />
+                                    <MudText Typo="Typo.body2" Color="@(isOnline ? Color.Success : Color.Error)">
+                                        @(status?.StateName ?? (inst.IsRunning ? "Running" : "Offline"))
+                                    </MudText>
+                                </MudStack>
+                            </CardHeaderContent>
+                            <CardHeaderActions>
+                                <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined"
+                                         Color="Color.Primary">
+                                    @inst.GameType
+                                </MudChip>
+                            </CardHeaderActions>
+                        </MudCardHeader>
+
+                        <MudCardContent>
+                            @if (isOnline && status is not null)
+                            {
+                                <MudStack Spacing="2">
+                                    @* Players *@
+                                    <MudStack Row AlignItems="AlignItems.Center" Spacing="2">
+                                        <MudIcon Icon="@Icons.Material.Filled.People" Size="Size.Small" Color="Color.Primary" />
+                                        <MudText Typo="Typo.body1" Style="font-weight: 600;">
+                                            @status.ActiveUsers / @status.MaxUsers
+                                        </MudText>
+                                        <MudText Typo="Typo.body2" Color="Color.Secondary">players</MudText>
+                                    </MudStack>
+
+                                    @if (status.ActiveUsers > 0 && status.MaxUsers > 0)
+                                    {
+                                        <MudProgressLinear Value="@((double)status.ActiveUsers / status.MaxUsers * 100)"
+                                                          Color="Color.Primary" Size="Size.Small" Rounded />
+                                    }
+
+                                    @* Uptime *@
+                                    @if (status.Uptime is not null)
+                                    {
+                                        <MudStack Row AlignItems="AlignItems.Center" Spacing="2">
+                                            <MudIcon Icon="@Icons.Material.Filled.Timer" Size="Size.Small" Color="Color.Secondary" />
+                                            <MudText Typo="Typo.body2" Color="Color.Secondary">
+                                                Uptime: @status.Uptime
+                                            </MudText>
+                                        </MudStack>
+                                    }
+
+                                    @* Connection *@
+                                    @if (inst.Endpoint is not null)
+                                    {
+                                        <MudPaper Class="pa-2 mt-1" Elevation="0"
+                                                  Style="background: var(--mud-palette-surface); border-radius: 4px;">
+                                            <MudStack Row AlignItems="AlignItems.Center" Spacing="2" Style="flex-wrap: wrap;">
+                                                <MudIcon Icon="@Icons.Material.Filled.Link" Size="Size.Small" Color="Color.Secondary" />
+                                                <MudText Typo="Typo.body2" Style="font-family: monospace; flex: 1; min-width: 0; word-break: break-all;">
+                                                    @inst.Endpoint
+                                                </MudText>
+                                            </MudStack>
+                                        </MudPaper>
+                                    }
+                                </MudStack>
+                            }
+                            else
+                            {
+                                <MudStack AlignItems="AlignItems.Center" Class="py-2">
+                                    <MudIcon Icon="@Icons.Material.Filled.PowerOff" Size="Size.Large" Color="Color.Secondary" />
+                                    <MudText Typo="Typo.body2" Color="Color.Secondary">Server is offline</MudText>
+                                </MudStack>
+                            }
+                        </MudCardContent>
+                    </MudCard>
+                </MudItem>
+            }
+        </MudGrid>
+
+        @if (_loading)
+        {
+            <MudProgressLinear Color="Color.Primary" Indeterminate Size="Size.Small" Class="mt-4" />
+        }
+    }
+    else
+    {
+        <MudPaper Class="pa-8 text-center" Elevation="2">
+            <MudIcon Icon="@Icons.Material.Filled.SportsEsports" Size="Size.Large" Color="Color.Secondary" Class="mb-3" />
+            <MudText Typo="Typo.h6" Color="Color.Secondary">No game servers available</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary">Check back later.</MudText>
+        </MudPaper>
+    }
+</MudContainer>
+
+<style>
+    .server-card {
+        height: 100%;
+        transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    .server-card:hover {
+        transform: translateY(-2px);
+    }
+</style>
+
+@code {
+    private List<AmpInstance> _instances = [];
+    private Dictionary<string, AmpInstanceStatus> _statuses = [];
+    private bool _loading = true;
+    private Timer? _refreshTimer;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+
+        // Auto-refresh every 30 seconds
+        _refreshTimer = new Timer(async _ =>
+        {
+            await InvokeAsync(async () =>
+            {
+                await LoadData();
+                StateHasChanged();
+            });
+        }, null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
+    }
+
+    private async Task LoadData()
+    {
+        _loading = true;
+
+        try
+        {
+            _instances = await Amp.GetInstancesAsync();
+
+            // Filter to only game servers (not the ADS manager) for public view
+            _instances = _instances.Where(i => i.Module != "ADS").ToList();
+
+            var statusTasks = _instances.Select(async inst =>
+            {
+                var status = await Amp.GetInstanceStatusAsync(inst.InstanceId);
+                return (inst.InstanceId, status);
+            });
+
+            var results = await Task.WhenAll(statusTasks);
+            _statuses = results
+                .Where(r => r.status is not null)
+                .ToDictionary(r => r.InstanceId, r => r.status!);
+        }
+        catch
+        {
+            // Silently handle connection failures on public page
+        }
+
+        _loading = false;
+    }
+
+    private static string GetGameIcon(string module) => module switch
+    {
+        "Minecraft" => Icons.Material.Filled.Terrain,
+        _ => Icons.Material.Filled.SportsEsports
+    };
+
+    public void Dispose()
+    {
+        _refreshTimer?.Dispose();
+    }
+}
