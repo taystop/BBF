@@ -1,6 +1,11 @@
 window.plaidLink = {
     open: async function (dotNetRef, groupId) {
         try {
+            // Store groupId for OAuth redirect callback
+            if (groupId != null) {
+                sessionStorage.setItem('plaid_groupId', groupId);
+            }
+
             const response = await fetch('/api/plaid/create-link-token', { method: 'POST' });
             const data = await response.json();
 
@@ -35,6 +40,11 @@ window.plaidLink = {
 
     handleOAuthCallback: async function (currentUri) {
         try {
+            // Recover groupId from before the OAuth redirect
+            const storedGroupId = sessionStorage.getItem('plaid_groupId');
+            const groupId = storedGroupId ? parseInt(storedGroupId, 10) : null;
+            sessionStorage.removeItem('plaid_groupId');
+
             const response = await fetch('/api/plaid/create-link-token', { method: 'POST' });
             const data = await response.json();
 
@@ -50,7 +60,7 @@ window.plaidLink = {
                             publicToken: publicToken,
                             institutionName: institution.name,
                             institutionId: institution.institution_id,
-                            groupId: null
+                            groupId: groupId
                         })
                     });
                     window.location.href = '/budget';

@@ -17,6 +17,7 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
     public DbSet<BudgetCategory> BudgetCategories => Set<BudgetCategory>();
     public DbSet<Transaction> Transactions => Set<Transaction>();
     public DbSet<PlaidConnection> PlaidConnections => Set<PlaidConnection>();
+    public DbSet<PlaidAccount> PlaidAccounts => Set<PlaidAccount>();
     public DbSet<UserGroup> UserGroups => Set<UserGroup>();
     public DbSet<UserGroupMember> UserGroupMembers => Set<UserGroupMember>();
 
@@ -97,6 +98,16 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
              .WithMany()
              .HasForeignKey(p => p.GroupId)
              .OnDelete(DeleteBehavior.SetNull);
+
+            e.HasMany(p => p.Accounts)
+             .WithOne(a => a.Connection)
+             .HasForeignKey(a => a.PlaidConnectionId)
+             .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<PlaidAccount>(e =>
+        {
+            e.HasIndex(a => a.PlaidAccountId).IsUnique();
         });
 
         // UserGroup -> UserGroupMember (cascade delete)

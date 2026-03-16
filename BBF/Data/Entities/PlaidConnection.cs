@@ -14,4 +14,6 @@ public class PlaidConnection
 
     public int? GroupId { get; set; }
     public UserGroup? Group { get; set; }
+
+    public ICollection<PlaidAccount> Accounts { get; set; } = [];
 }

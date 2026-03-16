@@ -1,6 +1,7 @@
 using BBF.Data;
 using BBF.Data.Entities;
 using Going.Plaid;
+using Going.Plaid.Accounts;
 using Going.Plaid.Entity;
 using Going.Plaid.Item;
 using Going.Plaid.Link;
@@ -74,11 +75,70 @@ public class PlaidService
 
         _db.PlaidConnections.Add(connection);
         await _db.SaveChangesAsync();
+
+        // Fetch and store linked accounts
+        await SyncAccountsAsync(connection);
+
         return connection;
+    }
+
+    public async Task SyncAccountsAsync(PlaidConnection connection)
+    {
+        var response = await _client.AccountsGetAsync(new AccountsGetRequest
+        {
+            AccessToken = connection.AccessToken
+        });
+
+        if (response.Error is not null)
+            throw new Exception($"Plaid error: {response.Error.ErrorMessage}");
+
+        var existingAccounts = await _db.PlaidAccounts
+            .Where(a => a.PlaidConnectionId == connection.Id)
+            .ToListAsync();
+
+        foreach (var account in response.Accounts)
+        {
+            var existing = existingAccounts.FirstOrDefault(a => a.PlaidAccountId == account.AccountId);
+            if (existing is not null)
+            {
+                // Update metadata but preserve custom name
+                existing.Name = account.Name;
+                existing.OfficialName = account.OfficialName;
+                existing.Mask = account.Mask;
+                existing.Type = account.Type.ToString();
+                existing.Subtype = account.Subtype?.ToString();
+            }
+            else
+            {
+                _db.PlaidAccounts.Add(new PlaidAccount
+                {
+                    PlaidConnectionId = connection.Id,
+                    PlaidAccountId = account.AccountId,
+                    Name = account.Name,
+                    OfficialName = account.OfficialName,
+                    Mask = account.Mask,
+                    Type = account.Type.ToString(),
+                    Subtype = account.Subtype?.ToString(),
+                    IsActive = true
+                });
+            }
+        }
+
+        await _db.SaveChangesAsync();
     }
 
     public async Task<int> SyncTransactionsAsync(PlaidConnection connection)
     {
+        // Ensure accounts are populated
+        var accountCount = await _db.PlaidAccounts.CountAsync(a => a.PlaidConnectionId == connection.Id);
+        if (accountCount == 0)
+            await SyncAccountsAsync(connection);
+
+        // Build account lookup for display names
+        var accounts = await _db.PlaidAccounts
+            .Where(a => a.PlaidConnectionId == connection.Id)
+            .ToDictionaryAsync(a => a.PlaidAccountId, a => a.DisplayName);
+
         var added = 0;
         var hasMore = true;
 
@@ -107,17 +167,20 @@ public class PlaidService
                 if (exists) continue;
 
                 var category = await MatchCategoryAsync(txn, connection.GroupId);
+                var source = txn.AccountId is not null && accounts.TryGetValue(txn.AccountId, out var acctName)
+                    ? acctName
+                    : connection.InstitutionName;
 
                 _db.Transactions.Add(new Data.Entities.Transaction
                 {
                     PlaidTransactionId = txn.TransactionId,
-                    Amount = (decimal)(txn.Amount ?? 0) * -1, // Plaid uses negative for income
+                    Amount = (decimal)(txn.Amount ?? 0), // Plaid: positive = money out, negative = money in
                     Date = txn.Date?.ToDateTime(TimeOnly.MinValue) ?? DateTime.UtcNow,
-                    Description = txn.MerchantName ?? txn.OriginalDescription ?? "Unknown",
+                    Description = txn.MerchantName ?? txn.Name ?? txn.OriginalDescription ?? "Unknown",
                     MerchantName = txn.MerchantName,
                     CategoryId = category?.Id,
                     GroupId = connection.GroupId,
-                    Source = "Plaid",
+                    Source = source,
                     CreatedAt = DateTime.UtcNow
                 });
                 added++;
@@ -132,10 +195,13 @@ public class PlaidService
                     .FirstOrDefaultAsync(t => t.PlaidTransactionId == txn.TransactionId);
                 if (existing is null) continue;
 
-                existing.Amount = (decimal)(txn.Amount ?? 0) * -1;
+                existing.Amount = (decimal)(txn.Amount ?? 0);
                 existing.Date = txn.Date?.ToDateTime(TimeOnly.MinValue) ?? existing.Date;
-                existing.Description = txn.MerchantName ?? txn.OriginalDescription ?? existing.Description;
+                existing.Description = txn.MerchantName ?? txn.Name ?? txn.OriginalDescription ?? existing.Description;
                 existing.MerchantName = txn.MerchantName ?? existing.MerchantName;
+
+                if (txn.AccountId is not null && accounts.TryGetValue(txn.AccountId, out var modAcctName))
+                    existing.Source = modAcctName;
             }
 
             // Handle removed transactions
@@ -161,9 +227,19 @@ public class PlaidService
     public async Task<List<PlaidConnection>> GetConnectionsAsync(int groupId)
     {
         return await _db.PlaidConnections
+            .Include(c => c.Accounts)
             .Where(c => c.IsActive && c.GroupId == groupId)
             .OrderBy(c => c.InstitutionName)
             .ToListAsync();
+    }
+
+    public async Task UpdateAccountNameAsync(int accountId, string customName)
+    {
+        var account = await _db.PlaidAccounts.FindAsync(accountId);
+        if (account is null) return;
+
+        account.CustomName = string.IsNullOrWhiteSpace(customName) ? null : customName.Trim();
+        await _db.SaveChangesAsync();
     }
 
     public async Task RemoveConnectionAsync(int connectionId)

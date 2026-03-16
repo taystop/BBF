@@ -215,10 +215,10 @@
                 </MudPaper>
             </MudTabPanel>
 
-            <MudTabPanel Text="Bank Connections" Icon="@Icons.Material.Filled.AccountBalance">
+            <MudTabPanel Text="Linked Accounts" Icon="@Icons.Material.Filled.AccountBalance">
                 <MudPaper Class="pa-4" Elevation="0">
                     <MudStack Row AlignItems="AlignItems.Center" Class="mb-3">
-                        <MudText Typo="Typo.h6">Connected Accounts</MudText>
+                        <MudText Typo="Typo.h6">Linked Accounts</MudText>
                         <MudSpacer />
                         <MudButton Variant="Variant.Filled" Color="Color.Primary"
                                    StartIcon="@Icons.Material.Filled.AddLink" OnClick="ConnectBank">
@@ -230,13 +230,14 @@
                     {
                         @foreach (var conn in _connections)
                         {
-                            <MudPaper Class="pa-3 mb-2" Elevation="1">
-                                <MudStack Row AlignItems="AlignItems.Center">
+                            <MudPaper Class="pa-4 mb-3" Elevation="1">
+                                <MudStack Row AlignItems="AlignItems.Center" Class="mb-2">
                                     <MudIcon Icon="@Icons.Material.Filled.AccountBalance" Color="Color.Primary" />
                                     <MudStack Spacing="0">
-                                        <MudText Typo="Typo.subtitle2">@conn.InstitutionName</MudText>
+                                        <MudText Typo="Typo.subtitle1" Style="font-weight: 600;">@conn.InstitutionName</MudText>
                                         <MudText Typo="Typo.caption" Color="Color.Secondary">
                                             Last synced: @(conn.LastSynced?.ToLocalTime().ToString("g") ?? "Never")
+                                            &middot; @conn.Accounts.Count(a => a.IsActive) account@(conn.Accounts.Count(a => a.IsActive) != 1 ? "s" : "")
                                         </MudText>
                                     </MudStack>
                                     <MudSpacer />
@@ -245,6 +246,39 @@
                                         Disconnect
                                     </MudButton>
                                 </MudStack>
+
+                                @foreach (var acct in conn.Accounts.Where(a => a.IsActive).OrderBy(a => a.Type))
+                                {
+                                    <MudPaper Class="pa-3 mb-1 ml-6" Elevation="0" Style="border: 1px solid var(--mud-palette-lines-default); border-radius: 4px;">
+                                        <MudStack Row AlignItems="AlignItems.Center" Spacing="3">
+                                            <MudIcon Icon="@GetAccountIcon(acct.Type)" Size="Size.Small" Color="Color.Secondary" />
+                                            <MudStack Spacing="0" Style="min-width: 150px;">
+                                                <MudText Typo="Typo.body2" Style="font-weight: 600;">
+                                                    @acct.DisplayName
+                                                </MudText>
+                                                <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                                    @(acct.Subtype ?? acct.Type)@(acct.Mask is not null ? $" ····{acct.Mask}" : "")
+                                                </MudText>
+                                            </MudStack>
+                                            <MudSpacer />
+                                            <MudTextField @bind-Value="acct.CustomName"
+                                                          Placeholder="@(acct.OfficialName ?? acct.Name)"
+                                                          Variant="Variant.Outlined" Dense Margin="Margin.Dense"
+                                                          Label="Custom Name"
+                                                          Style="max-width: 220px;"
+                                                          Adornment="Adornment.End"
+                                                          AdornmentIcon="@Icons.Material.Filled.Save"
+                                                          OnAdornmentClick="@(() => SaveAccountName(acct))" />
+                                        </MudStack>
+                                    </MudPaper>
+                                }
+
+                                @if (!conn.Accounts.Any(a => a.IsActive))
+                                {
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary" Class="ml-6 mt-1">
+                                        No accounts found. Sync to fetch account details.
+                                    </MudText>
+                                }
                             </MudPaper>
                         }
                     }
@@ -550,6 +584,21 @@
         Snackbar.Add($"Synced {totalAdded} new transactions.", Severity.Success);
         await LoadData();
     }
+
+    private async Task SaveAccountName(PlaidAccount acct)
+    {
+        await Plaid.UpdateAccountNameAsync(acct.Id, acct.CustomName ?? "");
+        Snackbar.Add($"Account name updated to '{acct.DisplayName}'.", Severity.Success);
+    }
+
+    private static string GetAccountIcon(string? type) => type?.ToLowerInvariant() switch
+    {
+        "depository" => Icons.Material.Filled.Savings,
+        "credit" => Icons.Material.Filled.CreditCard,
+        "loan" => Icons.Material.Filled.RequestPage,
+        "investment" => Icons.Material.Filled.TrendingUp,
+        _ => Icons.Material.Filled.AccountBalance,
+    };
 
     private async Task DisconnectBank(PlaidConnection conn)
     {
