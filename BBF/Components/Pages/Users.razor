@@ -11,13 +11,13 @@
 <PageTitle>Users - BBF</PageTitle>
 
 <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="py-4">
-    <MudStack Row AlignItems="AlignItems.Center" Class="mb-4">
+    <MudStack Row AlignItems="AlignItems.Center" Style="flex-wrap: wrap; gap: 8px;" Class="mb-4">
         <MudText Typo="Typo.h4">User Management</MudText>
         <MudSpacer />
         <MudTextField @bind-Value="_searchText" Placeholder="Search users..."
                       Variant="Variant.Outlined" Adornment="Adornment.Start"
                       AdornmentIcon="@Icons.Material.Filled.Search" Immediate
-                      Margin="Margin.Dense" Style="max-width: 300px;" />
+                      Margin="Margin.Dense" Style="max-width: 300px; min-width: 150px;" />
         <MudButton Variant="Variant.Filled" Color="Color.Primary"
                    StartIcon="@Icons.Material.Filled.PersonAdd" OnClick="OpenCreateDialog">
             Add User
@@ -26,7 +26,7 @@
 
     @* Role management *@
     <MudPaper Class="pa-4 mb-4" Elevation="2">
-        <MudStack Row AlignItems="AlignItems.Center" Spacing="2">
+        <MudStack Row AlignItems="AlignItems.Center" Spacing="2" Style="flex-wrap: wrap; gap: 8px;">
             <MudIcon Icon="@Icons.Material.Filled.AdminPanelSettings" Color="Color.Secondary" />
             <MudText Typo="Typo.subtitle1">Roles</MudText>
             <MudSpacer />
@@ -37,7 +37,7 @@
             }
             <MudTextField @bind-Value="_newRoleName" Placeholder="New role..."
                           Variant="Variant.Outlined" Margin="Margin.Dense"
-                          Style="max-width: 180px;"
+                          Style="max-width: 180px; min-width: 120px;"
                           Immediate />
             <MudIconButton Icon="@Icons.Material.Filled.Add" Color="Color.Primary"
                            OnClick="AddRole"
@@ -46,6 +46,7 @@
     </MudPaper>
 
     @* Users table *@
+    <div style="overflow-x: auto;">
     <MudTable Items="FilteredUsers" Hover Elevation="2" Loading="_loading">
         <HeaderContent>
             <MudTh>Email</MudTh>
@@ -108,6 +109,7 @@
             </MudText>
         </NoRecordsContent>
     </MudTable>
+    </div>
 </MudContainer>
 
 @code {

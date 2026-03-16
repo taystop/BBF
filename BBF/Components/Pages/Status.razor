@@ -11,7 +11,7 @@
 <PageTitle>Status - BBF</PageTitle>
 
 <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="py-4">
-    <MudStack Row AlignItems="AlignItems.Center" Class="mb-4">
+    <MudStack Row AlignItems="AlignItems.Center" Style="flex-wrap: wrap; gap: 8px;" Class="mb-4">
         <MudText Typo="Typo.h4">Service Status</MudText>
         <MudSpacer />
         <MudButton Variant="Variant.Outlined" Color="Color.Primary"
@@ -68,6 +68,7 @@
         </MudGrid>
 
         @* Service status table *@
+        <div style="overflow-x: auto;">
         <MudTable Items="_services" Hover Elevation="2">
             <HeaderContent>
                 <MudTh>Status</MudTh>
@@ -149,6 +150,7 @@
                 </MudTd>
             </RowTemplate>
         </MudTable>
+        </div>
 
         @* Recent health check history *@
         @if (_recentLogs.Any())
@@ -159,7 +161,7 @@
                 {
                     <MudTimelineItem Color="@(log.IsHealthy ? Color.Success : Color.Error)"
                                      Size="Size.Small">
-                        <MudStack Row AlignItems="AlignItems.Center" Spacing="2">
+                        <MudStack Row AlignItems="AlignItems.Center" Spacing="2" Style="flex-wrap: wrap;">
                             <MudText Typo="Typo.body2">
                                 <strong>@log.ServiceLink.Name</strong> —
                                 @(log.IsHealthy ? "Online" : "Offline")

@@ -10,25 +10,25 @@
 <PageTitle>Documents - BBF</PageTitle>
 
 <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="py-4">
-    <MudStack Row AlignItems="AlignItems.Center" Class="mb-4">
+    <MudStack Row AlignItems="AlignItems.Center" Style="flex-wrap: wrap; gap: 8px;" Class="mb-4">
         <MudIcon Icon="@Icons.Material.Filled.Folder" Size="Size.Large" Color="Color.Primary" />
         <MudText Typo="Typo.h4">Documents</MudText>
         <MudSpacer />
         <MudTextField @bind-Value="_searchText" Placeholder="Search files..."
                       Variant="Variant.Outlined" Adornment="Adornment.Start"
                       AdornmentIcon="@Icons.Material.Filled.Search" Immediate
-                      Margin="Margin.Dense" Style="max-width: 300px;" />
+                      Margin="Margin.Dense" Style="max-width: 300px; min-width: 150px;" />
     </MudStack>
 
     @* Upload area *@
     <MudPaper Class="pa-4 mb-4" Elevation="2">
-        <MudStack Row AlignItems="AlignItems.Center" Spacing="3">
+        <MudStack Row AlignItems="AlignItems.Center" Spacing="3" Style="flex-wrap: wrap; gap: 8px;">
             <MudIcon Icon="@Icons.Material.Filled.CloudUpload" Color="Color.Secondary" />
             <MudText Typo="Typo.subtitle1">Upload Files</MudText>
             <MudSpacer />
             <MudTextField @bind-Value="_uploadCategory" Placeholder="Category (optional)"
                           Variant="Variant.Outlined" Margin="Margin.Dense"
-                          Style="max-width: 200px;" />
+                          Style="max-width: 200px; min-width: 150px;" />
         </MudStack>
         <MudFileUpload T="IReadOnlyList<IBrowserFile>" FilesChanged="OnFilesSelected"
                        Accept="@AcceptedTypes" MaximumFileCount="20" Class="mt-3">
@@ -50,7 +50,7 @@
     @* Category filter chips *@
     @if (_categories.Any())
     {
-        <MudStack Row Class="mb-3" Spacing="1">
+        <MudStack Row Class="mb-3" Spacing="1" Style="flex-wrap: wrap;">
             <MudChip T="string" Color="@(_filterCategory is null ? Color.Primary : Color.Default)"
                      Variant="Variant.Filled" OnClick="@(() => _filterCategory = null)">All</MudChip>
             @foreach (var cat in _categories)
@@ -63,6 +63,7 @@
     }
 
     @* File table *@
+    <div style="overflow-x: auto;">
     <MudTable Items="FilteredDocuments" Hover Elevation="2" Loading="_loading">
         <HeaderContent>
             <MudTh>Name</MudTh>
@@ -117,6 +118,7 @@
             </MudText>
         </NoRecordsContent>
     </MudTable>
+    </div>
 </MudContainer>
 
 @code {

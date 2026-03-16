@@ -5,6 +5,8 @@
 @using System.Security.Claims
 @inject UserContextService UserContext
 @inject AuthenticationStateProvider AuthStateProvider
+@inject NavigationManager Nav
+@implements IDisposable
 
 <MudThemeProvider @bind-IsDarkMode="_isDarkMode" Theme="_theme" />
 <MudPopoverProvider />
@@ -15,7 +17,7 @@
     <MudAppBar Elevation="1">
         <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit"
                        Edge="Edge.Start" OnClick="ToggleDrawer" />
-        <MudText Typo="Typo.h5" Class="ml-3">BBF</MudText>
+        <MudText Typo="Typo.h5" Class="ml-3 d-none d-sm-flex">BBF</MudText>
         <MudSpacer />
         <AuthorizeView>
             <Authorized>
@@ -24,15 +26,15 @@
                     <MudSelect T="int?" Value="UserContext.ActiveGroupId"
                                ValueChanged="OnGroupChanged"
                                Variant="Variant.Outlined" Dense Margin="Margin.Dense"
-                               Style="max-width: 200px; color: inherit;"
-                               Class="mr-3">
+                               Style="max-width: 160px; color: inherit;"
+                               Class="mr-2">
                         @foreach (var group in UserContext.Groups)
                         {
                             <MudSelectItem T="int?" Value="@group.Id">@group.Name</MudSelectItem>
                         }
                     </MudSelect>
                 }
-                <MudText Typo="Typo.body2" Class="mr-3">@context.User.Identity?.Name</MudText>
+                <MudText Typo="Typo.body2" Class="mr-3 d-none d-md-flex">@context.User.Identity?.Name</MudText>
                 <form action="Account/Logout" method="post">
                     <AntiforgeryToken />
                     <input type="hidden" name="ReturnUrl" value="" />
@@ -45,11 +47,13 @@
                        Color="Color.Inherit" OnClick="ToggleDarkMode" title="Toggle theme" />
     </MudAppBar>
 
-    <MudDrawer @bind-Open="_drawerOpen" ClipMode="DrawerClipMode.Always" Elevation="2">
+    <MudDrawer @bind-Open="_drawerOpen" Breakpoint="Breakpoint.Md"
+               ClipMode="DrawerClipMode.Always" Elevation="2"
+               Variant="@DrawerVariant.Responsive">
         <NavMenu />
     </MudDrawer>
 
-    <MudMainContent Class="px-4 pb-4">
+    <MudMainContent Class="px-2 px-sm-4 pb-4">
         @Body
     </MudMainContent>
 </MudLayout>
@@ -79,6 +83,11 @@
         }
     };
 
+    protected override void OnInitialized()
+    {
+        Nav.LocationChanged += OnLocationChanged;
+    }
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender)
@@ -93,6 +102,16 @@
         }
     }
 
+    private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+    {
+        // Auto-close drawer on navigation for mobile (overlay mode)
+        if (_drawerOpen)
+        {
+            _drawerOpen = false;
+            InvokeAsync(StateHasChanged);
+        }
+    }
+
     private void OnGroupChanged(int? groupId)
     {
         if (groupId.HasValue)
@@ -101,4 +120,9 @@
 
     private void ToggleDrawer() => _drawerOpen = !_drawerOpen;
     private void ToggleDarkMode() => _isDarkMode = !_isDarkMode;
+
+    public void Dispose()
+    {
+        Nav.LocationChanged -= OnLocationChanged;
+    }
 }

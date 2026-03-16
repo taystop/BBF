@@ -19,17 +19,18 @@
 
 <PageTitle>AI Chat - BBF</PageTitle>
 
-<MudGrid Spacing="0" Class="chat-layout">
-    @* Conversation sidebar *@
-    <MudItem xs="12" md="3" Class="chat-sidebar">
-        <MudPaper Class="pa-3 d-flex flex-column" Style="height: calc(100vh - 64px - 16px);" Elevation="2">
+@* Mobile: toggle sidebar button + full-width chat *@
+<div class="chat-root">
+    @* Sidebar — visible on md+, or toggled on mobile *@
+    <div class="chat-sidebar @(_sidebarOpen ? "open" : "")">
+        <MudPaper Class="pa-3 d-flex flex-column" Style="height: 100%;" Elevation="2">
             <MudButton Variant="Variant.Filled" Color="Color.Primary" FullWidth
                        StartIcon="@Icons.Material.Filled.Add" OnClick="NewConversation"
                        Class="mb-3">
                 New Chat
             </MudButton>
 
-            <MudTextField @bind-Value="_searchText" Placeholder="Search conversations..."
+            <MudTextField @bind-Value="_searchText" Placeholder="Search..."
                           Variant="Variant.Outlined" Adornment="Adornment.Start"
                           AdornmentIcon="@Icons.Material.Filled.Search" Immediate
                           Class="mb-2" Margin="Margin.Dense" />
@@ -47,7 +48,7 @@
                                     Icon="@(isShared ? Icons.Material.Filled.Share : Icons.Material.Filled.ChatBubbleOutline)"
                                     Class="@(convo.Id == ConversationId ? "mud-nav-link-active" : "")">
                             <div class="d-flex align-center justify-space-between" style="width: 100%;">
-                                <MudText Typo="Typo.body2" Class="text-truncate" Style="max-width: 160px;">
+                                <MudText Typo="Typo.body2" Class="text-truncate" Style="flex: 1; min-width: 0;">
                                     @(convo.Title ?? "New Chat")
                                 </MudText>
                                 @if (!isShared)
@@ -69,43 +70,50 @@
                 }
             </div>
         </MudPaper>
-    </MudItem>
+    </div>
+
+    @* Backdrop for mobile sidebar *@
+    @if (_sidebarOpen)
+    {
+        <div class="chat-backdrop" @onclick="ToggleSidebar"></div>
+    }
 
     @* Chat area *@
-    <MudItem xs="12" md="9" Class="chat-main">
-        <MudPaper Class="d-flex flex-column" Style="height: calc(100vh - 64px - 16px);" Elevation="2">
+    <div class="chat-main">
+        <MudPaper Class="d-flex flex-column" Style="height: 100%;" Elevation="2">
             @* Header *@
-            <MudToolBar Dense Class="border-b">
-                <MudText Typo="Typo.h6">
+            <MudToolBar Dense Class="border-b" Style="flex-wrap: wrap; gap: 4px;">
+                <MudIconButton Icon="@Icons.Material.Filled.Menu" Size="Size.Small"
+                               OnClick="ToggleSidebar" Class="d-md-none" />
+                <MudText Typo="Typo.h6" Class="text-truncate" Style="flex: 1; min-width: 0;">
                     @(_activeConversation?.Title ?? "New Chat")
                 </MudText>
-                <MudSpacer />
                 @if (_activeConversation is not null && _activeConversation.UserId == UserContext.UserId)
                 {
                     <MudTooltip Text="Share conversation">
-                        <MudIconButton Icon="@Icons.Material.Filled.Share" Size="Size.Medium"
+                        <MudIconButton Icon="@Icons.Material.Filled.Share" Size="Size.Small"
                                        Color="@(_activeConversation.Shares.Any() ? Color.Info : Color.Default)"
                                        OnClick="ShowShareDialog" />
                     </MudTooltip>
                 }
-                <MudTooltip Text="@(_docsSearchEnabled ? "Docs search enabled" : "Docs search disabled")">
+                <MudTooltip Text="@(_docsSearchEnabled ? "Docs search on" : "Docs search off")">
                     <MudToggleIconButton @bind-Toggled="_docsSearchEnabled"
                                          Icon="@Icons.Material.Filled.MenuBook"
                                          ToggledIcon="@Icons.Material.Filled.MenuBook"
                                          Color="Color.Default" ToggledColor="Color.Info"
-                                         Size="Size.Medium" />
+                                         Size="Size.Small" />
                 </MudTooltip>
-                <MudTooltip Text="@(_webSearchEnabled ? "Web search enabled" : "Web search disabled")">
+                <MudTooltip Text="@(_webSearchEnabled ? "Web search on" : "Web search off")">
                     <MudToggleIconButton @bind-Toggled="_webSearchEnabled"
                                          Icon="@Icons.Material.Filled.TravelExplore"
                                          ToggledIcon="@Icons.Material.Filled.TravelExplore"
                                          Color="Color.Default" ToggledColor="Color.Success"
-                                         Size="Size.Medium" />
+                                         Size="Size.Small" />
                 </MudTooltip>
                 @if (_availableModels.Any())
                 {
                     <MudSelect T="string" @bind-Value="_selectedModel" Variant="Variant.Outlined"
-                               Dense Margin="Margin.Dense" Style="max-width: 200px;"
+                               Dense Margin="Margin.Dense" Style="max-width: 160px; min-width: 100px;"
                                Label="Model">
                         @foreach (var model in _availableModels)
                         {
@@ -116,21 +124,21 @@
             </MudToolBar>
 
             @* Messages *@
-            <div @ref="_messagesContainer" class="chat-messages pa-4" style="flex: 1; overflow-y: auto;">
+            <div @ref="_messagesContainer" class="chat-messages pa-3 pa-sm-4" style="flex: 1; overflow-y: auto;">
                 @if (_messages.Any() || _isStreaming)
                 {
                     @foreach (var msg in _messages)
                     {
-                        <div class="d-flex mb-4 @(msg.Role == "user" ? "justify-end" : "justify-start")">
+                        <div class="d-flex mb-3 @(msg.Role == "user" ? "justify-end" : "justify-start")">
                             @if (msg.Role != "user")
                             {
-                                <MudAvatar Color="Color.Primary" Size="Size.Small" Class="mr-2 mt-1">
+                                <MudAvatar Color="Color.Primary" Size="Size.Small" Class="mr-2 mt-1 d-none d-sm-flex">
                                     <MudIcon Icon="@Icons.Material.Filled.SmartToy" Size="Size.Small" />
                                 </MudAvatar>
                             }
                             <MudPaper Class="@($"pa-3 {(msg.Role == "user" ? "user-message" : "assistant-message")}")"
                                       Elevation="1"
-                                      Style="@($"max-width: 75%; {(msg.Role == "user" ? "background-color: var(--mud-palette-primary); color: var(--mud-palette-primary-text);" : "")}")">
+                                      Style="@($"max-width: min(85%, 600px); {(msg.Role == "user" ? "background-color: var(--mud-palette-primary); color: var(--mud-palette-primary-text);" : "")}")">
                                 @if (msg.Role == "user")
                                 {
                                     <MudText Style="white-space: pre-wrap; word-break: break-word;">@msg.Content</MudText>
@@ -144,18 +152,16 @@
                                             Wiki article created automatically
                                         </MudAlert>
                                     }
-                                    <MudStack Row Class="mt-2" Spacing="1">
-                                        <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Primary"
-                                                   StartIcon="@Icons.Material.Filled.MenuBook"
-                                                   OnClick="@(() => SaveToWiki(msg))">
-                                            Save to Wiki
-                                        </MudButton>
-                                    </MudStack>
+                                    <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Primary"
+                                               StartIcon="@Icons.Material.Filled.MenuBook" Class="mt-1"
+                                               OnClick="@(() => SaveToWiki(msg))">
+                                        Save to Wiki
+                                    </MudButton>
                                 }
                             </MudPaper>
                             @if (msg.Role == "user")
                             {
-                                <MudAvatar Color="Color.Secondary" Size="Size.Small" Class="ml-2 mt-1">
+                                <MudAvatar Color="Color.Secondary" Size="Size.Small" Class="ml-2 mt-1 d-none d-sm-flex">
                                     <MudIcon Icon="@Icons.Material.Filled.Person" Size="Size.Small" />
                                 </MudAvatar>
                             }
@@ -164,11 +170,11 @@
 
                     @if (_isStreaming)
                     {
-                        <div class="d-flex mb-4 justify-start">
-                            <MudAvatar Color="Color.Primary" Size="Size.Small" Class="mr-2 mt-1">
+                        <div class="d-flex mb-3 justify-start">
+                            <MudAvatar Color="Color.Primary" Size="Size.Small" Class="mr-2 mt-1 d-none d-sm-flex">
                                 <MudIcon Icon="@Icons.Material.Filled.SmartToy" Size="Size.Small" />
                             </MudAvatar>
-                            <MudPaper Class="pa-3 assistant-message" Elevation="1" Style="max-width: 75%;">
+                            <MudPaper Class="pa-3 assistant-message" Elevation="1" Style="max-width: min(85%, 600px);">
                                 @if (!string.IsNullOrEmpty(_streamingContent))
                                 {
                                     <div class="markdown-body">@((MarkupString)RenderMarkdown(_streamingContent))</div>
@@ -178,7 +184,7 @@
                                     <MudStack Row AlignItems="AlignItems.Center" Spacing="2">
                                         <MudProgressCircular Size="Size.Small" Color="Color.Primary" Indeterminate />
                                         <MudText Typo="Typo.body2" Color="Color.Secondary">
-                                            @(_isSearching ? "Searching for context..." : "Generating...")
+                                            @(_isSearching ? "Searching..." : "Generating...")
                                         </MudText>
                                     </MudStack>
                                 }
@@ -201,7 +207,7 @@
             </div>
 
             @* Input area *@
-            <MudPaper Class="pa-3 border-t" Elevation="0">
+            <MudPaper Class="pa-2 pa-sm-3 border-t" Elevation="0">
                 <MudStack Row AlignItems="AlignItems.End">
                     <MudTextField @bind-Value="_userInput" Placeholder="Type a message..."
                                   Variant="Variant.Outlined" autoGrow Lines="1" MaxLines="5"
@@ -223,12 +229,56 @@
                 </MudStack>
             </MudPaper>
         </MudPaper>
-    </MudItem>
-</MudGrid>
+    </div>
+</div>
 
 <style>
-    .chat-layout {
-        height: calc(100vh - 64px - 16px);
+    .chat-root {
+        display: flex;
+        height: calc(100dvh - 64px - 16px);
+        gap: 0;
+        position: relative;
+    }
+
+    .chat-sidebar {
+        width: 280px;
+        min-width: 280px;
+        height: 100%;
+    }
+
+    .chat-main {
+        flex: 1;
+        min-width: 0;
+        height: 100%;
+    }
+
+    .chat-backdrop {
+        display: none;
+    }
+
+    /* Mobile: sidebar as overlay drawer */
+    @@media (max-width: 959.98px) {
+        .chat-sidebar {
+            position: fixed;
+            top: 64px;
+            left: 0;
+            bottom: 0;
+            z-index: 1100;
+            transform: translateX(-100%);
+            transition: transform 0.2s ease;
+        }
+
+        .chat-sidebar.open {
+            transform: translateX(0);
+        }
+
+        .chat-backdrop {
+            display: block;
+            position: fixed;
+            inset: 0;
+            z-index: 1099;
+            background: rgba(0, 0, 0, 0.5);
+        }
     }
 
     .chat-messages::-webkit-scrollbar {
@@ -376,6 +426,7 @@
     private bool _isSearching;
     private bool _webSearchEnabled = true;
     private bool _docsSearchEnabled = true;
+    private bool _sidebarOpen;
     private CancellationTokenSource? _streamCts;
 
     private IEnumerable<ChatConversation> FilteredConversations =>
@@ -395,12 +446,10 @@
 
     protected override async Task OnParametersSetAsync()
     {
-        // Don't reload while streaming — SendMessage manages state directly
         if (_isStreaming) return;
 
         if (ConversationId.HasValue)
         {
-            // Only reload if switching to a different conversation
             if (_activeConversation?.Id != ConversationId.Value)
                 await LoadConversation(ConversationId.Value);
         }
@@ -409,7 +458,12 @@
             _activeConversation = null;
             _messages = [];
         }
+
+        // Close sidebar on mobile after selecting a conversation
+        _sidebarOpen = false;
     }
+
+    private void ToggleSidebar() => _sidebarOpen = !_sidebarOpen;
 
     private async Task LoadConversations()
     {
@@ -422,10 +476,8 @@
             return;
         }
 
-        // Get user's group IDs for shared conversation lookup
         var groupIds = UserContext.Groups.Select(g => g.Id).ToList();
 
-        // Own conversations + shared via group or directly shared with user
         _conversations = await Db.ChatConversations
             .Include(c => c.Shares)
             .Where(c => c.UserId == userId
@@ -444,11 +496,10 @@
 
         if (_activeConversation is not null)
         {
-            // Verify access: must be owner or shared
             var userId = UserContext.UserId;
             var groupIds = UserContext.Groups.Select(g => g.Id).ToList();
             var hasAccess = _activeConversation.UserId == userId
-                || _activeConversation.UserId == null // legacy unowned
+                || _activeConversation.UserId == null
                 || _activeConversation.Shares.Any(s => s.SharedWithUserId == userId)
                 || _activeConversation.Shares.Any(s => s.SharedWithGroupId != null && groupIds.Contains(s.SharedWithGroupId.Value));
 
@@ -469,6 +520,7 @@
 
     private void NewConversation()
     {
+        _sidebarOpen = false;
         Nav.NavigateTo("/chat");
     }
 
@@ -477,7 +529,6 @@
         var convo = await Db.ChatConversations.FindAsync(id);
         if (convo is not null)
         {
-            // Only owner can delete
             if (convo.UserId != UserContext.UserId && convo.UserId is not null) return;
 
             Db.ChatConversations.Remove(convo);
@@ -505,7 +556,6 @@
         _userInput = string.Empty;
         var isNewConversation = false;
 
-        // Create conversation if needed
         if (_activeConversation is null)
         {
             _activeConversation = new ChatConversation
@@ -521,7 +571,6 @@
             isNewConversation = true;
         }
 
-        // Save user message
         var userMsg = new ChatMessage
         {
             ConversationId = _activeConversation.Id,
@@ -533,13 +582,11 @@
         await Db.SaveChangesAsync();
         _messages.Add(userMsg);
 
-        // Start streaming
         _isStreaming = true;
         _streamingContent = string.Empty;
         _streamCts = new CancellationTokenSource();
         StateHasChanged();
 
-        // Search for context — docs and/or web
         string? docsContext = null;
         string? webContext = null;
 
@@ -564,14 +611,12 @@
             StateHasChanged();
         }
 
-        // Build message history for Ollama
         var ollamaMessages = _messages.Select(m => new OllamaChatMessage
         {
             Role = m.Role,
             Content = m.Content
         }).ToList();
 
-        // Inject context into the last user message so the model sees it
         var contextParts = new List<string>();
         if (!string.IsNullOrEmpty(docsContext)) contextParts.Add(docsContext);
         if (!string.IsNullOrEmpty(webContext)) contextParts.Add(webContext);
@@ -596,7 +641,6 @@
                 }
             }
 
-            // Save assistant message (response only, not thinking)
             var assistantMsg = new ChatMessage
             {
                 ConversationId = _activeConversation.Id,
@@ -607,7 +651,6 @@
             Db.ChatMessages.Add(assistantMsg);
             _activeConversation.UpdatedAt = DateTime.UtcNow;
 
-            // Auto-title from first message
             if (_activeConversation.Title is null)
             {
                 _activeConversation.Title = input.Length > 50 ? input[..50] + "..." : input;
@@ -617,12 +660,10 @@
             _messages.Add(assistantMsg);
             await LoadConversations();
 
-            // Auto-create wiki articles from [WIKI_CREATE] blocks
             await ProcessWikiBlocks(_streamingContent);
         }
         catch (OperationCanceledException)
         {
-            // User stopped generation — save partial response if any
             if (!string.IsNullOrEmpty(_streamingContent))
             {
                 var partialMsg = new ChatMessage
@@ -659,7 +700,6 @@
             _streamCts = null;
             StateHasChanged();
 
-            // Navigate after streaming completes so URL reflects the conversation
             if (isNewConversation)
                 Nav.NavigateTo($"/chat/{_activeConversation.Id}", replace: true);
         }
@@ -685,7 +725,6 @@
 
         if (result is not null && !result.Canceled)
         {
-            // Reload to pick up share changes
             await LoadConversation(_activeConversation.Id);
             StateHasChanged();
         }
@@ -731,7 +770,6 @@
             if (string.IsNullOrEmpty(title) || string.IsNullOrEmpty(body))
                 continue;
 
-            // Check for duplicate title
             var exists = await Db.WikiArticles.AnyAsync(a => a.Title == title);
             if (exists)
             {
@@ -755,7 +793,6 @@
 
     private async Task SaveToWiki(ChatMessage msg)
     {
-        // Use first line as title, or first 60 chars
         var lines = msg.Content.Split('\n', StringSplitOptions.RemoveEmptyEntries);
         var title = lines.FirstOrDefault()?.TrimStart('#', ' ') ?? "Untitled";
         if (title.Length > 80) title = title[..80] + "...";

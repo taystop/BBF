@@ -7,7 +7,7 @@
 <PageTitle>Home Control - BBF</PageTitle>
 
 <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="py-4">
-    <MudStack Row AlignItems="AlignItems.Center" Class="mb-4">
+    <MudStack Row AlignItems="AlignItems.Center" Class="mb-4" Style="flex-wrap: wrap; gap: 8px;">
         <MudText Typo="Typo.h4">Home Control</MudText>
         <MudSpacer />
         @if (_isConnected.HasValue)
@@ -92,12 +92,15 @@
                                 }
                                 @if (entity.TargetTemperature.HasValue)
                                 {
-                                    <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Class="mb-2">
+                                    <MudStack Row AlignItems="AlignItems.Center" Spacing="1" Class="mb-2"
+                                              Style="flex-wrap: wrap;">
                                         <MudText Typo="Typo.body2">Target:</MudText>
                                         <MudIconButton Icon="@Icons.Material.Filled.Remove" Size="Size.Small"
+                                                       Style="min-width: 40px; min-height: 40px;"
                                                        OnClick="@(() => AdjustTemp(entity, -1))" />
                                         <MudText Typo="Typo.body1"><strong>@entity.TargetTemperature.Value.ToString("F0")°</strong></MudText>
                                         <MudIconButton Icon="@Icons.Material.Filled.Add" Size="Size.Small"
+                                                       Style="min-width: 40px; min-height: 40px;"
                                                        OnClick="@(() => AdjustTemp(entity, 1))" />
                                     </MudStack>
                                 }
@@ -117,11 +120,12 @@
                             @* Fan controls *@
                             @if (entity.Domain == "fan" && entity.FanPercentage.HasValue)
                             {
-                                <MudStack Row AlignItems="AlignItems.Center" Spacing="2" Class="mb-2">
+                                <MudStack Row AlignItems="AlignItems.Center" Spacing="2" Class="mb-2"
+                                          Style="flex-wrap: wrap;">
                                     <MudText Typo="Typo.body2">Speed:</MudText>
                                     <MudSlider T="int" Value="entity.FanPercentage.Value" Min="0" Max="100" Step="25"
                                                ValueChanged="@(pct => SetFanSpeed(entity, pct))"
-                                               Style="flex: 1;" />
+                                               Style="flex: 1; min-width: 120px;" />
                                     <MudText Typo="Typo.body2">@(entity.FanPercentage)%</MudText>
                                 </MudStack>
                             }
@@ -133,15 +137,18 @@
                             <MudCardActions>
                                 <MudButton Variant="Variant.Text" Color="Color.Success" Size="Size.Small"
                                            StartIcon="@Icons.Material.Filled.PowerSettingsNew"
+                                           Style="min-height: 40px;"
                                            OnClick="@(() => TurnOn(entity))"
                                            Disabled="@(entity.State == "on")">On</MudButton>
                                 <MudButton Variant="Variant.Text" Color="Color.Error" Size="Size.Small"
                                            StartIcon="@Icons.Material.Filled.PowerOff"
+                                           Style="min-height: 40px;"
                                            OnClick="@(() => TurnOff(entity))"
                                            Disabled="@(entity.State == "off")">Off</MudButton>
                                 <MudSpacer />
                                 <MudIconButton Icon="@Icons.Material.Filled.ToggleOn" Size="Size.Small"
                                                Color="Color.Primary" OnClick="@(() => Toggle(entity))"
+                                               Style="min-width: 40px; min-height: 40px;"
                                                title="Toggle" />
                             </MudCardActions>
                         }

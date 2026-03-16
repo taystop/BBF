@@ -15,7 +15,7 @@
     @if (_editing)
     {
         @* Editor view *@
-        <MudStack Row AlignItems="AlignItems.Center" Class="mb-4">
+        <MudStack Row AlignItems="AlignItems.Center" Class="mb-4" Style="flex-wrap: wrap; gap: 8px;">
             <MudText Typo="Typo.h4">@(_editArticle.Id == 0 ? "New Article" : "Edit Article")</MudText>
             <MudSpacer />
             <MudButton Variant="Variant.Text" OnClick="CancelEdit"
@@ -29,11 +29,11 @@
             <MudItem xs="12" md="6">
                 <MudTextField @bind-Value="_editArticle.Title" Label="Title" Required
                               Variant="Variant.Outlined" Class="mb-3" />
-                <MudStack Row Spacing="2" Class="mb-3">
+                <MudStack Row Spacing="2" Class="mb-3" Style="flex-wrap: wrap; gap: 8px;">
                     <MudTextField @bind-Value="_editArticle.Category" Label="Category"
-                                  Variant="Variant.Outlined" Style="flex: 1;" />
+                                  Variant="Variant.Outlined" Style="flex: 1; min-width: 140px;" />
                     <MudTextField @bind-Value="_editArticle.Tags" Label="Tags (comma-separated)"
-                                  Variant="Variant.Outlined" Style="flex: 1;" />
+                                  Variant="Variant.Outlined" Style="flex: 1; min-width: 140px;" />
                 </MudStack>
                 <MudTextField @bind-Value="_editArticle.Content" Label="Content (Markdown)"
                               Variant="Variant.Outlined" Lines="20" autoGrow />
@@ -49,15 +49,15 @@
     else if (_viewArticle is not null)
     {
         @* Article view *@
-        <MudStack Row AlignItems="AlignItems.Center" Class="mb-4">
+        <MudStack Row AlignItems="AlignItems.Center" Class="mb-4" Style="flex-wrap: wrap; gap: 8px;">
             <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" OnClick="BackToList" />
-            <MudText Typo="Typo.h4">@_viewArticle.Title</MudText>
+            <MudText Typo="Typo.h4" Style="word-break: break-word;">@_viewArticle.Title</MudText>
             <MudSpacer />
             <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Edit"
                        OnClick="@(() => StartEdit(_viewArticle))">Edit</MudButton>
         </MudStack>
 
-        <MudStack Row Spacing="2" Class="mb-3">
+        <MudStack Row Spacing="2" Class="mb-3" Style="flex-wrap: wrap; gap: 4px;">
             @if (!string.IsNullOrEmpty(_viewArticle.Category))
             {
                 <MudChip T="string" Color="Color.Primary" Size="Size.Small">@_viewArticle.Category</MudChip>
@@ -82,13 +82,13 @@
     else
     {
         @* Article list *@
-        <MudStack Row AlignItems="AlignItems.Center" Class="mb-4">
+        <MudStack Row AlignItems="AlignItems.Center" Class="mb-4" Style="flex-wrap: wrap; gap: 8px;">
             <MudText Typo="Typo.h4">Documentation</MudText>
             <MudSpacer />
             <MudTextField @bind-Value="_searchText" Placeholder="Search articles..."
                           Variant="Variant.Outlined" Adornment="Adornment.Start"
                           AdornmentIcon="@Icons.Material.Filled.Search" Immediate
-                          Margin="Margin.Dense" Style="max-width: 300px;" />
+                          Margin="Margin.Dense" Style="min-width: 180px; max-width: 300px; flex: 1;" />
             <MudButton Variant="Variant.Filled" Color="Color.Primary"
                        StartIcon="@Icons.Material.Filled.Add" OnClick="StartNew">
                 New Article
@@ -125,8 +125,8 @@
                                         @StripMarkdown(article.Content)
                                     </MudText>
                                 </MudCardContent>
-                                <MudCardActions>
-                                    <MudStack Row Spacing="1">
+                                <MudCardActions Style="flex-wrap: wrap; gap: 4px;">
+                                    <MudStack Row Spacing="1" Style="flex-wrap: wrap;">
                                         @if (!string.IsNullOrEmpty(article.Tags))
                                         {
                                             @foreach (var tag in article.Tags.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Take(3))

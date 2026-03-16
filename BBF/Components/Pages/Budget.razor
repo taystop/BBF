@@ -32,7 +32,7 @@
     }
     else
     {
-        <MudStack Row AlignItems="AlignItems.Center" Class="mb-4">
+        <MudStack Row AlignItems="AlignItems.Center" Style="flex-wrap: wrap; gap: 8px;" Class="mb-4">
             <MudIcon Icon="@Icons.Material.Filled.AccountBalance" Size="Size.Large" Color="Color.Primary" />
             <MudText Typo="Typo.h4">Budget</MudText>
             <MudSpacer />
@@ -72,7 +72,7 @@
         <MudTabs Elevation="2" Rounded ApplyEffectsToContainer Class="mb-4">
             <MudTabPanel Text="Categories" Icon="@Icons.Material.Filled.Category">
                 <MudPaper Class="pa-4" Elevation="0">
-                    <MudStack Row AlignItems="AlignItems.Center" Class="mb-3">
+                    <MudStack Row AlignItems="AlignItems.Center" Style="flex-wrap: wrap; gap: 8px;" Class="mb-3">
                         <MudText Typo="Typo.h6">Budget Categories</MudText>
                         <MudSpacer />
                         <MudButton Variant="Variant.Filled" Color="Color.Primary"
@@ -90,7 +90,8 @@
                         var color = pct >= 100 ? Color.Error : pct >= 80 ? Color.Warning : Color.Success;
 
                         <MudPaper Class="pa-3 mb-2" Elevation="1">
-                            <MudStack Row AlignItems="AlignItems.Center" Spacing="3">
+                            @* Desktop layout: single row *@
+                            <div class="d-none d-sm-flex align-center" style="gap: 12px;">
                                 <div style="width: 8px; height: 40px; border-radius: 4px; background-color: @item.Category.Color;"></div>
                                 <MudStack Spacing="0" Style="min-width: 150px;">
                                     <MudText Typo="Typo.subtitle2">@item.Category.Name</MudText>
@@ -109,7 +110,31 @@
                                 <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small"
                                                Color="Color.Error"
                                                OnClick="@(() => DeleteCategory(item.Category))" />
-                            </MudStack>
+                            </div>
+
+                            @* Mobile layout: stacked *@
+                            <div class="d-flex d-sm-none flex-column" style="gap: 8px;">
+                                <div class="d-flex align-center" style="gap: 8px;">
+                                    <div style="width: 6px; height: 32px; border-radius: 3px; background-color: @item.Category.Color;"></div>
+                                    <MudStack Spacing="0" Style="flex: 1; min-width: 0;">
+                                        <MudText Typo="Typo.subtitle2">@item.Category.Name</MudText>
+                                        <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                            @item.Spent.ToString("C") / @item.Category.MonthlyLimit.ToString("C")
+                                        </MudText>
+                                    </MudStack>
+                                    <MudText Typo="Typo.body2" Color="@(remaining >= 0 ? Color.Success : Color.Error)"
+                                             Style="white-space: nowrap;">
+                                        @remaining.ToString("C")
+                                    </MudText>
+                                    <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                                                   OnClick="@(() => EditCategory(item.Category))" />
+                                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small"
+                                                   Color="Color.Error"
+                                                   OnClick="@(() => DeleteCategory(item.Category))" />
+                                </div>
+                                <MudProgressLinear Value="@Math.Min(pct, 100)" Color="@color"
+                                                  Size="Size.Medium" Rounded />
+                            </div>
                         </MudPaper>
                     }
 
@@ -124,7 +149,7 @@
 
             <MudTabPanel Text="Transactions" Icon="@Icons.Material.Filled.Receipt">
                 <MudPaper Class="pa-4" Elevation="0">
-                    <MudStack Row AlignItems="AlignItems.Center" Class="mb-3">
+                    <MudStack Row AlignItems="AlignItems.Center" Style="flex-wrap: wrap; gap: 8px;" Class="mb-3">
                         <MudText Typo="Typo.h6">Transactions</MudText>
                         <MudSpacer />
                         <MudButton Variant="Variant.Outlined" Color="Color.Primary"
@@ -148,76 +173,78 @@
                         </MudFileUpload>
                     </MudStack>
 
-                    <MudTable Items="_transactions" Hover Dense>
-                        <HeaderContent>
-                            <MudTh>Date</MudTh>
-                            <MudTh>Description</MudTh>
-                            <MudTh>Category</MudTh>
-                            <MudTh Style="text-align: right;">Amount</MudTh>
-                            <MudTh>Source</MudTh>
-                            <MudTh Style="width: 100px;">Actions</MudTh>
-                        </HeaderContent>
-                        <RowTemplate>
-                            <MudTd DataLabel="Date">
-                                <MudText Typo="Typo.body2">@context.Date.ToString("MMM d")</MudText>
-                            </MudTd>
-                            <MudTd DataLabel="Description">
-                                <MudText Typo="Typo.body2">@context.Description</MudText>
-                                @if (!string.IsNullOrEmpty(context.MerchantName) && context.MerchantName != context.Description)
-                                {
-                                    <MudText Typo="Typo.caption" Color="Color.Secondary">@context.MerchantName</MudText>
-                                }
-                            </MudTd>
-                            <MudTd DataLabel="Category">
-                                @if (context.Category is not null)
-                                {
-                                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined"
-                                             Style="@($"border-color: {context.Category.Color}; color: {context.Category.Color};")">
-                                        @context.Category.Name
+                    <div class="budget-table-container">
+                        <MudTable Items="_transactions" Hover Dense Breakpoint="Breakpoint.Sm">
+                            <HeaderContent>
+                                <MudTh>Date</MudTh>
+                                <MudTh>Description</MudTh>
+                                <MudTh>Category</MudTh>
+                                <MudTh Style="text-align: right;">Amount</MudTh>
+                                <MudTh>Source</MudTh>
+                                <MudTh Style="width: 100px;">Actions</MudTh>
+                            </HeaderContent>
+                            <RowTemplate>
+                                <MudTd DataLabel="Date">
+                                    <MudText Typo="Typo.body2">@context.Date.ToString("MMM d")</MudText>
+                                </MudTd>
+                                <MudTd DataLabel="Description">
+                                    <MudText Typo="Typo.body2">@context.Description</MudText>
+                                    @if (!string.IsNullOrEmpty(context.MerchantName) && context.MerchantName != context.Description)
+                                    {
+                                        <MudText Typo="Typo.caption" Color="Color.Secondary">@context.MerchantName</MudText>
+                                    }
+                                </MudTd>
+                                <MudTd DataLabel="Category">
+                                    @if (context.Category is not null)
+                                    {
+                                        <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined"
+                                                 Style="@($"border-color: {context.Category.Color}; color: {context.Category.Color};")">
+                                            @context.Category.Name
+                                        </MudChip>
+                                    }
+                                    else
+                                    {
+                                        <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Secondary"
+                                                   OnClick="@(() => CategorizeTransaction(context))">
+                                            Categorize
+                                        </MudButton>
+                                    }
+                                </MudTd>
+                                <MudTd DataLabel="Amount" Style="text-align: right;">
+                                    <MudText Typo="Typo.body2"
+                                             Color="@(context.Amount >= 0 ? Color.Error : Color.Success)">
+                                        @context.Amount.ToString("C")
+                                    </MudText>
+                                </MudTd>
+                                <MudTd DataLabel="Source">
+                                    <MudChip T="string" Size="Size.Small" Variant="Variant.Filled"
+                                             Color="@(context.Source == "Plaid" ? Color.Info : Color.Default)">
+                                        @context.Source
                                     </MudChip>
-                                }
-                                else
-                                {
-                                    <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Secondary"
-                                               OnClick="@(() => CategorizeTransaction(context))">
-                                        Categorize
-                                    </MudButton>
-                                }
-                            </MudTd>
-                            <MudTd DataLabel="Amount" Style="text-align: right;">
-                                <MudText Typo="Typo.body2"
-                                         Color="@(context.Amount >= 0 ? Color.Error : Color.Success)">
-                                    @context.Amount.ToString("C")
+                                </MudTd>
+                                <MudTd DataLabel="Actions">
+                                    <MudStack Row Spacing="0">
+                                        <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                                                       OnClick="@(() => EditTransaction(context))" />
+                                        <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small"
+                                                       Color="Color.Error"
+                                                       OnClick="@(() => DeleteTransaction(context))" />
+                                    </MudStack>
+                                </MudTd>
+                            </RowTemplate>
+                            <NoRecordsContent>
+                                <MudText Typo="Typo.body2" Color="Color.Secondary" Class="pa-4">
+                                    No transactions for @_selectedMonth.ToString("MMMM yyyy").
                                 </MudText>
-                            </MudTd>
-                            <MudTd DataLabel="Source">
-                                <MudChip T="string" Size="Size.Small" Variant="Variant.Filled"
-                                         Color="@(context.Source == "Plaid" ? Color.Info : Color.Default)">
-                                    @context.Source
-                                </MudChip>
-                            </MudTd>
-                            <MudTd>
-                                <MudStack Row Spacing="0">
-                                    <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
-                                                   OnClick="@(() => EditTransaction(context))" />
-                                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small"
-                                                   Color="Color.Error"
-                                                   OnClick="@(() => DeleteTransaction(context))" />
-                                </MudStack>
-                            </MudTd>
-                        </RowTemplate>
-                        <NoRecordsContent>
-                            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="pa-4">
-                                No transactions for @_selectedMonth.ToString("MMMM yyyy").
-                            </MudText>
-                        </NoRecordsContent>
-                    </MudTable>
+                            </NoRecordsContent>
+                        </MudTable>
+                    </div>
                 </MudPaper>
             </MudTabPanel>
 
             <MudTabPanel Text="Linked Accounts" Icon="@Icons.Material.Filled.AccountBalance">
                 <MudPaper Class="pa-4" Elevation="0">
-                    <MudStack Row AlignItems="AlignItems.Center" Class="mb-3">
+                    <MudStack Row AlignItems="AlignItems.Center" Style="flex-wrap: wrap; gap: 8px;" Class="mb-3">
                         <MudText Typo="Typo.h6">Linked Accounts</MudText>
                         <MudSpacer />
                         <MudButton Variant="Variant.Filled" Color="Color.Primary"
@@ -231,16 +258,15 @@
                         @foreach (var conn in _connections)
                         {
                             <MudPaper Class="pa-4 mb-3" Elevation="1">
-                                <MudStack Row AlignItems="AlignItems.Center" Class="mb-2">
+                                <MudStack Row AlignItems="AlignItems.Center" Style="flex-wrap: wrap; gap: 8px;" Class="mb-2">
                                     <MudIcon Icon="@Icons.Material.Filled.AccountBalance" Color="Color.Primary" />
-                                    <MudStack Spacing="0">
+                                    <MudStack Spacing="0" Style="min-width: 0; flex: 1;">
                                         <MudText Typo="Typo.subtitle1" Style="font-weight: 600;">@conn.InstitutionName</MudText>
                                         <MudText Typo="Typo.caption" Color="Color.Secondary">
                                             Last synced: @(conn.LastSynced?.ToLocalTime().ToString("g") ?? "Never")
                                             &middot; @conn.Accounts.Count(a => a.IsActive) account@(conn.Accounts.Count(a => a.IsActive) != 1 ? "s" : "")
                                         </MudText>
                                     </MudStack>
-                                    <MudSpacer />
                                     <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Error"
                                                OnClick="@(() => DisconnectBank(conn))">
                                         Disconnect
@@ -249,10 +275,10 @@
 
                                 @foreach (var acct in conn.Accounts.Where(a => a.IsActive).OrderBy(a => a.Type))
                                 {
-                                    <MudPaper Class="pa-3 mb-1 ml-6" Elevation="0" Style="border: 1px solid var(--mud-palette-lines-default); border-radius: 4px;">
-                                        <MudStack Row AlignItems="AlignItems.Center" Spacing="3">
+                                    <MudPaper Class="pa-3 mb-1 ml-3 ml-sm-6" Elevation="0" Style="border: 1px solid var(--mud-palette-lines-default); border-radius: 4px;">
+                                        <MudStack Row AlignItems="AlignItems.Center" Spacing="3" Class="flex-wrap" Style="gap: 8px;">
                                             <MudIcon Icon="@GetAccountIcon(acct.Type)" Size="Size.Small" Color="Color.Secondary" />
-                                            <MudStack Spacing="0" Style="min-width: 150px;">
+                                            <MudStack Spacing="0" Style="min-width: 120px; flex: 1;">
                                                 <MudText Typo="Typo.body2" Style="font-weight: 600;">
                                                     @acct.DisplayName
                                                 </MudText>
@@ -260,12 +286,11 @@
                                                     @(acct.Subtype ?? acct.Type)@(acct.Mask is not null ? $" ····{acct.Mask}" : "")
                                                 </MudText>
                                             </MudStack>
-                                            <MudSpacer />
                                             <MudTextField @bind-Value="acct.CustomName"
                                                           Placeholder="@(acct.OfficialName ?? acct.Name)"
                                                           Variant="Variant.Outlined" Dense Margin="Margin.Dense"
                                                           Label="Custom Name"
-                                                          Style="max-width: 220px;"
+                                                          Style="max-width: 220px; min-width: 140px; flex: 1;"
                                                           Adornment="Adornment.End"
                                                           AdornmentIcon="@Icons.Material.Filled.Save"
                                                           OnAdornmentClick="@(() => SaveAccountName(acct))" />
@@ -275,7 +300,7 @@
 
                                 @if (!conn.Accounts.Any(a => a.IsActive))
                                 {
-                                    <MudText Typo="Typo.caption" Color="Color.Secondary" Class="ml-6 mt-1">
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary" Class="ml-3 ml-sm-6 mt-1">
                                         No accounts found. Sync to fetch account details.
                                     </MudText>
                                 }
@@ -293,6 +318,13 @@
         </MudTabs>
     }
 </MudContainer>
+
+<style>
+    .budget-table-container {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+</style>
 
 @code {
     private DateTime _selectedMonth = new(DateTime.Now.Year, DateTime.Now.Month, 1);
