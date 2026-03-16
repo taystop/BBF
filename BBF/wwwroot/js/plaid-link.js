@@ -1,5 +1,5 @@
 window.plaidLink = {
-    open: async function (dotNetRef) {
+    open: async function (dotNetRef, groupId) {
         try {
             const response = await fetch('/api/plaid/create-link-token', { method: 'POST' });
             const data = await response.json();
@@ -14,7 +14,8 @@ window.plaidLink = {
                         body: JSON.stringify({
                             publicToken: publicToken,
                             institutionName: institution.name,
-                            institutionId: institution.institution_id
+                            institutionId: institution.institution_id,
+                            groupId: groupId
                         })
                     });
                     dotNetRef.invokeMethodAsync('OnPlaidSuccess');
@@ -48,7 +49,8 @@ window.plaidLink = {
                         body: JSON.stringify({
                             publicToken: publicToken,
                             institutionName: institution.name,
-                            institutionId: institution.institution_id
+                            institutionId: institution.institution_id,
+                            groupId: null
                         })
                     });
                     window.location.href = '/budget';

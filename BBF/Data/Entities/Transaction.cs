@@ -13,4 +13,7 @@ public class Transaction
 
     public int? CategoryId { get; set; }
     public BudgetCategory? Category { get; set; }
+
+    public int? GroupId { get; set; }
+    public UserGroup? Group { get; set; }
 }

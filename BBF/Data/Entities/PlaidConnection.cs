@@ -11,4 +11,7 @@ public class PlaidConnection
     public DateTime? LastSynced { get; set; }
     public bool IsActive { get; set; } = true;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+    public int? GroupId { get; set; }
+    public UserGroup? Group { get; set; }
 }

@@ -7,6 +7,7 @@
 @using Microsoft.EntityFrameworkCore
 @inject ApplicationDbContext Db
 @inject PlaidService Plaid
+@inject UserContextService UserContext
 @inject IDialogService DialogService
 @inject ISnackbar Snackbar
 @inject IJSRuntime JS
@@ -15,231 +16,248 @@
 <PageTitle>Budget - BBF</PageTitle>
 
 <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="py-4">
-    <MudStack Row AlignItems="AlignItems.Center" Class="mb-4">
-        <MudIcon Icon="@Icons.Material.Filled.AccountBalance" Size="Size.Large" Color="Color.Primary" />
-        <MudText Typo="Typo.h4">Budget</MudText>
-        <MudSpacer />
-        <MudIconButton Icon="@Icons.Material.Filled.ChevronLeft" OnClick="PreviousMonth" />
-        <MudText Typo="Typo.h6">@_selectedMonth.ToString("MMMM yyyy")</MudText>
-        <MudIconButton Icon="@Icons.Material.Filled.ChevronRight" OnClick="NextMonth"
-                       Disabled="@(_selectedMonth >= new DateTime(DateTime.Now.Year, DateTime.Now.Month, 1))" />
-    </MudStack>
+    @if (!UserContext.IsInitialized || UserContext.ActiveGroupId is null)
+    {
+        <MudPaper Class="pa-6 text-center" Elevation="2">
+            <MudIcon Icon="@Icons.Material.Filled.Group" Size="Size.Large" Color="Color.Secondary" Class="mb-3" />
+            <MudText Typo="Typo.h5" Class="mb-2">No Budget Group</MudText>
+            <MudText Typo="Typo.body1" Color="Color.Secondary" Class="mb-4">
+                Create or join a group to start tracking your budget. Groups let you share budget data with family members.
+            </MudText>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" Href="/groups"
+                       StartIcon="@Icons.Material.Filled.GroupAdd">
+                Manage Groups
+            </MudButton>
+        </MudPaper>
+    }
+    else
+    {
+        <MudStack Row AlignItems="AlignItems.Center" Class="mb-4">
+            <MudIcon Icon="@Icons.Material.Filled.AccountBalance" Size="Size.Large" Color="Color.Primary" />
+            <MudText Typo="Typo.h4">Budget</MudText>
+            <MudSpacer />
+            <MudIconButton Icon="@Icons.Material.Filled.ChevronLeft" OnClick="PreviousMonth" />
+            <MudText Typo="Typo.h6">@_selectedMonth.ToString("MMMM yyyy")</MudText>
+            <MudIconButton Icon="@Icons.Material.Filled.ChevronRight" OnClick="NextMonth"
+                           Disabled="@(_selectedMonth >= new DateTime(DateTime.Now.Year, DateTime.Now.Month, 1))" />
+        </MudStack>
 
-    @* Summary cards *@
-    <MudGrid Class="mb-4">
-        <MudItem xs="12" sm="4">
-            <MudPaper Class="pa-4" Elevation="2">
-                <MudText Typo="Typo.subtitle2" Color="Color.Secondary">Total Budget</MudText>
-                <MudText Typo="Typo.h5">@_totalBudget.ToString("C")</MudText>
-            </MudPaper>
-        </MudItem>
-        <MudItem xs="12" sm="4">
-            <MudPaper Class="pa-4" Elevation="2">
-                <MudText Typo="Typo.subtitle2" Color="Color.Secondary">Total Spent</MudText>
-                <MudText Typo="Typo.h5" Color="@(_totalSpent > _totalBudget ? Color.Error : Color.Default)">
-                    @_totalSpent.ToString("C")
-                </MudText>
-            </MudPaper>
-        </MudItem>
-        <MudItem xs="12" sm="4">
-            <MudPaper Class="pa-4" Elevation="2">
-                <MudText Typo="Typo.subtitle2" Color="Color.Secondary">Remaining</MudText>
-                <MudText Typo="Typo.h5" Color="@(_totalBudget - _totalSpent >= 0 ? Color.Success : Color.Error)">
-                    @((_totalBudget - _totalSpent).ToString("C"))
-                </MudText>
-            </MudPaper>
-        </MudItem>
-    </MudGrid>
-
-    @* Tabs *@
-    <MudTabs Elevation="2" Rounded ApplyEffectsToContainer Class="mb-4">
-        <MudTabPanel Text="Categories" Icon="@Icons.Material.Filled.Category">
-            <MudPaper Class="pa-4" Elevation="0">
-                <MudStack Row AlignItems="AlignItems.Center" Class="mb-3">
-                    <MudText Typo="Typo.h6">Budget Categories</MudText>
-                    <MudSpacer />
-                    <MudButton Variant="Variant.Filled" Color="Color.Primary"
-                               StartIcon="@Icons.Material.Filled.Add" OnClick="AddCategory">
-                        Add Category
-                    </MudButton>
-                </MudStack>
-
-                @foreach (var item in _categorySpending)
-                {
-                    var pct = item.Category.MonthlyLimit > 0
-                        ? (double)(item.Spent / item.Category.MonthlyLimit) * 100
-                        : 0;
-                    var remaining = item.Category.MonthlyLimit - item.Spent;
-                    var color = pct >= 100 ? Color.Error : pct >= 80 ? Color.Warning : Color.Success;
-
-                    <MudPaper Class="pa-3 mb-2" Elevation="1">
-                        <MudStack Row AlignItems="AlignItems.Center" Spacing="3">
-                            <div style="width: 8px; height: 40px; border-radius: 4px; background-color: @item.Category.Color;"></div>
-                            <MudStack Spacing="0" Style="min-width: 150px;">
-                                <MudText Typo="Typo.subtitle2">@item.Category.Name</MudText>
-                                <MudText Typo="Typo.caption" Color="Color.Secondary">
-                                    @item.Spent.ToString("C") / @item.Category.MonthlyLimit.ToString("C")
-                                </MudText>
-                            </MudStack>
-                            <MudProgressLinear Value="@Math.Min(pct, 100)" Color="@color"
-                                              Style="flex: 1;" Size="Size.Large" Rounded />
-                            <MudText Typo="Typo.body2" Color="@(remaining >= 0 ? Color.Success : Color.Error)"
-                                     Style="min-width: 80px; text-align: right;">
-                                @remaining.ToString("C")
-                            </MudText>
-                            <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
-                                           OnClick="@(() => EditCategory(item.Category))" />
-                            <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small"
-                                           Color="Color.Error"
-                                           OnClick="@(() => DeleteCategory(item.Category))" />
-                        </MudStack>
-                    </MudPaper>
-                }
-
-                @if (!_categorySpending.Any())
-                {
-                    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="pa-4 text-center">
-                        No budget categories yet. Add one to start tracking spending.
+        @* Summary cards *@
+        <MudGrid Class="mb-4">
+            <MudItem xs="12" sm="4">
+                <MudPaper Class="pa-4" Elevation="2">
+                    <MudText Typo="Typo.subtitle2" Color="Color.Secondary">Total Budget</MudText>
+                    <MudText Typo="Typo.h5">@_totalBudget.ToString("C")</MudText>
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12" sm="4">
+                <MudPaper Class="pa-4" Elevation="2">
+                    <MudText Typo="Typo.subtitle2" Color="Color.Secondary">Total Spent</MudText>
+                    <MudText Typo="Typo.h5" Color="@(_totalSpent > _totalBudget ? Color.Error : Color.Default)">
+                        @_totalSpent.ToString("C")
                     </MudText>
-                }
-            </MudPaper>
-        </MudTabPanel>
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12" sm="4">
+                <MudPaper Class="pa-4" Elevation="2">
+                    <MudText Typo="Typo.subtitle2" Color="Color.Secondary">Remaining</MudText>
+                    <MudText Typo="Typo.h5" Color="@(_totalBudget - _totalSpent >= 0 ? Color.Success : Color.Error)">
+                        @((_totalBudget - _totalSpent).ToString("C"))
+                    </MudText>
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
 
-        <MudTabPanel Text="Transactions" Icon="@Icons.Material.Filled.Receipt">
-            <MudPaper Class="pa-4" Elevation="0">
-                <MudStack Row AlignItems="AlignItems.Center" Class="mb-3">
-                    <MudText Typo="Typo.h6">Transactions</MudText>
-                    <MudSpacer />
-                    <MudButton Variant="Variant.Outlined" Color="Color.Primary"
-                               StartIcon="@Icons.Material.Filled.Sync" OnClick="SyncTransactions"
-                               Disabled="_syncing">
-                        @(_syncing ? "Syncing..." : "Sync from Bank")
-                    </MudButton>
-                    <MudButton Variant="Variant.Filled" Color="Color.Primary"
-                               StartIcon="@Icons.Material.Filled.Add" OnClick="AddTransaction">
-                        Add Manual
-                    </MudButton>
-                    <MudFileUpload T="IBrowserFile" FilesChanged="OnCsvSelected" Accept=".csv">
-                        <CustomContent>
-                            <MudButton Variant="Variant.Outlined" Color="Color.Secondary"
-                                       StartIcon="@Icons.Material.Filled.UploadFile"
-                                       OnClick="@context.OpenFilePickerAsync"
-                                       Disabled="_importing">
-                                @(_importing ? "Importing..." : "Import CSV")
-                            </MudButton>
-                        </CustomContent>
-                    </MudFileUpload>
-                </MudStack>
+        @* Tabs *@
+        <MudTabs Elevation="2" Rounded ApplyEffectsToContainer Class="mb-4">
+            <MudTabPanel Text="Categories" Icon="@Icons.Material.Filled.Category">
+                <MudPaper Class="pa-4" Elevation="0">
+                    <MudStack Row AlignItems="AlignItems.Center" Class="mb-3">
+                        <MudText Typo="Typo.h6">Budget Categories</MudText>
+                        <MudSpacer />
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                                   StartIcon="@Icons.Material.Filled.Add" OnClick="AddCategory">
+                            Add Category
+                        </MudButton>
+                    </MudStack>
 
-                <MudTable Items="_transactions" Hover Dense>
-                    <HeaderContent>
-                        <MudTh>Date</MudTh>
-                        <MudTh>Description</MudTh>
-                        <MudTh>Category</MudTh>
-                        <MudTh Style="text-align: right;">Amount</MudTh>
-                        <MudTh>Source</MudTh>
-                        <MudTh Style="width: 100px;">Actions</MudTh>
-                    </HeaderContent>
-                    <RowTemplate>
-                        <MudTd DataLabel="Date">
-                            <MudText Typo="Typo.body2">@context.Date.ToString("MMM d")</MudText>
-                        </MudTd>
-                        <MudTd DataLabel="Description">
-                            <MudText Typo="Typo.body2">@context.Description</MudText>
-                            @if (!string.IsNullOrEmpty(context.MerchantName) && context.MerchantName != context.Description)
-                            {
-                                <MudText Typo="Typo.caption" Color="Color.Secondary">@context.MerchantName</MudText>
-                            }
-                        </MudTd>
-                        <MudTd DataLabel="Category">
-                            @if (context.Category is not null)
-                            {
-                                <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined"
-                                         Style="@($"border-color: {context.Category.Color}; color: {context.Category.Color};")">
-                                    @context.Category.Name
-                                </MudChip>
-                            }
-                            else
-                            {
-                                <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Secondary"
-                                           OnClick="@(() => CategorizeTransaction(context))">
-                                    Categorize
-                                </MudButton>
-                            }
-                        </MudTd>
-                        <MudTd DataLabel="Amount" Style="text-align: right;">
-                            <MudText Typo="Typo.body2"
-                                     Color="@(context.Amount >= 0 ? Color.Error : Color.Success)">
-                                @context.Amount.ToString("C")
-                            </MudText>
-                        </MudTd>
-                        <MudTd DataLabel="Source">
-                            <MudChip T="string" Size="Size.Small" Variant="Variant.Filled"
-                                     Color="@(context.Source == "Plaid" ? Color.Info : Color.Default)">
-                                @context.Source
-                            </MudChip>
-                        </MudTd>
-                        <MudTd>
-                            <MudStack Row Spacing="0">
-                                <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
-                                               OnClick="@(() => EditTransaction(context))" />
-                                <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small"
-                                               Color="Color.Error"
-                                               OnClick="@(() => DeleteTransaction(context))" />
-                            </MudStack>
-                        </MudTd>
-                    </RowTemplate>
-                    <NoRecordsContent>
-                        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="pa-4">
-                            No transactions for @_selectedMonth.ToString("MMMM yyyy").
-                        </MudText>
-                    </NoRecordsContent>
-                </MudTable>
-            </MudPaper>
-        </MudTabPanel>
-
-        <MudTabPanel Text="Bank Connections" Icon="@Icons.Material.Filled.AccountBalance">
-            <MudPaper Class="pa-4" Elevation="0">
-                <MudStack Row AlignItems="AlignItems.Center" Class="mb-3">
-                    <MudText Typo="Typo.h6">Connected Accounts</MudText>
-                    <MudSpacer />
-                    <MudButton Variant="Variant.Filled" Color="Color.Primary"
-                               StartIcon="@Icons.Material.Filled.AddLink" OnClick="ConnectBank">
-                        Connect Bank
-                    </MudButton>
-                </MudStack>
-
-                @if (_connections.Any())
-                {
-                    @foreach (var conn in _connections)
+                    @foreach (var item in _categorySpending)
                     {
+                        var pct = item.Category.MonthlyLimit > 0
+                            ? (double)(item.Spent / item.Category.MonthlyLimit) * 100
+                            : 0;
+                        var remaining = item.Category.MonthlyLimit - item.Spent;
+                        var color = pct >= 100 ? Color.Error : pct >= 80 ? Color.Warning : Color.Success;
+
                         <MudPaper Class="pa-3 mb-2" Elevation="1">
-                            <MudStack Row AlignItems="AlignItems.Center">
-                                <MudIcon Icon="@Icons.Material.Filled.AccountBalance" Color="Color.Primary" />
-                                <MudStack Spacing="0">
-                                    <MudText Typo="Typo.subtitle2">@conn.InstitutionName</MudText>
+                            <MudStack Row AlignItems="AlignItems.Center" Spacing="3">
+                                <div style="width: 8px; height: 40px; border-radius: 4px; background-color: @item.Category.Color;"></div>
+                                <MudStack Spacing="0" Style="min-width: 150px;">
+                                    <MudText Typo="Typo.subtitle2">@item.Category.Name</MudText>
                                     <MudText Typo="Typo.caption" Color="Color.Secondary">
-                                        Last synced: @(conn.LastSynced?.ToLocalTime().ToString("g") ?? "Never")
+                                        @item.Spent.ToString("C") / @item.Category.MonthlyLimit.ToString("C")
                                     </MudText>
                                 </MudStack>
-                                <MudSpacer />
-                                <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Error"
-                                           OnClick="@(() => DisconnectBank(conn))">
-                                    Disconnect
-                                </MudButton>
+                                <MudProgressLinear Value="@Math.Min(pct, 100)" Color="@color"
+                                                  Style="flex: 1;" Size="Size.Large" Rounded />
+                                <MudText Typo="Typo.body2" Color="@(remaining >= 0 ? Color.Success : Color.Error)"
+                                         Style="min-width: 80px; text-align: right;">
+                                    @remaining.ToString("C")
+                                </MudText>
+                                <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                                               OnClick="@(() => EditCategory(item.Category))" />
+                                <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small"
+                                               Color="Color.Error"
+                                               OnClick="@(() => DeleteCategory(item.Category))" />
                             </MudStack>
                         </MudPaper>
                     }
-                }
-                else
-                {
-                    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="pa-4 text-center">
-                        No bank accounts connected. Click "Connect Bank" to link your account via Plaid.
-                    </MudText>
-                }
-            </MudPaper>
-        </MudTabPanel>
-    </MudTabs>
+
+                    @if (!_categorySpending.Any())
+                    {
+                        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="pa-4 text-center">
+                            No budget categories yet. Add one to start tracking spending.
+                        </MudText>
+                    }
+                </MudPaper>
+            </MudTabPanel>
+
+            <MudTabPanel Text="Transactions" Icon="@Icons.Material.Filled.Receipt">
+                <MudPaper Class="pa-4" Elevation="0">
+                    <MudStack Row AlignItems="AlignItems.Center" Class="mb-3">
+                        <MudText Typo="Typo.h6">Transactions</MudText>
+                        <MudSpacer />
+                        <MudButton Variant="Variant.Outlined" Color="Color.Primary"
+                                   StartIcon="@Icons.Material.Filled.Sync" OnClick="SyncTransactions"
+                                   Disabled="_syncing">
+                            @(_syncing ? "Syncing..." : "Sync from Bank")
+                        </MudButton>
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                                   StartIcon="@Icons.Material.Filled.Add" OnClick="AddTransaction">
+                            Add Manual
+                        </MudButton>
+                        <MudFileUpload T="IBrowserFile" FilesChanged="OnCsvSelected" Accept=".csv">
+                            <CustomContent>
+                                <MudButton Variant="Variant.Outlined" Color="Color.Secondary"
+                                           StartIcon="@Icons.Material.Filled.UploadFile"
+                                           OnClick="@context.OpenFilePickerAsync"
+                                           Disabled="_importing">
+                                    @(_importing ? "Importing..." : "Import CSV")
+                                </MudButton>
+                            </CustomContent>
+                        </MudFileUpload>
+                    </MudStack>
+
+                    <MudTable Items="_transactions" Hover Dense>
+                        <HeaderContent>
+                            <MudTh>Date</MudTh>
+                            <MudTh>Description</MudTh>
+                            <MudTh>Category</MudTh>
+                            <MudTh Style="text-align: right;">Amount</MudTh>
+                            <MudTh>Source</MudTh>
+                            <MudTh Style="width: 100px;">Actions</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd DataLabel="Date">
+                                <MudText Typo="Typo.body2">@context.Date.ToString("MMM d")</MudText>
+                            </MudTd>
+                            <MudTd DataLabel="Description">
+                                <MudText Typo="Typo.body2">@context.Description</MudText>
+                                @if (!string.IsNullOrEmpty(context.MerchantName) && context.MerchantName != context.Description)
+                                {
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary">@context.MerchantName</MudText>
+                                }
+                            </MudTd>
+                            <MudTd DataLabel="Category">
+                                @if (context.Category is not null)
+                                {
+                                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined"
+                                             Style="@($"border-color: {context.Category.Color}; color: {context.Category.Color};")">
+                                        @context.Category.Name
+                                    </MudChip>
+                                }
+                                else
+                                {
+                                    <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Secondary"
+                                               OnClick="@(() => CategorizeTransaction(context))">
+                                        Categorize
+                                    </MudButton>
+                                }
+                            </MudTd>
+                            <MudTd DataLabel="Amount" Style="text-align: right;">
+                                <MudText Typo="Typo.body2"
+                                         Color="@(context.Amount >= 0 ? Color.Error : Color.Success)">
+                                    @context.Amount.ToString("C")
+                                </MudText>
+                            </MudTd>
+                            <MudTd DataLabel="Source">
+                                <MudChip T="string" Size="Size.Small" Variant="Variant.Filled"
+                                         Color="@(context.Source == "Plaid" ? Color.Info : Color.Default)">
+                                    @context.Source
+                                </MudChip>
+                            </MudTd>
+                            <MudTd>
+                                <MudStack Row Spacing="0">
+                                    <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                                                   OnClick="@(() => EditTransaction(context))" />
+                                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small"
+                                                   Color="Color.Error"
+                                                   OnClick="@(() => DeleteTransaction(context))" />
+                                </MudStack>
+                            </MudTd>
+                        </RowTemplate>
+                        <NoRecordsContent>
+                            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="pa-4">
+                                No transactions for @_selectedMonth.ToString("MMMM yyyy").
+                            </MudText>
+                        </NoRecordsContent>
+                    </MudTable>
+                </MudPaper>
+            </MudTabPanel>
+
+            <MudTabPanel Text="Bank Connections" Icon="@Icons.Material.Filled.AccountBalance">
+                <MudPaper Class="pa-4" Elevation="0">
+                    <MudStack Row AlignItems="AlignItems.Center" Class="mb-3">
+                        <MudText Typo="Typo.h6">Connected Accounts</MudText>
+                        <MudSpacer />
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                                   StartIcon="@Icons.Material.Filled.AddLink" OnClick="ConnectBank">
+                            Connect Bank
+                        </MudButton>
+                    </MudStack>
+
+                    @if (_connections.Any())
+                    {
+                        @foreach (var conn in _connections)
+                        {
+                            <MudPaper Class="pa-3 mb-2" Elevation="1">
+                                <MudStack Row AlignItems="AlignItems.Center">
+                                    <MudIcon Icon="@Icons.Material.Filled.AccountBalance" Color="Color.Primary" />
+                                    <MudStack Spacing="0">
+                                        <MudText Typo="Typo.subtitle2">@conn.InstitutionName</MudText>
+                                        <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                            Last synced: @(conn.LastSynced?.ToLocalTime().ToString("g") ?? "Never")
+                                        </MudText>
+                                    </MudStack>
+                                    <MudSpacer />
+                                    <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Error"
+                                               OnClick="@(() => DisconnectBank(conn))">
+                                        Disconnect
+                                    </MudButton>
+                                </MudStack>
+                            </MudPaper>
+                        }
+                    }
+                    else
+                    {
+                        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="pa-4 text-center">
+                            No bank accounts connected. Click "Connect Bank" to link your account via Plaid.
+                        </MudText>
+                    }
+                </MudPaper>
+            </MudTabPanel>
+        </MudTabs>
+    }
 </MudContainer>
 
 @code {
@@ -255,25 +273,39 @@
 
     protected override async Task OnInitializedAsync()
     {
-        await LoadData();
+        UserContext.OnGroupChanged += OnGroupChanged;
+        if (UserContext.ActiveGroupId is not null)
+            await LoadData();
+    }
+
+    private async void OnGroupChanged()
+    {
+        await InvokeAsync(async () =>
+        {
+            await LoadData();
+            StateHasChanged();
+        });
     }
 
     private async Task LoadData()
     {
+        var groupId = UserContext.ActiveGroupId;
+        if (groupId is null) return;
+
         var monthEnd = _selectedMonth.AddMonths(1);
 
         _categories = await Db.BudgetCategories
-            .Where(c => c.IsActive)
+            .Where(c => c.IsActive && c.GroupId == groupId)
             .OrderBy(c => c.SortOrder)
             .ToListAsync();
 
         _transactions = await Db.Transactions
             .Include(t => t.Category)
-            .Where(t => t.Date >= _selectedMonth && t.Date < monthEnd)
+            .Where(t => t.GroupId == groupId && t.Date >= _selectedMonth && t.Date < monthEnd)
             .OrderByDescending(t => t.Date)
             .ToListAsync();
 
-        _connections = await Plaid.GetConnectionsAsync();
+        _connections = await Plaid.GetConnectionsAsync(groupId.Value);
 
         // Calculate spending per category
         _categorySpending = _categories.Select(c => new CategorySpending
@@ -306,6 +338,7 @@
 
         if (result is not null && !result.Canceled && result.Data is BudgetCategory cat)
         {
+            cat.GroupId = UserContext.ActiveGroupId;
             Db.BudgetCategories.Add(cat);
             await Db.SaveChangesAsync();
             await LoadData();
@@ -380,6 +413,7 @@
                 Description = data.Description,
                 MerchantName = data.MerchantName,
                 CategoryId = data.CategoryId,
+                GroupId = UserContext.ActiveGroupId,
                 Source = "Manual"
             });
             await Db.SaveChangesAsync();
@@ -465,7 +499,7 @@
         try
         {
             _dotNetRef ??= DotNetObjectReference.Create(this);
-            await JS.InvokeVoidAsync("plaidLink.open", _dotNetRef);
+            await JS.InvokeVoidAsync("plaidLink.open", _dotNetRef, UserContext.ActiveGroupId);
         }
         catch (Exception ex)
         {
@@ -621,6 +655,7 @@
                     Amount = amount,
                     Date = date,
                     Description = desc,
+                    GroupId = UserContext.ActiveGroupId,
                     Source = "CSV",
                     CreatedAt = DateTime.UtcNow
                 });
@@ -673,6 +708,7 @@
 
     public void Dispose()
     {
+        UserContext.OnGroupChanged -= OnGroupChanged;
         _dotNetRef?.Dispose();
     }
 

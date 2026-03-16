@@ -10,5 +10,8 @@ public class BudgetCategory
     public int SortOrder { get; set; }
     public bool IsActive { get; set; } = true;
 
+    public int? GroupId { get; set; }
+    public UserGroup? Group { get; set; }
+
     public List<Transaction> Transactions { get; set; } = [];
 }

@@ -51,7 +51,7 @@ public class PlaidService
         return response.LinkToken;
     }
 
-    public async Task<PlaidConnection> ExchangePublicTokenAsync(string publicToken, string institutionName, string institutionId)
+    public async Task<PlaidConnection> ExchangePublicTokenAsync(string publicToken, string institutionName, string institutionId, int? groupId)
     {
         var response = await _client.ItemPublicTokenExchangeAsync(new ItemPublicTokenExchangeRequest
         {
@@ -67,6 +67,7 @@ public class PlaidService
             ItemId = response.ItemId,
             InstitutionName = institutionName,
             InstitutionId = institutionId,
+            GroupId = groupId,
             IsActive = true,
             CreatedAt = DateTime.UtcNow
         };
@@ -105,7 +106,7 @@ public class PlaidService
                     .AnyAsync(t => t.PlaidTransactionId == txn.TransactionId);
                 if (exists) continue;
 
-                var category = await MatchCategoryAsync(txn);
+                var category = await MatchCategoryAsync(txn, connection.GroupId);
 
                 _db.Transactions.Add(new Data.Entities.Transaction
                 {
@@ -115,6 +116,7 @@ public class PlaidService
                     Description = txn.MerchantName ?? txn.OriginalDescription ?? "Unknown",
                     MerchantName = txn.MerchantName,
                     CategoryId = category?.Id,
+                    GroupId = connection.GroupId,
                     Source = "Plaid",
                     CreatedAt = DateTime.UtcNow
                 });
@@ -156,10 +158,10 @@ public class PlaidService
         return added;
     }
 
-    public async Task<List<PlaidConnection>> GetConnectionsAsync()
+    public async Task<List<PlaidConnection>> GetConnectionsAsync(int groupId)
     {
         return await _db.PlaidConnections
-            .Where(c => c.IsActive)
+            .Where(c => c.IsActive && c.GroupId == groupId)
             .OrderBy(c => c.InstitutionName)
             .ToListAsync();
     }
@@ -182,13 +184,13 @@ public class PlaidService
         await _db.SaveChangesAsync();
     }
 
-    private async Task<BudgetCategory?> MatchCategoryAsync(Going.Plaid.Entity.Transaction txn)
+    private async Task<BudgetCategory?> MatchCategoryAsync(Going.Plaid.Entity.Transaction txn, int? groupId)
     {
-        // Try to match by merchant name against existing categorized transactions
+        // Try to match by merchant name against existing categorized transactions within the same group
         if (!string.IsNullOrEmpty(txn.MerchantName))
         {
             var previousMatch = await _db.Transactions
-                .Where(t => t.MerchantName == txn.MerchantName && t.CategoryId != null)
+                .Where(t => t.MerchantName == txn.MerchantName && t.CategoryId != null && t.GroupId == groupId)
                 .OrderByDescending(t => t.Date)
                 .FirstOrDefaultAsync();
 

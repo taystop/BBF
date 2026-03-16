@@ -1,0 +1,99 @@
+@using BBF.Data
+@using BBF.Data.Entities
+@using Microsoft.EntityFrameworkCore
+@inject ApplicationDbContext Db
+
+<MudDialog>
+    <DialogContent>
+        <MudText Typo="Typo.body2" Class="mb-3">
+            Share this conversation with your groups. Members of shared groups can view the conversation.
+        </MudText>
+
+        @foreach (var group in Groups)
+        {
+            var isShared = _sharedGroupIds.Contains(group.Id);
+            <MudPaper Class="pa-3 mb-2" Elevation="1">
+                <MudStack Row AlignItems="AlignItems.Center">
+                    <MudIcon Icon="@Icons.Material.Filled.Group" Color="Color.Primary" />
+                    <MudText Typo="Typo.subtitle2">@group.Name</MudText>
+                    <MudSpacer />
+                    <MudSwitch T="bool" Value="isShared" ValueChanged="@(v => ToggleGroupShare(group.Id, v))"
+                               Color="Color.Primary" />
+                </MudStack>
+            </MudPaper>
+        }
+
+        @if (!Groups.Any())
+        {
+            <MudText Typo="Typo.body2" Color="Color.Secondary">
+                You have no groups to share with. Create a group first.
+            </MudText>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Close</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Save">Save</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance MudDialog { get; set; } = null!;
+
+    [Parameter]
+    public List<UserGroup> Groups { get; set; } = [];
+
+    [Parameter]
+    public List<ChatConversationShare> CurrentShares { get; set; } = [];
+
+    [Parameter]
+    public int ConversationId { get; set; }
+
+    private HashSet<int> _sharedGroupIds = [];
+
+    protected override void OnInitialized()
+    {
+        _sharedGroupIds = CurrentShares
+            .Where(s => s.SharedWithGroupId.HasValue)
+            .Select(s => s.SharedWithGroupId!.Value)
+            .ToHashSet();
+    }
+
+    private void ToggleGroupShare(int groupId, bool share)
+    {
+        if (share)
+            _sharedGroupIds.Add(groupId);
+        else
+            _sharedGroupIds.Remove(groupId);
+    }
+
+    private async Task Save()
+    {
+        // Remove shares that were unchecked
+        var toRemove = CurrentShares
+            .Where(s => s.SharedWithGroupId.HasValue && !_sharedGroupIds.Contains(s.SharedWithGroupId.Value))
+            .ToList();
+        Db.ChatConversationShares.RemoveRange(toRemove);
+
+        // Add new shares
+        var existingGroupIds = CurrentShares
+            .Where(s => s.SharedWithGroupId.HasValue)
+            .Select(s => s.SharedWithGroupId!.Value)
+            .ToHashSet();
+
+        foreach (var groupId in _sharedGroupIds.Where(id => !existingGroupIds.Contains(id)))
+        {
+            Db.ChatConversationShares.Add(new ChatConversationShare
+            {
+                ConversationId = ConversationId,
+                SharedWithGroupId = groupId,
+                SharedAt = DateTime.UtcNow
+            });
+        }
+
+        await Db.SaveChangesAsync();
+        MudDialog.Close(DialogResult.Ok(true));
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+}

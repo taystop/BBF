@@ -1,4 +1,10 @@
 @inherits LayoutComponentBase
+@using BBF.Services
+@using BBF.Data.Entities
+@using Microsoft.AspNetCore.Components.Authorization
+@using System.Security.Claims
+@inject UserContextService UserContext
+@inject AuthenticationStateProvider AuthStateProvider
 
 <MudThemeProvider @bind-IsDarkMode="_isDarkMode" Theme="_theme" />
 <MudPopoverProvider />
@@ -13,6 +19,19 @@
         <MudSpacer />
         <AuthorizeView>
             <Authorized>
+                @if (UserContext.Groups.Count > 1)
+                {
+                    <MudSelect T="int?" Value="UserContext.ActiveGroupId"
+                               ValueChanged="OnGroupChanged"
+                               Variant="Variant.Outlined" Dense Margin="Margin.Dense"
+                               Style="max-width: 200px; color: inherit;"
+                               Class="mr-3">
+                        @foreach (var group in UserContext.Groups)
+                        {
+                            <MudSelectItem T="int?" Value="@group.Id">@group.Name</MudSelectItem>
+                        }
+                    </MudSelect>
+                }
                 <MudText Typo="Typo.body2" Class="mr-3">@context.User.Identity?.Name</MudText>
                 <form action="Account/Logout" method="post">
                     <AntiforgeryToken />
@@ -59,6 +78,26 @@
             Secondary = Colors.Green.Accent4,
         }
     };
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+            var userId = authState.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (userId is not null)
+            {
+                await UserContext.InitializeAsync(userId);
+                StateHasChanged();
+            }
+        }
+    }
+
+    private void OnGroupChanged(int? groupId)
+    {
+        if (groupId.HasValue)
+            UserContext.SetActiveGroup(groupId.Value);
+    }
 
     private void ToggleDrawer() => _drawerOpen = !_drawerOpen;
     private void ToggleDarkMode() => _isDarkMode = !_isDarkMode;

@@ -1,0 +1,140 @@
+@using BBF.Data
+@using BBF.Data.Entities
+@using Microsoft.AspNetCore.Identity
+@using Microsoft.EntityFrameworkCore
+@inject ApplicationDbContext Db
+@inject UserManager<ApplicationUser> UserManager
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        @* Current members *@
+        <MudText Typo="Typo.subtitle2" Class="mb-2">Current Members</MudText>
+        @foreach (var member in _members)
+        {
+            var isCurrentUser = member.UserId == CurrentUserId;
+            var currentUserIsOwner = _members.Any(m => m.UserId == CurrentUserId && m.Role == "Owner");
+
+            <MudPaper Class="pa-3 mb-2" Elevation="1">
+                <MudStack Row AlignItems="AlignItems.Center">
+                    <MudIcon Icon="@Icons.Material.Filled.Person"
+                             Color="@(member.Role == "Owner" ? Color.Warning : Color.Default)" />
+                    <MudStack Spacing="0">
+                        <MudText Typo="Typo.body1">
+                            @(member.User?.UserName ?? "Unknown")
+                            @if (isCurrentUser) { <text> (you)</text> }
+                        </MudText>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">
+                            @member.Role &middot; Joined @member.JoinedAt.ToLocalTime().ToString("MMM d, yyyy")
+                        </MudText>
+                    </MudStack>
+                    <MudSpacer />
+                    @if (currentUserIsOwner && !isCurrentUser)
+                    {
+                        <MudSelect T="string" Value="@member.Role" ValueChanged="@(r => ChangeRole(member, r))"
+                                   Variant="Variant.Outlined" Dense Margin="Margin.Dense"
+                                   Style="max-width: 120px;">
+                            <MudSelectItem Value="@("Owner")">Owner</MudSelectItem>
+                            <MudSelectItem Value="@("Member")">Member</MudSelectItem>
+                        </MudSelect>
+                        <MudIconButton Icon="@Icons.Material.Filled.PersonRemove" Size="Size.Small"
+                                       Color="Color.Error" OnClick="@(() => RemoveMember(member))" />
+                    }
+                </MudStack>
+            </MudPaper>
+        }
+
+        @* Add member *@
+        <MudDivider Class="my-3" />
+        <MudText Typo="Typo.subtitle2" Class="mb-2">Add Member</MudText>
+        <MudStack Row AlignItems="AlignItems.End">
+            <MudTextField @bind-Value="_addEmail" Label="Email address" Variant="Variant.Outlined"
+                          Placeholder="user@example.com" Margin="Margin.Dense" FullWidth />
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="AddMember"
+                       Disabled="@string.IsNullOrWhiteSpace(_addEmail)">
+                Add
+            </MudButton>
+        </MudStack>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Close">Close</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance MudDialog { get; set; } = null!;
+
+    [Parameter]
+    public UserGroup Group { get; set; } = null!;
+
+    [Parameter]
+    public string CurrentUserId { get; set; } = string.Empty;
+
+    private List<UserGroupMember> _members = [];
+    private string _addEmail = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadMembers();
+    }
+
+    private async Task LoadMembers()
+    {
+        _members = await Db.UserGroupMembers
+            .Where(m => m.GroupId == Group.Id)
+            .Include(m => m.User)
+            .OrderByDescending(m => m.Role)
+            .ThenBy(m => m.JoinedAt)
+            .ToListAsync();
+    }
+
+    private async Task AddMember()
+    {
+        var email = _addEmail.Trim();
+        if (string.IsNullOrEmpty(email)) return;
+
+        var user = await UserManager.FindByEmailAsync(email);
+        if (user is null)
+        {
+            Snackbar.Add($"No user found with email '{email}'.", Severity.Warning);
+            return;
+        }
+
+        if (_members.Any(m => m.UserId == user.Id))
+        {
+            Snackbar.Add("User is already a member of this group.", Severity.Warning);
+            return;
+        }
+
+        Db.UserGroupMembers.Add(new UserGroupMember
+        {
+            GroupId = Group.Id,
+            UserId = user.Id,
+            Role = "Member",
+            JoinedAt = DateTime.UtcNow
+        });
+        await Db.SaveChangesAsync();
+
+        _addEmail = string.Empty;
+        Snackbar.Add($"Added {user.UserName ?? email} to group.", Severity.Success);
+        await LoadMembers();
+    }
+
+    private async Task RemoveMember(UserGroupMember member)
+    {
+        Db.UserGroupMembers.Remove(member);
+        await Db.SaveChangesAsync();
+        Snackbar.Add($"Removed {member.User?.UserName ?? "user"} from group.", Severity.Info);
+        await LoadMembers();
+    }
+
+    private async Task ChangeRole(UserGroupMember member, string newRole)
+    {
+        member.Role = newRole;
+        await Db.SaveChangesAsync();
+        await LoadMembers();
+    }
+
+    private void Close() => MudDialog.Close(DialogResult.Ok(true));
+}

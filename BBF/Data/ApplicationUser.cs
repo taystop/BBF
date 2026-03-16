@@ -1,10 +1,11 @@
+using BBF.Data.Entities;
 using Microsoft.AspNetCore.Identity;
 
 namespace BBF.Data
 {
-    // Add profile data for application users by adding properties to the ApplicationUser class
     public class ApplicationUser : IdentityUser
     {
+        public ICollection<UserGroupMember> GroupMemberships { get; set; } = [];
+        public ICollection<ChatConversation> ChatConversations { get; set; } = [];
     }
-
 }

@@ -8,5 +8,9 @@ public class ChatConversation
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
+    public string? UserId { get; set; }
+    public ApplicationUser? User { get; set; }
+
     public ICollection<ChatMessage> Messages { get; set; } = [];
+    public ICollection<ChatConversationShare> Shares { get; set; } = [];
 }

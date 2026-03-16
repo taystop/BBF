@@ -1,0 +1,218 @@
+@page "/groups"
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Roles = "Admin")]
+@using BBF.Data
+@using BBF.Data.Entities
+@using BBF.Services
+@using Microsoft.EntityFrameworkCore
+@inject ApplicationDbContext Db
+@inject UserContextService UserContext
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<PageTitle>Groups - BBF</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Medium" Class="py-4">
+    <MudStack Row AlignItems="AlignItems.Center" Class="mb-4">
+        <MudIcon Icon="@Icons.Material.Filled.Group" Size="Size.Large" Color="Color.Primary" />
+        <MudText Typo="Typo.h4">Groups</MudText>
+        <MudSpacer />
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Add" OnClick="CreateGroup">
+            Create Group
+        </MudButton>
+    </MudStack>
+
+    @if (_groups.Any())
+    {
+        @foreach (var group in _groups)
+        {
+            var membership = group.Members.FirstOrDefault(m => m.UserId == UserContext.UserId);
+            var isOwner = membership?.Role == "Owner";
+            var isActive = group.Id == UserContext.ActiveGroupId;
+
+            <MudPaper Class="pa-4 mb-3" Elevation="2">
+                <MudStack Row AlignItems="AlignItems.Center" Class="mb-2">
+                    <MudIcon Icon="@Icons.Material.Filled.Group" Color="@(isActive ? Color.Primary : Color.Default)" />
+                    <MudStack Spacing="0">
+                        <MudStack Row AlignItems="AlignItems.Center" Spacing="2">
+                            <MudText Typo="Typo.h6">@group.Name</MudText>
+                            @if (isActive)
+                            {
+                                <MudChip T="string" Size="Size.Small" Color="Color.Primary" Variant="Variant.Filled">Active</MudChip>
+                            }
+                            @if (isOwner)
+                            {
+                                <MudChip T="string" Size="Size.Small" Color="Color.Info" Variant="Variant.Outlined">Owner</MudChip>
+                            }
+                        </MudStack>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">
+                            @group.Members.Count member@(group.Members.Count != 1 ? "s" : "")
+                            &middot; Created @group.CreatedAt.ToLocalTime().ToString("MMM d, yyyy")
+                        </MudText>
+                    </MudStack>
+                    <MudSpacer />
+                    @if (!isActive)
+                    {
+                        <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Primary"
+                                   OnClick="@(() => SetActiveGroup(group.Id))">
+                            Set Active
+                        </MudButton>
+                    }
+                    <MudButton Size="Size.Small" Variant="Variant.Outlined"
+                               StartIcon="@Icons.Material.Filled.People"
+                               OnClick="@(() => ManageMembers(group))">
+                        Members
+                    </MudButton>
+                    @if (isOwner)
+                    {
+                        <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                                       OnClick="@(() => EditGroup(group))" />
+                        <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small"
+                                       Color="Color.Error"
+                                       OnClick="@(() => DeleteGroup(group))" />
+                    }
+                </MudStack>
+
+                @* Member list preview *@
+                <MudStack Row Spacing="2" Class="mt-2">
+                    @foreach (var member in group.Members.OrderByDescending(m => m.Role))
+                    {
+                        <MudChip T="string" Size="Size.Small" Variant="Variant.Text"
+                                 Icon="@Icons.Material.Filled.Person">
+                            @(member.User?.UserName ?? "Unknown") (@member.Role)
+                        </MudChip>
+                    }
+                </MudStack>
+            </MudPaper>
+        }
+    }
+    else
+    {
+        <MudPaper Class="pa-6 text-center" Elevation="2">
+            <MudIcon Icon="@Icons.Material.Filled.GroupAdd" Size="Size.Large" Color="Color.Secondary" Class="mb-3" />
+            <MudText Typo="Typo.h6">No groups yet</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
+                Groups let you share budget data with family members. Create one to get started.
+            </MudText>
+        </MudPaper>
+    }
+</MudContainer>
+
+@code {
+    private List<UserGroup> _groups = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadGroups();
+    }
+
+    private async Task LoadGroups()
+    {
+        if (UserContext.UserId is null) return;
+
+        _groups = await Db.UserGroupMembers
+            .Where(m => m.UserId == UserContext.UserId)
+            .Include(m => m.Group)
+                .ThenInclude(g => g.Members)
+                    .ThenInclude(m => m.User)
+            .Select(m => m.Group)
+            .OrderBy(g => g.Name)
+            .ToListAsync();
+    }
+
+    private async Task CreateGroup()
+    {
+        var parameters = new DialogParameters<GroupDialog>
+        {
+            { x => x.GroupName, "" },
+            { x => x.IsNew, true }
+        };
+        var dialog = await DialogService.ShowAsync<GroupDialog>("Create Group", parameters);
+        var result = await dialog.Result;
+
+        if (result is not null && !result.Canceled && result.Data is string name)
+        {
+            var group = new UserGroup
+            {
+                Name = name,
+                CreatedAt = DateTime.UtcNow
+            };
+            Db.UserGroups.Add(group);
+            await Db.SaveChangesAsync();
+
+            Db.UserGroupMembers.Add(new UserGroupMember
+            {
+                GroupId = group.Id,
+                UserId = UserContext.UserId!,
+                Role = "Owner",
+                JoinedAt = DateTime.UtcNow
+            });
+            await Db.SaveChangesAsync();
+
+            await UserContext.RefreshGroupsAsync();
+            await LoadGroups();
+            Snackbar.Add($"Group '{name}' created!", Severity.Success);
+        }
+    }
+
+    private async Task EditGroup(UserGroup group)
+    {
+        var parameters = new DialogParameters<GroupDialog>
+        {
+            { x => x.GroupName, group.Name },
+            { x => x.IsNew, false }
+        };
+        var dialog = await DialogService.ShowAsync<GroupDialog>("Edit Group", parameters);
+        var result = await dialog.Result;
+
+        if (result is not null && !result.Canceled && result.Data is string name)
+        {
+            group.Name = name;
+            await Db.SaveChangesAsync();
+            await UserContext.RefreshGroupsAsync();
+            await LoadGroups();
+        }
+    }
+
+    private async Task DeleteGroup(UserGroup group)
+    {
+        var parameters = new DialogParameters<MessageBoxDialog>
+        {
+            { x => x.ContentText, $"Delete group '{group.Name}'? Budget data linked to this group will become ungrouped." },
+            { x => x.ButtonText, "Delete" },
+            { x => x.Color, Color.Error }
+        };
+        var dialog = await DialogService.ShowAsync<MessageBoxDialog>("Delete Group", parameters);
+        var result = await dialog.Result;
+
+        if (result is not null && !result.Canceled)
+        {
+            Db.UserGroups.Remove(group);
+            await Db.SaveChangesAsync();
+            await UserContext.RefreshGroupsAsync();
+            await LoadGroups();
+            Snackbar.Add($"Group '{group.Name}' deleted.", Severity.Info);
+        }
+    }
+
+    private async Task ManageMembers(UserGroup group)
+    {
+        var parameters = new DialogParameters<GroupMembersDialog>
+        {
+            { x => x.Group, group },
+            { x => x.CurrentUserId, UserContext.UserId! }
+        };
+        var dialog = await DialogService.ShowAsync<GroupMembersDialog>($"Members - {group.Name}", parameters);
+        await dialog.Result;
+
+        await UserContext.RefreshGroupsAsync();
+        await LoadGroups();
+    }
+
+    private void SetActiveGroup(int groupId)
+    {
+        UserContext.SetActiveGroup(groupId);
+        StateHasChanged();
+    }
+}

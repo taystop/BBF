@@ -11,8 +11,10 @@
 @inject OllamaService Ollama
 @inject WebSearchService Search
 @inject WikiSearchService WikiSearch
+@inject UserContextService UserContext
 @inject NavigationManager Nav
 @inject ISnackbar Snackbar
+@inject IDialogService DialogService
 @implements IDisposable
 
 <PageTitle>AI Chat - BBF</PageTitle>
@@ -39,18 +41,22 @@
                 {
                     @foreach (var convo in FilteredConversations)
                     {
+                        var isShared = convo.UserId != UserContext.UserId;
                         <MudNavLink Href="@($"/chat/{convo.Id}")"
                                     Match="NavLinkMatch.All"
-                                    Icon="@Icons.Material.Filled.ChatBubbleOutline"
+                                    Icon="@(isShared ? Icons.Material.Filled.Share : Icons.Material.Filled.ChatBubbleOutline)"
                                     Class="@(convo.Id == ConversationId ? "mud-nav-link-active" : "")">
                             <div class="d-flex align-center justify-space-between" style="width: 100%;">
                                 <MudText Typo="Typo.body2" Class="text-truncate" Style="max-width: 160px;">
                                     @(convo.Title ?? "New Chat")
                                 </MudText>
-                                <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small"
-                                               Color="Color.Error"
-                                               OnClick="@(() => DeleteConversation(convo.Id))"
-                                               onclick:stopPropagation />
+                                @if (!isShared)
+                                {
+                                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small"
+                                                   Color="Color.Error"
+                                                   OnClick="@(() => DeleteConversation(convo.Id))"
+                                                   onclick:stopPropagation />
+                                }
                             </div>
                         </MudNavLink>
                     }
@@ -74,6 +80,14 @@
                     @(_activeConversation?.Title ?? "New Chat")
                 </MudText>
                 <MudSpacer />
+                @if (_activeConversation is not null && _activeConversation.UserId == UserContext.UserId)
+                {
+                    <MudTooltip Text="Share conversation">
+                        <MudIconButton Icon="@Icons.Material.Filled.Share" Size="Size.Medium"
+                                       Color="@(_activeConversation.Shares.Any() ? Color.Info : Color.Default)"
+                                       OnClick="ShowShareDialog" />
+                    </MudTooltip>
+                }
                 <MudTooltip Text="@(_docsSearchEnabled ? "Docs search enabled" : "Docs search disabled")">
                     <MudToggleIconButton @bind-Toggled="_docsSearchEnabled"
                                          Icon="@Icons.Material.Filled.MenuBook"
@@ -399,7 +413,24 @@
 
     private async Task LoadConversations()
     {
+        var userId = UserContext.UserId;
+        if (userId is null)
+        {
+            _conversations = await Db.ChatConversations
+                .OrderByDescending(c => c.UpdatedAt)
+                .ToListAsync();
+            return;
+        }
+
+        // Get user's group IDs for shared conversation lookup
+        var groupIds = UserContext.Groups.Select(g => g.Id).ToList();
+
+        // Own conversations + shared via group or directly shared with user
         _conversations = await Db.ChatConversations
+            .Include(c => c.Shares)
+            .Where(c => c.UserId == userId
+                || c.Shares.Any(s => s.SharedWithUserId == userId)
+                || c.Shares.Any(s => s.SharedWithGroupId != null && groupIds.Contains(s.SharedWithGroupId.Value)))
             .OrderByDescending(c => c.UpdatedAt)
             .ToListAsync();
     }
@@ -408,10 +439,25 @@
     {
         _activeConversation = await Db.ChatConversations
             .Include(c => c.Messages.OrderBy(m => m.CreatedAt))
+            .Include(c => c.Shares)
             .FirstOrDefaultAsync(c => c.Id == id);
 
         if (_activeConversation is not null)
         {
+            // Verify access: must be owner or shared
+            var userId = UserContext.UserId;
+            var groupIds = UserContext.Groups.Select(g => g.Id).ToList();
+            var hasAccess = _activeConversation.UserId == userId
+                || _activeConversation.UserId == null // legacy unowned
+                || _activeConversation.Shares.Any(s => s.SharedWithUserId == userId)
+                || _activeConversation.Shares.Any(s => s.SharedWithGroupId != null && groupIds.Contains(s.SharedWithGroupId.Value));
+
+            if (!hasAccess)
+            {
+                Nav.NavigateTo("/chat");
+                return;
+            }
+
             _messages = _activeConversation.Messages.ToList();
             _selectedModel = _activeConversation.Model;
         }
@@ -431,6 +477,9 @@
         var convo = await Db.ChatConversations.FindAsync(id);
         if (convo is not null)
         {
+            // Only owner can delete
+            if (convo.UserId != UserContext.UserId && convo.UserId is not null) return;
+
             Db.ChatConversations.Remove(convo);
             await Db.SaveChangesAsync();
             await LoadConversations();
@@ -462,6 +511,7 @@
             _activeConversation = new ChatConversation
             {
                 Model = _selectedModel,
+                UserId = UserContext.UserId,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
             };
@@ -612,6 +662,32 @@
             // Navigate after streaming completes so URL reflects the conversation
             if (isNewConversation)
                 Nav.NavigateTo($"/chat/{_activeConversation.Id}", replace: true);
+        }
+    }
+
+    // --- Share dialog ---
+
+    private async Task ShowShareDialog()
+    {
+        if (_activeConversation is null || _activeConversation.UserId != UserContext.UserId) return;
+
+        var groups = UserContext.Groups;
+        var currentShares = _activeConversation.Shares.ToList();
+
+        var parameters = new DialogParameters<ChatShareDialog>
+        {
+            { x => x.Groups, groups },
+            { x => x.CurrentShares, currentShares },
+            { x => x.ConversationId, _activeConversation.Id }
+        };
+        var dialog = await DialogService.ShowAsync<ChatShareDialog>("Share Conversation", parameters);
+        var result = await dialog.Result;
+
+        if (result is not null && !result.Canceled)
+        {
+            // Reload to pick up share changes
+            await LoadConversation(_activeConversation.Id);
+            StateHasChanged();
         }
     }
 
