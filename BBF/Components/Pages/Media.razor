@@ -1,0 +1,244 @@
+@page "/media"
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@using BBF.Services
+@inject EmbyService Emby
+@inject ISnackbar Snackbar
+
+<PageTitle>Media - BBF</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="py-4">
+    <MudStack Row AlignItems="AlignItems.Center" Style="flex-wrap: wrap; gap: 8px;" Class="mb-4">
+        <MudIcon Icon="@Icons.Material.Filled.Movie" Size="Size.Large" Color="Color.Primary" />
+        <MudText Typo="Typo.h4">Media</MudText>
+        <MudSpacer />
+        @if (_systemInfo is not null)
+        {
+            <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Filled">
+                @_systemInfo.ServerName v@(_systemInfo.Version)
+            </MudChip>
+        }
+        <MudIconButton Icon="@Icons.Material.Filled.Refresh" OnClick="LoadAll" title="Refresh" />
+    </MudStack>
+
+    @if (_loading)
+    {
+        <MudProgressLinear Color="Color.Primary" Indeterminate Class="mb-4" />
+    }
+
+    @* Now Playing *@
+    @if (_sessions.Any())
+    {
+        <MudText Typo="Typo.h6" Class="mb-2" Color="Color.Secondary">Now Playing</MudText>
+        <MudGrid Class="mb-4">
+            @foreach (var session in _sessions)
+            {
+                <MudItem xs="12" sm="6" md="4">
+                    <MudCard Elevation="2">
+                        <MudCardHeader>
+                            <CardHeaderAvatar>
+                                <MudAvatar Color="Color.Primary" Size="Size.Medium">
+                                    <MudIcon Icon="@(session.PlayState?.IsPaused == true ? Icons.Material.Filled.Pause : Icons.Material.Filled.PlayArrow)" />
+                                </MudAvatar>
+                            </CardHeaderAvatar>
+                            <CardHeaderContent>
+                                <MudText Typo="Typo.subtitle1">
+                                    @if (session.NowPlayingItem?.SeriesName is not null)
+                                    {
+                                        @session.NowPlayingItem.SeriesName
+                                        <MudText Typo="Typo.caption"> — @session.NowPlayingItem.Name</MudText>
+                                    }
+                                    else
+                                    {
+                                        @(session.NowPlayingItem?.Name ?? "Unknown")
+                                    }
+                                </MudText>
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                    @session.UserName on @session.DeviceName (@session.Client)
+                                </MudText>
+                            </CardHeaderContent>
+                        </MudCardHeader>
+                        @if (session.NowPlayingItem?.RunTimeTicks is not null && session.PlayState?.PositionTicks is not null)
+                        {
+                            <MudCardContent Class="pt-0">
+                                @{
+                                    var progress = (double)session.PlayState.PositionTicks.Value / session.NowPlayingItem.RunTimeTicks.Value * 100;
+                                    var position = TimeSpan.FromTicks(session.PlayState.PositionTicks.Value);
+                                    var duration = TimeSpan.FromTicks(session.NowPlayingItem.RunTimeTicks.Value);
+                                }
+                                <MudProgressLinear Value="@progress" Color="Color.Primary" Size="Size.Small" Rounded Class="mb-1" />
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                    @position.ToString(@"h\:mm\:ss") / @duration.ToString(@"h\:mm\:ss")
+                                </MudText>
+                            </MudCardContent>
+                        }
+                    </MudCard>
+                </MudItem>
+            }
+        </MudGrid>
+    }
+
+    @* Library Stats *@
+    @if (_counts is not null)
+    {
+        <MudText Typo="Typo.h6" Class="mb-2" Color="Color.Secondary">Library</MudText>
+        <MudGrid Class="mb-4">
+            @if (_counts.MovieCount > 0)
+            {
+                <MudItem xs="6" sm="4" md="2">
+                    <MudPaper Class="pa-3 text-center" Elevation="2">
+                        <MudIcon Icon="@Icons.Material.Filled.Movie" Color="Color.Primary" />
+                        <MudText Typo="Typo.h5">@_counts.MovieCount</MudText>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">Movies</MudText>
+                    </MudPaper>
+                </MudItem>
+            }
+            @if (_counts.SeriesCount > 0)
+            {
+                <MudItem xs="6" sm="4" md="2">
+                    <MudPaper Class="pa-3 text-center" Elevation="2">
+                        <MudIcon Icon="@Icons.Material.Filled.Tv" Color="Color.Primary" />
+                        <MudText Typo="Typo.h5">@_counts.SeriesCount</MudText>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">Series</MudText>
+                    </MudPaper>
+                </MudItem>
+            }
+            @if (_counts.EpisodeCount > 0)
+            {
+                <MudItem xs="6" sm="4" md="2">
+                    <MudPaper Class="pa-3 text-center" Elevation="2">
+                        <MudIcon Icon="@Icons.Material.Filled.Subscriptions" Color="Color.Info" />
+                        <MudText Typo="Typo.h5">@_counts.EpisodeCount</MudText>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">Episodes</MudText>
+                    </MudPaper>
+                </MudItem>
+            }
+            @if (_counts.ArtistCount > 0)
+            {
+                <MudItem xs="6" sm="4" md="2">
+                    <MudPaper Class="pa-3 text-center" Elevation="2">
+                        <MudIcon Icon="@Icons.Material.Filled.MusicNote" Color="Color.Secondary" />
+                        <MudText Typo="Typo.h5">@_counts.SongCount</MudText>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">Songs</MudText>
+                    </MudPaper>
+                </MudItem>
+            }
+            @if (_counts.AlbumCount > 0)
+            {
+                <MudItem xs="6" sm="4" md="2">
+                    <MudPaper Class="pa-3 text-center" Elevation="2">
+                        <MudIcon Icon="@Icons.Material.Filled.Album" Color="Color.Secondary" />
+                        <MudText Typo="Typo.h5">@_counts.AlbumCount</MudText>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">Albums</MudText>
+                    </MudPaper>
+                </MudItem>
+            }
+            @if (_counts.BookCount > 0)
+            {
+                <MudItem xs="6" sm="4" md="2">
+                    <MudPaper Class="pa-3 text-center" Elevation="2">
+                        <MudIcon Icon="@Icons.Material.Filled.Book" Color="Color.Warning" />
+                        <MudText Typo="Typo.h5">@_counts.BookCount</MudText>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">Books</MudText>
+                    </MudPaper>
+                </MudItem>
+            }
+        </MudGrid>
+    }
+
+    @* Recent Additions *@
+    @if (_recentItems.Any())
+    {
+        <MudText Typo="Typo.h6" Class="mb-2" Color="Color.Secondary">Recently Added</MudText>
+        <MudGrid>
+            @foreach (var item in _recentItems)
+            {
+                <MudItem xs="6" sm="4" md="3" lg="2">
+                    <MudCard Elevation="2" Style="height: 100%;">
+                        @if (item.HasPrimaryImage)
+                        {
+                            <MudCardMedia Image="@Emby.GetImageUrl(item.Id, maxHeight: 300)"
+                                          Height="180" />
+                        }
+                        else
+                        {
+                            <div class="d-flex align-center justify-center" style="height: 180px; background: var(--mud-palette-surface);">
+                                <MudIcon Icon="@GetTypeIcon(item.Type)" Size="Size.Large" Color="Color.Secondary" />
+                            </div>
+                        }
+                        <MudCardContent Class="pa-2">
+                            <MudText Typo="Typo.body2" Style="font-weight: 600;" Class="text-truncate">
+                                @item.Name
+                            </MudText>
+                            @if (item.SeriesName is not null)
+                            {
+                                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="text-truncate">
+                                    @item.SeriesName
+                                </MudText>
+                            }
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                @item.Type
+                                @if (item.DateCreated.HasValue)
+                                {
+                                    <text> &middot; @item.DateCreated.Value.ToLocalTime().ToString("MMM d")</text>
+                                }
+                            </MudText>
+                        </MudCardContent>
+                    </MudCard>
+                </MudItem>
+            }
+        </MudGrid>
+    }
+
+    @if (!_loading && _counts is null)
+    {
+        <MudPaper Class="pa-8 text-center" Elevation="2">
+            <MudIcon Icon="@Icons.Material.Filled.CloudOff" Size="Size.Large" Color="Color.Secondary" Class="mb-3" />
+            <MudText Typo="Typo.h6" Color="Color.Secondary">Unable to connect to Emby</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary">Check that Emby is running and the API key is configured.</MudText>
+        </MudPaper>
+    }
+</MudContainer>
+
+@code {
+    private EmbySystemInfo? _systemInfo;
+    private EmbyItemCounts? _counts;
+    private List<EmbySession> _sessions = [];
+    private List<EmbyItem> _recentItems = [];
+    private bool _loading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAll();
+    }
+
+    private async Task LoadAll()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        var infoTask = Emby.GetSystemInfoAsync();
+        var countsTask = Emby.GetItemCountsAsync();
+        var sessionsTask = Emby.GetActiveSessionsAsync();
+        var recentTask = Emby.GetRecentItemsAsync();
+
+        await Task.WhenAll(infoTask, countsTask, sessionsTask, recentTask);
+
+        _systemInfo = infoTask.Result;
+        _counts = countsTask.Result;
+        _sessions = sessionsTask.Result;
+        _recentItems = recentTask.Result;
+
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private static string GetTypeIcon(string type) => type switch
+    {
+        "Movie" => Icons.Material.Filled.Movie,
+        "Series" => Icons.Material.Filled.Tv,
+        "Episode" => Icons.Material.Filled.Subscriptions,
+        "Audio" or "MusicAlbum" => Icons.Material.Filled.MusicNote,
+        _ => Icons.Material.Filled.VideoLibrary
+    };
+}

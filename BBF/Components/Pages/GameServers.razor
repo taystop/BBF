@@ -1,0 +1,240 @@
+@page "/gameservers"
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@using BBF.Services
+@inject AmpService Amp
+@inject ISnackbar Snackbar
+
+<PageTitle>Game Servers - BBF</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="py-4">
+    <MudStack Row AlignItems="AlignItems.Center" Style="flex-wrap: wrap; gap: 8px;" Class="mb-4">
+        <MudIcon Icon="@Icons.Material.Filled.SportsEsports" Size="Size.Large" Color="Color.Primary" />
+        <MudText Typo="Typo.h4">Game Servers</MudText>
+        <MudSpacer />
+        <MudIconButton Icon="@Icons.Material.Filled.Refresh" OnClick="LoadInstances" title="Refresh" />
+    </MudStack>
+
+    @if (_loading)
+    {
+        <MudProgressLinear Color="Color.Primary" Indeterminate Class="mb-4" />
+    }
+
+    @if (_instances.Any())
+    {
+        <MudGrid>
+            @foreach (var inst in _instances)
+            {
+                var status = _statuses.GetValueOrDefault(inst.InstanceId);
+                var isOnline = status?.IsOnline == true;
+                var isBusy = _busyInstances.Contains(inst.InstanceId);
+
+                <MudItem xs="12" sm="6" md="4">
+                    <MudCard Elevation="2" Style="height: 100%;">
+                        <MudCardHeader>
+                            <CardHeaderAvatar>
+                                <MudAvatar Color="@(isOnline ? Color.Success : Color.Default)" Size="Size.Medium">
+                                    <MudIcon Icon="@GetGameIcon(inst.Module)" Size="Size.Small" />
+                                </MudAvatar>
+                            </CardHeaderAvatar>
+                            <CardHeaderContent>
+                                <MudText Typo="Typo.subtitle1">@inst.FriendlyName</MudText>
+                                <MudText Typo="Typo.caption" Color="@(isOnline ? Color.Success : Color.Secondary)">
+                                    @(status?.StateName ?? (inst.IsRunning ? "Running" : "Stopped"))
+                                </MudText>
+                            </CardHeaderContent>
+                            <CardHeaderActions>
+                                <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Secondary">
+                                    @inst.GameType
+                                </MudChip>
+                            </CardHeaderActions>
+                        </MudCardHeader>
+
+                        <MudCardContent Class="pt-0">
+                            @if (status is not null)
+                            {
+                                <MudStack Spacing="2">
+                                    @* Players *@
+                                    <MudStack Row AlignItems="AlignItems.Center" Spacing="2">
+                                        <MudIcon Icon="@Icons.Material.Filled.People" Size="Size.Small" Color="Color.Secondary" />
+                                        <MudText Typo="Typo.body2">
+                                            @status.ActiveUsers / @status.MaxUsers players
+                                        </MudText>
+                                    </MudStack>
+
+                                    @* Uptime *@
+                                    @if (status.Uptime is not null)
+                                    {
+                                        <MudStack Row AlignItems="AlignItems.Center" Spacing="2">
+                                            <MudIcon Icon="@Icons.Material.Filled.Timer" Size="Size.Small" Color="Color.Secondary" />
+                                            <MudText Typo="Typo.body2">@status.Uptime</MudText>
+                                        </MudStack>
+                                    }
+
+                                    @* CPU/Memory *@
+                                    @if (status.Cpu.HasValue || status.Memory.HasValue)
+                                    {
+                                        <MudStack Row AlignItems="AlignItems.Center" Spacing="3" Style="flex-wrap: wrap;">
+                                            @if (status.Cpu.HasValue)
+                                            {
+                                                <MudStack Row AlignItems="AlignItems.Center" Spacing="1">
+                                                    <MudIcon Icon="@Icons.Material.Filled.Memory" Size="Size.Small" Color="Color.Secondary" />
+                                                    <MudText Typo="Typo.caption">CPU @status.Cpu.Value.ToString("F1")%</MudText>
+                                                </MudStack>
+                                            }
+                                            @if (status.Memory.HasValue)
+                                            {
+                                                <MudStack Row AlignItems="AlignItems.Center" Spacing="1">
+                                                    <MudIcon Icon="@Icons.Material.Filled.Storage" Size="Size.Small" Color="Color.Secondary" />
+                                                    <MudText Typo="Typo.caption">RAM @status.Memory.Value.ToString("F1")%</MudText>
+                                                </MudStack>
+                                            }
+                                        </MudStack>
+                                    }
+
+                                    @* Connection info *@
+                                    @if (inst.Endpoint is not null && isOnline)
+                                    {
+                                        <MudStack Row AlignItems="AlignItems.Center" Spacing="2">
+                                            <MudIcon Icon="@Icons.Material.Filled.Link" Size="Size.Small" Color="Color.Secondary" />
+                                            <MudText Typo="Typo.body2" Style="font-family: monospace;">@inst.Endpoint</MudText>
+                                            <MudIconButton Icon="@Icons.Material.Filled.ContentCopy" Size="Size.Small"
+                                                           OnClick="@(() => CopyEndpoint(inst.Endpoint))" title="Copy" />
+                                        </MudStack>
+                                    }
+                                </MudStack>
+                            }
+                            else if (!_loading)
+                            {
+                                <MudText Typo="Typo.body2" Color="Color.Secondary">No status data available</MudText>
+                            }
+                        </MudCardContent>
+
+                        <MudCardActions>
+                            @if (isOnline)
+                            {
+                                <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Warning"
+                                           StartIcon="@Icons.Material.Filled.RestartAlt"
+                                           Disabled="isBusy" OnClick="@(() => RestartInstance(inst))">
+                                    Restart
+                                </MudButton>
+                                <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Error"
+                                           StartIcon="@Icons.Material.Filled.Stop"
+                                           Disabled="isBusy" OnClick="@(() => StopInstance(inst))">
+                                    Stop
+                                </MudButton>
+                            }
+                            else
+                            {
+                                <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Success"
+                                           StartIcon="@Icons.Material.Filled.PlayArrow"
+                                           Disabled="isBusy" OnClick="@(() => StartInstance(inst))">
+                                    Start
+                                </MudButton>
+                            }
+                        </MudCardActions>
+                    </MudCard>
+                </MudItem>
+            }
+        </MudGrid>
+    }
+    else if (!_loading)
+    {
+        <MudPaper Class="pa-8 text-center" Elevation="2">
+            <MudIcon Icon="@Icons.Material.Filled.CloudOff" Size="Size.Large" Color="Color.Secondary" Class="mb-3" />
+            <MudText Typo="Typo.h6" Color="Color.Secondary">Unable to connect to AMP</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary">Check that AMP is running and credentials are configured.</MudText>
+        </MudPaper>
+    }
+</MudContainer>
+
+@code {
+    private List<AmpInstance> _instances = [];
+    private Dictionary<string, AmpInstanceStatus> _statuses = [];
+    private HashSet<string> _busyInstances = [];
+    private bool _loading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadInstances();
+    }
+
+    private async Task LoadInstances()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        _instances = await Amp.GetInstancesAsync();
+
+        // Fetch status for each instance in parallel
+        var statusTasks = _instances.Select(async inst =>
+        {
+            var status = await Amp.GetInstanceStatusAsync(inst.InstanceId);
+            return (inst.InstanceId, status);
+        });
+
+        var results = await Task.WhenAll(statusTasks);
+        _statuses = results
+            .Where(r => r.status is not null)
+            .ToDictionary(r => r.InstanceId, r => r.status!);
+
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private async Task StartInstance(AmpInstance inst)
+    {
+        _busyInstances.Add(inst.InstanceId);
+        StateHasChanged();
+
+        var success = await Amp.StartInstanceAsync(inst.InstanceId);
+        Snackbar.Add(success ? $"Starting {inst.FriendlyName}..." : $"Failed to start {inst.FriendlyName}",
+            success ? Severity.Success : Severity.Error);
+
+        // Brief delay then refresh
+        await Task.Delay(2000);
+        _busyInstances.Remove(inst.InstanceId);
+        await LoadInstances();
+    }
+
+    private async Task StopInstance(AmpInstance inst)
+    {
+        _busyInstances.Add(inst.InstanceId);
+        StateHasChanged();
+
+        var success = await Amp.StopInstanceAsync(inst.InstanceId);
+        Snackbar.Add(success ? $"Stopping {inst.FriendlyName}..." : $"Failed to stop {inst.FriendlyName}",
+            success ? Severity.Info : Severity.Error);
+
+        await Task.Delay(2000);
+        _busyInstances.Remove(inst.InstanceId);
+        await LoadInstances();
+    }
+
+    private async Task RestartInstance(AmpInstance inst)
+    {
+        _busyInstances.Add(inst.InstanceId);
+        StateHasChanged();
+
+        var success = await Amp.RestartInstanceAsync(inst.InstanceId);
+        Snackbar.Add(success ? $"Restarting {inst.FriendlyName}..." : $"Failed to restart {inst.FriendlyName}",
+            success ? Severity.Warning : Severity.Error);
+
+        await Task.Delay(3000);
+        _busyInstances.Remove(inst.InstanceId);
+        await LoadInstances();
+    }
+
+    private static string GetGameIcon(string module) => module switch
+    {
+        "Minecraft" => Icons.Material.Filled.Terrain,
+        "ADS" => Icons.Material.Filled.Dns,
+        _ => Icons.Material.Filled.SportsEsports
+    };
+
+    private async Task CopyEndpoint(string endpoint)
+    {
+        // Note: clipboard requires secure context (HTTPS) which we have via Cloudflare
+        Snackbar.Add($"Connection: {endpoint}", Severity.Info);
+    }
+}

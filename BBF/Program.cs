@@ -55,6 +55,12 @@ builder.Services.AddHttpClient<HomeAssistantService>();
 // Health check service
 builder.Services.AddScoped<HealthCheckService>();
 
+// Emby media server integration
+builder.Services.AddHttpClient<EmbyService>();
+
+// AMP game server integration
+builder.Services.AddHttpClient<AmpService>();
+
 // Wiki RAG search service
 builder.Services.AddScoped<WikiSearchService>();
 

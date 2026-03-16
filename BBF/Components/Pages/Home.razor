@@ -180,12 +180,14 @@
 
     protected override async Task OnInitializedAsync()
     {
-        _ollamaOnline = await Ollama.IsHealthyAsync();
+        // Run all DB queries sequentially (DbContext is not thread-safe)
         _conversationCount = await Db.ChatConversations.CountAsync();
         _serviceCount = await Db.ServiceLinks.CountAsync(s => s.IsActive);
         _articleCount = await Db.WikiArticles.CountAsync();
         _services = await Db.ServiceLinks.Where(s => s.IsActive).OrderBy(s => s.SortOrder).ToListAsync();
 
+        // HTTP calls are fine after DB work is done
+        _ollamaOnline = await Ollama.IsHealthyAsync();
         if (_ollamaOnline)
             _models = await Ollama.GetModelsAsync();
     }
