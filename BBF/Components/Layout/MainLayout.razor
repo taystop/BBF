@@ -6,7 +6,8 @@
 @inject UserContextService UserContext
 @inject AuthenticationStateProvider AuthStateProvider
 @inject NavigationManager Nav
-@implements IDisposable
+@inject IBrowserViewportService BrowserViewport
+@implements IAsyncDisposable
 
 <MudThemeProvider @bind-IsDarkMode="_isDarkMode" Theme="_theme" />
 <MudPopoverProvider />
@@ -102,13 +103,18 @@
         }
     }
 
-    private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+    private async void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
     {
-        // Auto-close drawer on navigation for mobile (overlay mode)
+        // Auto-close drawer on navigation only for mobile/tablet (overlay mode)
+        // Drawer uses Breakpoint.Md, so it overlays on screens smaller than medium
         if (_drawerOpen)
         {
-            _drawerOpen = false;
-            InvokeAsync(StateHasChanged);
+            var breakpoint = await BrowserViewport.GetCurrentBreakpointAsync();
+            if (breakpoint < Breakpoint.Md)
+            {
+                _drawerOpen = false;
+                await InvokeAsync(StateHasChanged);
+            }
         }
     }
 
@@ -121,7 +127,7 @@
     private void ToggleDrawer() => _drawerOpen = !_drawerOpen;
     private void ToggleDarkMode() => _isDarkMode = !_isDarkMode;
 
-    public void Dispose()
+    public async ValueTask DisposeAsync()
     {
         Nav.LocationChanged -= OnLocationChanged;
     }
