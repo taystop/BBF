@@ -1,0 +1,866 @@
+@page "/final-pretest"
+@using System.Text.Json
+@using System.Text.Json.Serialization
+@using Microsoft.AspNetCore.Components.Web
+@inject IWebHostEnvironment Env
+@inject NavigationManager Nav
+
+<PageTitle>Call Taker Final Exam Pretest - BBF</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="py-4">
+    <div class="d-flex align-center flex-wrap gap-2 mb-3">
+        <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" Color="Color.Default"
+                       Href="/study-blocks" title="Back to Call Taker Study" />
+        <div>
+            <MudText Typo="Typo.h4">Call Taker Final Exam Pretest</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary">
+                @(_data?.TotalQuestions ?? 240) questions covering all sections of the academy pretest
+            </MudText>
+        </div>
+    </div>
+
+    @if (_loading)
+    {
+        <div class="d-flex justify-center pa-8">
+            <MudProgressCircular Indeterminate="true" Color="Color.Primary" Size="Size.Large" />
+        </div>
+    }
+    else if (_data is null)
+    {
+        <MudAlert Severity="Severity.Error">
+            Failed to load pretest data. @_loadError
+        </MudAlert>
+    }
+    else
+    {
+        <MudPaper Class="pa-3 mb-3" Elevation="2">
+            <MudToggleGroup T="PretestMode" SelectionMode="SelectionMode.SingleSelection"
+                            Value="_mode" ValueChanged="OnModeChanged" Color="Color.Primary">
+                <MudToggleItem Value="@PretestMode.Study">
+                    <MudIcon Icon="@Icons.Material.Filled.MenuBook" Size="Size.Small" Class="mr-1" />Study Sheet
+                </MudToggleItem>
+                <MudToggleItem Value="@PretestMode.Random">
+                    <MudIcon Icon="@Icons.Material.Filled.Shuffle" Size="Size.Small" Class="mr-1" />Random Practice
+                </MudToggleItem>
+                <MudToggleItem Value="@PretestMode.Exam">
+                    <MudIcon Icon="@Icons.Material.Filled.AssignmentTurnedIn" Size="Size.Small" Class="mr-1" />Full Exam
+                </MudToggleItem>
+            </MudToggleGroup>
+        </MudPaper>
+
+        @if (_mode == PretestMode.Study)
+        {
+            @RenderStudyMode()
+        }
+        else if (_mode == PretestMode.Random)
+        {
+            @RenderRandomMode()
+        }
+        else
+        {
+            @RenderExamMode()
+        }
+    }
+</MudContainer>
+
+@code {
+    // ===================================================================
+    // STATE
+    // ===================================================================
+
+    private enum PretestMode { Study, Random, Exam }
+
+    private PretestMode _mode = PretestMode.Study;
+    private bool _loading = true;
+    private string? _loadError;
+    private PretestData? _data;
+    private List<Question> _allQuestions = new();
+    private List<Question> _gradableQuestions = new();
+    private readonly Random _rng = new();
+
+    // Random mode
+    private HashSet<string> _selectedSectionIds = new();
+    private bool _randomNoRepeat;
+    private readonly Deck _randomDeck = new();
+    private Question? _currentRandomQuestion;
+    private int _randomCorrect, _randomTotal;
+
+    // Exam mode
+    private int _examIndex;
+    private List<Question> _examQuestions = new();
+    private readonly List<ExamResult> _examResults = new();
+    private bool _examComplete;
+
+    // Per-question working state
+    private string _userText = "";
+    private bool _userTrue, _userFalse;
+    private string _ctCallType = "";
+    private bool _ctP, _ctF, _ctE;
+    private string _ctPriority = "";
+    private bool _answered;
+    private bool _wasCorrect;
+    private bool _selfRevealed;
+    private string _correctnessReason = "";
+
+    // Focus management
+    private MudTextField<string>? _textInput;
+    private MudButton? _nextBtn;
+    private FocusTarget _pendingFocus = FocusTarget.None;
+    private enum FocusTarget { None, Next, Input }
+
+    // ===================================================================
+    // INIT
+    // ===================================================================
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var path = Path.Combine(Env.WebRootPath, "data", "call-taker-final-pretest.json");
+            var json = await File.ReadAllTextAsync(path);
+            _data = JsonSerializer.Deserialize<PretestData>(json, new JsonSerializerOptions
+            {
+                PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+            });
+
+            if (_data is not null)
+            {
+                _allQuestions = _data.Sections.SelectMany(s => s.Questions.Select(q => { q.SectionId = s.Id; q.SectionTitle = s.Title; return q; })).ToList();
+                _gradableQuestions = _allQuestions.Where(q => q.HasAnswer).ToList();
+                _selectedSectionIds = _data.Sections.Select(s => s.Id).ToHashSet();
+            }
+        }
+        catch (Exception ex)
+        {
+            _loadError = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        var target = _pendingFocus;
+        if (target == FocusTarget.None) return;
+        _pendingFocus = FocusTarget.None;
+
+        await Task.Delay(50);
+        try
+        {
+            if (target == FocusTarget.Next && _nextBtn is not null) await _nextBtn.FocusAsync();
+            else if (target == FocusTarget.Input && _textInput is not null) await _textInput.FocusAsync();
+        }
+        catch { /* element not in DOM */ }
+    }
+
+    private void OnModeChanged(PretestMode mode)
+    {
+        _mode = mode;
+        ResetWorkingState();
+
+        if (mode == PretestMode.Random)
+        {
+            _randomDeck.Reset();
+            _randomCorrect = 0;
+            _randomTotal = 0;
+            DrawRandomQuestion();
+        }
+        else if (mode == PretestMode.Exam)
+        {
+            StartExam();
+        }
+    }
+
+    // ===================================================================
+    // STUDY MODE
+    // ===================================================================
+
+    private RenderFragment RenderStudyMode() => __builder =>
+    {
+        <MudExpansionPanels MultiExpansion="true" Elevation="2">
+            @foreach (var sec in _data!.Sections)
+            {
+                <MudExpansionPanel Text="@($"{sec.Title}  ({sec.Questions.Count})")">
+                    @if (!string.IsNullOrWhiteSpace(sec.Instruction))
+                    {
+                        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-3 fst-italic">
+                            @sec.Instruction
+                        </MudText>
+                    }
+                    @foreach (var q in sec.Questions)
+                    {
+                        <div class="mb-3 pb-2" style="border-bottom: 1px solid var(--mud-palette-divider);">
+                            <MudText Typo="Typo.body1"><b>@q.Number.</b> @q.Prompt</MudText>
+                            <MudText Typo="Typo.body2" Color="Color.Success" Class="ml-3 mt-1">
+                                @RenderAnswerForStudy(q)
+                            </MudText>
+                            @if (!string.IsNullOrWhiteSpace(q.AnswerNote))
+                            {
+                                <MudText Typo="Typo.caption" Color="Color.Warning" Class="ml-3 mt-1 d-block">
+                                    Note: @q.AnswerNote
+                                </MudText>
+                            }
+                        </div>
+                    }
+                </MudExpansionPanel>
+            }
+        </MudExpansionPanels>
+    };
+
+    private RenderFragment RenderAnswerForStudy(Question q) => __builder =>
+    {
+        if (!q.HasAnswer)
+        {
+            <span class="fst-italic">No answer in source — see study material.</span>
+            return;
+        }
+
+        switch (q.Type)
+        {
+            case "shortAnswer":
+            case "longAnswer":
+                <span>@q.AnswerString</span>
+                break;
+            case "trueFalse":
+                <span><b>@(q.AnswerBool == true ? "True" : "False")</b></span>
+                break;
+            case "list":
+                <ul class="mb-0">
+                    @foreach (var item in q.AnswerList ?? new())
+                    {
+                        <li>@item</li>
+                    }
+                </ul>
+                break;
+            case "callClassification":
+                var cc = q.CallClassificationAnswer;
+                if (cc is not null)
+                {
+                    <span><b>@cc.CallType</b> &mdash; Agencies: @string.Join("/", cc.Agencies) &mdash; LE Priority: @(cc.LePriority?.ToString() ?? "N/A")</span>
+                }
+                break;
+        }
+    };
+
+    // ===================================================================
+    // RANDOM MODE
+    // ===================================================================
+
+    private RenderFragment RenderRandomMode() => __builder =>
+    {
+        <MudPaper Class="pa-3 mb-3" Elevation="1">
+            <div class="d-flex align-center flex-wrap gap-3">
+                <MudSelect T="string" Label="Sections" MultiSelection="true" Dense
+                           SelectedValues="_selectedSectionIds"
+                           SelectedValuesChanged="OnSectionFilterChanged"
+                           Variant="Variant.Outlined" Style="min-width:260px;max-width:400px;"
+                           SelectAll="true" SelectAllText="All Sections"
+                           MultiSelectionTextFunc="@(vals => vals.Count == _data!.Sections.Count ? "All Sections" : $"{vals.Count} sections")">
+                    @foreach (var s in _data!.Sections)
+                    {
+                        <MudSelectItem T="string" Value="@s.Id">@s.Title</MudSelectItem>
+                    }
+                </MudSelect>
+                <MudSwitch T="bool" Value="_randomNoRepeat" ValueChanged="OnNoRepeatChanged"
+                           Label="No Repeat" Color="Color.Secondary" />
+                <MudButton Variant="Variant.Outlined" Color="Color.Warning" Size="Size.Small"
+                           OnClick="ResetRandom" StartIcon="@Icons.Material.Filled.Refresh">Reset</MudButton>
+                <MudSpacer />
+                @if (_randomNoRepeat && _randomDeck.PoolSize > 0 && !_randomDeck.IsComplete)
+                {
+                    <MudChip T="string" Size="Size.Small" Color="Color.Info">
+                        @(_randomDeck.History.Count + 1) of @_randomDeck.PoolSize
+                    </MudChip>
+                }
+                <MudChip T="string" Size="Size.Small" Color="Color.Success">
+                    @_randomCorrect / @_randomTotal correct
+                </MudChip>
+            </div>
+        </MudPaper>
+
+        @if (_randomNoRepeat && _randomDeck.IsComplete)
+        {
+            <MudAlert Severity="Severity.Success" Class="mb-3" Variant="Variant.Filled">
+                Round complete! @_randomDeck.History.Count(h => h.WasCorrect) of @_randomDeck.History.Count correct
+            </MudAlert>
+            @if (_randomDeck.History.Any(h => !h.WasCorrect))
+            {
+                <MudText Typo="Typo.h6" Class="mb-2" Color="Color.Error">Missed Questions:</MudText>
+                @foreach (var m in _randomDeck.History.Where(h => !h.WasCorrect))
+                {
+                    <MudAlert Severity="Severity.Error" Class="mb-1" Dense="true">
+                        @m.Question — <b>@m.Answer</b>
+                    </MudAlert>
+                }
+            }
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" Class="mt-2"
+                       OnClick="ResetRandom" StartIcon="@Icons.Material.Filled.Refresh">New Round</MudButton>
+        }
+        else if (_currentRandomQuestion is null)
+        {
+            <MudAlert Severity="Severity.Info">
+                No gradable questions match the current section filter. Pick at least one section that contains gradable questions.
+            </MudAlert>
+        }
+        else
+        {
+            @RenderQuestionCard(_currentRandomQuestion, isExam: false)
+        }
+    };
+
+    private void OnSectionFilterChanged(IEnumerable<string> values)
+    {
+        _selectedSectionIds = values.ToHashSet();
+        _randomDeck.Reset();
+        _randomCorrect = 0;
+        _randomTotal = 0;
+        DrawRandomQuestion();
+    }
+
+    private void OnNoRepeatChanged(bool value)
+    {
+        _randomNoRepeat = value;
+        _randomDeck.Reset();
+        _randomCorrect = 0;
+        _randomTotal = 0;
+        DrawRandomQuestion();
+    }
+
+    private void ResetRandom()
+    {
+        _randomDeck.Reset();
+        _randomCorrect = 0;
+        _randomTotal = 0;
+        DrawRandomQuestion();
+    }
+
+    private List<Question> GetRandomPool() =>
+        _gradableQuestions.Where(q => _selectedSectionIds.Contains(q.SectionId)).ToList();
+
+    private void DrawRandomQuestion()
+    {
+        ResetWorkingState();
+        var pool = GetRandomPool();
+        if (pool.Count == 0) { _currentRandomQuestion = null; return; }
+
+        if (_randomNoRepeat)
+        {
+            var idx = _randomDeck.Pick(pool.Count, _rng);
+            if (idx == -1) { _currentRandomQuestion = null; return; }
+            _currentRandomQuestion = pool[idx];
+        }
+        else
+        {
+            _currentRandomQuestion = pool[_rng.Next(pool.Count)];
+        }
+        _pendingFocus = FocusTarget.Input;
+    }
+
+    // ===================================================================
+    // EXAM MODE
+    // ===================================================================
+
+    private RenderFragment RenderExamMode() => __builder =>
+    {
+        if (_examComplete)
+        {
+            var correct = _examResults.Count(r => r.WasCorrect);
+            var pct = _examResults.Count > 0 ? 100.0 * correct / _examResults.Count : 0;
+
+            <MudAlert Severity="@(pct >= 80 ? Severity.Success : pct >= 60 ? Severity.Warning : Severity.Error)"
+                      Variant="Variant.Filled" Class="mb-3">
+                Exam complete: <b>@correct / @_examResults.Count</b> correct (@pct.ToString("F1")%)
+            </MudAlert>
+
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" Class="mb-3"
+                       OnClick="StartExam" StartIcon="@Icons.Material.Filled.Refresh">Restart Exam</MudButton>
+
+            @if (_examResults.Any(r => !r.WasCorrect))
+            {
+                <MudText Typo="Typo.h6" Class="mb-2" Color="Color.Error">Missed Questions:</MudText>
+                @foreach (var r in _examResults.Where(r => !r.WasCorrect))
+                {
+                    <MudAlert Severity="Severity.Error" Class="mb-1" Dense="true">
+                        <b>Q@(r.Number).</b> @r.Question — <b>@r.Answer</b>
+                    </MudAlert>
+                }
+            }
+            return;
+        }
+
+        var current = _examIndex < _examQuestions.Count ? _examQuestions[_examIndex] : null;
+        if (current is null) return;
+
+        <MudPaper Class="pa-3 mb-3" Elevation="1">
+            <div class="d-flex align-center gap-3">
+                <MudText Typo="Typo.body2"><b>Question @(_examIndex + 1) of @_examQuestions.Count</b></MudText>
+                <MudSpacer />
+                <MudChip T="string" Size="Size.Small" Color="Color.Success">
+                    @_examResults.Count(r => r.WasCorrect) correct
+                </MudChip>
+                <MudButton Variant="Variant.Outlined" Size="Size.Small" Color="Color.Default"
+                           OnClick="EndExamEarly">End Exam</MudButton>
+            </div>
+            <MudProgressLinear Class="mt-2" Color="Color.Primary"
+                               Value="@(100.0 * _examIndex / _examQuestions.Count)" Rounded />
+        </MudPaper>
+
+        @RenderQuestionCard(current, isExam: true)
+    };
+
+    private void StartExam()
+    {
+        _examQuestions = _gradableQuestions.ToList();
+        _examIndex = 0;
+        _examResults.Clear();
+        _examComplete = false;
+        ResetWorkingState();
+        _pendingFocus = FocusTarget.Input;
+    }
+
+    private void EndExamEarly()
+    {
+        _examComplete = true;
+    }
+
+    // ===================================================================
+    // QUESTION CARD (shared between Random and Exam)
+    // ===================================================================
+
+    private RenderFragment RenderQuestionCard(Question q, bool isExam) => __builder =>
+    {
+        <MudPaper Class="pa-4" Elevation="2">
+            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                @q.SectionTitle &middot; Q@(q.Number)
+            </MudText>
+            <MudText Typo="Typo.h6" Class="mb-3">@q.Prompt</MudText>
+
+            @switch (q.Type)
+            {
+                case "shortAnswer":
+                    @RenderShortAnswerInput(q)
+                    break;
+                case "trueFalse":
+                    @RenderTrueFalseInput(q)
+                    break;
+                case "callClassification":
+                    @RenderCallClassificationInput(q)
+                    break;
+                case "longAnswer":
+                case "list":
+                    @RenderSelfGradeInput(q)
+                    break;
+            }
+
+            <div class="d-flex align-center gap-2 mt-3">
+                @if (!_answered)
+                {
+                    if (q.Type == "longAnswer" || q.Type == "list")
+                    {
+                        if (!_selfRevealed)
+                        {
+                            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                                       OnClick="@(() => { _selfRevealed = true; })"
+                                       StartIcon="@Icons.Material.Filled.Visibility">Show Answer</MudButton>
+                        }
+                        else
+                        {
+                            <MudButton Variant="Variant.Filled" Color="Color.Success"
+                                       OnClick="@(() => SubmitSelfGrade(q, true, isExam))"
+                                       StartIcon="@Icons.Material.Filled.Check">Got It</MudButton>
+                            <MudButton Variant="Variant.Filled" Color="Color.Error"
+                                       OnClick="@(() => SubmitSelfGrade(q, false, isExam))"
+                                       StartIcon="@Icons.Material.Filled.Close">Missed It</MudButton>
+                        }
+                    }
+                    else
+                    {
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                                   OnClick="@(() => CheckAnswer(q, isExam))"
+                                   StartIcon="@Icons.Material.Filled.Check">Check</MudButton>
+                    }
+                }
+                else
+                {
+                    <MudButton @ref="_nextBtn" Variant="Variant.Filled" Color="Color.Primary"
+                               OnClick="@(() => Advance(isExam))"
+                               StartIcon="@Icons.Material.Filled.ArrowForward">
+                        @(isExam && _examIndex == _examQuestions.Count - 1 ? "Finish" : "Next")
+                    </MudButton>
+                }
+            </div>
+
+            @if (_answered)
+            {
+                <div class="mt-3">
+                    @if (_wasCorrect)
+                    {
+                        <MudAlert Severity="Severity.Success" Dense>Correct!</MudAlert>
+                    }
+                    else
+                    {
+                        <MudAlert Severity="Severity.Error" Dense>
+                            @if (!string.IsNullOrEmpty(_correctnessReason))
+                            {
+                                <text>@_correctnessReason<br /></text>
+                            }
+                            <span>Answer: <b>@FormatAnswer(q)</b></span>
+                        </MudAlert>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(q.AnswerNote))
+                    {
+                        <MudAlert Severity="Severity.Info" Dense Class="mt-2">Note: @q.AnswerNote</MudAlert>
+                    }
+                </div>
+            }
+        </MudPaper>
+    };
+
+    private RenderFragment RenderShortAnswerInput(Question q) => __builder =>
+    {
+        <MudTextField @ref="_textInput" T="string" @bind-Value="_userText"
+                      Label="Your answer" Variant="Variant.Outlined" Immediate
+                      Disabled="_answered" OnKeyDown="@((KeyboardEventArgs e) => OnTextKey(e, q))" />
+    };
+
+    private RenderFragment RenderTrueFalseInput(Question q) => __builder =>
+    {
+        <MudRadioGroup T="bool?" Value="_userTrue ? true : _userFalse ? false : (bool?)null"
+                       ValueChanged="@((bool? v) => { _userTrue = v == true; _userFalse = v == false; })">
+            <MudRadio Value="@(true)" Color="Color.Primary" Disabled="_answered">True</MudRadio>
+            <MudRadio Value="@(false)" Color="Color.Primary" Disabled="_answered">False</MudRadio>
+        </MudRadioGroup>
+    };
+
+    private RenderFragment RenderCallClassificationInput(Question q) => __builder =>
+    {
+        <MudGrid>
+            <MudItem xs="12" sm="5">
+                <MudTextField @ref="_textInput" T="string" @bind-Value="_ctCallType" Label="Call Type"
+                              Variant="Variant.Outlined" Immediate Disabled="_answered"
+                              OnKeyDown="@((KeyboardEventArgs e) => OnTextKey(e, q))" />
+            </MudItem>
+            <MudItem xs="12" sm="4">
+                <MudText Typo="Typo.caption" Class="mb-1">Agencies</MudText>
+                <div class="d-flex gap-4">
+                    <MudCheckBox @bind-Value="_ctP" Label="P" Color="Color.Primary" T="bool" Disabled="_answered" />
+                    <MudCheckBox @bind-Value="_ctF" Label="F" Color="Color.Error" T="bool" Disabled="_answered" />
+                    <MudCheckBox @bind-Value="_ctE" Label="E" Color="Color.Warning" T="bool" Disabled="_answered" />
+                </div>
+            </MudItem>
+            <MudItem xs="12" sm="3">
+                <MudTextField T="string" @bind-Value="_ctPriority" Label="LE Priority"
+                              Variant="Variant.Outlined" Immediate Disabled="_answered"
+                              OnKeyDown="@((KeyboardEventArgs e) => OnTextKey(e, q))" />
+            </MudItem>
+        </MudGrid>
+    };
+
+    private RenderFragment RenderSelfGradeInput(Question q) => __builder =>
+    {
+        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mb-2">
+            Answer this in your head, then click <b>Show Answer</b> and grade yourself.
+        </MudAlert>
+        @if (_selfRevealed)
+        {
+            <MudPaper Class="pa-3" Elevation="0" Style="background-color: var(--mud-palette-background-grey);">
+                <MudText Typo="Typo.subtitle2" Color="Color.Secondary" Class="mb-1">Answer:</MudText>
+                @if (q.Type == "list")
+                {
+                    <ul class="mb-0">
+                        @foreach (var item in q.AnswerList ?? new())
+                        {
+                            <li>@item</li>
+                        }
+                    </ul>
+                }
+                else
+                {
+                    <MudText Typo="Typo.body1">@q.AnswerString</MudText>
+                }
+                @if (!string.IsNullOrWhiteSpace(q.AnswerNote))
+                {
+                    <MudText Typo="Typo.caption" Color="Color.Warning" Class="d-block mt-1">Note: @q.AnswerNote</MudText>
+                }
+            </MudPaper>
+        }
+    };
+
+    // ===================================================================
+    // GRADING
+    // ===================================================================
+
+    private void CheckAnswer(Question q, bool isExam)
+    {
+        _answered = true;
+        _correctnessReason = "";
+
+        switch (q.Type)
+        {
+            case "shortAnswer":
+                var attempts = q.AcceptableAnswers?.Count > 0
+                    ? q.AcceptableAnswers
+                    : new List<string> { q.AnswerString ?? "" };
+                _wasCorrect = attempts.Any(a => Normalize(a) == Normalize(_userText));
+                break;
+            case "trueFalse":
+                if (!_userTrue && !_userFalse)
+                {
+                    _wasCorrect = false;
+                    _correctnessReason = "No selection.";
+                }
+                else
+                {
+                    bool given = _userTrue;
+                    _wasCorrect = q.AnswerBool == given;
+                }
+                break;
+            case "callClassification":
+                _wasCorrect = GradeCallClassification(q, out _correctnessReason);
+                break;
+        }
+
+        RecordResult(q, isExam);
+        _pendingFocus = FocusTarget.Next;
+    }
+
+    private bool GradeCallClassification(Question q, out string reason)
+    {
+        reason = "";
+        var cc = q.CallClassificationAnswer;
+        if (cc is null) return false;
+
+        var typeOk = Normalize(cc.CallType) == Normalize(_ctCallType);
+
+        var givenAgencies = "";
+        if (_ctP) givenAgencies += "P";
+        if (_ctF) givenAgencies += "F";
+        if (_ctE) givenAgencies += "E";
+        var expectedAgencies = string.Concat(cc.Agencies.OrderBy(a => "PFE".IndexOf(a)));
+        var orderedGiven = string.Concat(givenAgencies.OrderBy(a => "PFE".IndexOf(a)));
+        var agenciesOk = orderedGiven == expectedAgencies;
+
+        bool priorityOk;
+        if (cc.LePriority is null)
+            priorityOk = string.IsNullOrWhiteSpace(_ctPriority);
+        else
+            priorityOk = int.TryParse(_ctPriority.Trim(), out var p) && p == cc.LePriority;
+
+        var parts = new List<string>();
+        if (!typeOk) parts.Add($"Call Type → {cc.CallType}");
+        if (!agenciesOk) parts.Add($"Agencies → {string.Join("/", cc.Agencies)}");
+        if (!priorityOk) parts.Add($"LE Priority → {(cc.LePriority?.ToString() ?? "N/A")}");
+        if (parts.Count > 0) reason = "Missed: " + string.Join("; ", parts);
+
+        return typeOk && agenciesOk && priorityOk;
+    }
+
+    private void SubmitSelfGrade(Question q, bool gotIt, bool isExam)
+    {
+        _answered = true;
+        _wasCorrect = gotIt;
+        RecordResult(q, isExam);
+        _pendingFocus = FocusTarget.Next;
+    }
+
+    private void RecordResult(Question q, bool isExam)
+    {
+        if (isExam)
+        {
+            _examResults.Add(new ExamResult(q.Number, TruncatePrompt(q.Prompt), FormatAnswer(q), _wasCorrect));
+        }
+        else
+        {
+            _randomTotal++;
+            if (_wasCorrect) _randomCorrect++;
+            if (_randomNoRepeat)
+            {
+                _randomDeck.Record(TruncatePrompt(q.Prompt), FormatAnswer(q), _wasCorrect);
+            }
+        }
+    }
+
+    private void Advance(bool isExam)
+    {
+        if (isExam)
+        {
+            _examIndex++;
+            if (_examIndex >= _examQuestions.Count)
+            {
+                _examComplete = true;
+                return;
+            }
+            ResetWorkingState();
+            _pendingFocus = FocusTarget.Input;
+        }
+        else
+        {
+            DrawRandomQuestion();
+        }
+    }
+
+    private void OnTextKey(KeyboardEventArgs e, Question q)
+    {
+        if (e.Key != "Enter") return;
+        if (!_answered) CheckAnswer(q, _mode == PretestMode.Exam);
+        else Advance(_mode == PretestMode.Exam);
+    }
+
+    // ===================================================================
+    // HELPERS
+    // ===================================================================
+
+    private void ResetWorkingState()
+    {
+        _userText = "";
+        _userTrue = false;
+        _userFalse = false;
+        _ctCallType = "";
+        _ctP = _ctF = _ctE = false;
+        _ctPriority = "";
+        _answered = false;
+        _wasCorrect = false;
+        _selfRevealed = false;
+        _correctnessReason = "";
+    }
+
+    private static string Normalize(string s) =>
+        (s ?? "").Trim().ToLowerInvariant()
+            .Replace("-", "").Replace(".", "").Replace(",", "")
+            .Replace("'", "").Replace("\"", "")
+            .Replace(" ", "");
+
+    private static string TruncatePrompt(string s) =>
+        s.Length <= 80 ? s : s[..77] + "...";
+
+    private static string FormatAnswer(Question q) => q.Type switch
+    {
+        "shortAnswer" or "longAnswer" => q.AnswerString ?? "",
+        "trueFalse" => q.AnswerBool == true ? "True" : "False",
+        "list" => string.Join("; ", q.AnswerList ?? new()),
+        "callClassification" => q.CallClassificationAnswer is { } cc
+            ? $"{cc.CallType} | {string.Join("/", cc.Agencies)} | Pri {(cc.LePriority?.ToString() ?? "N/A")}"
+            : "",
+        _ => ""
+    };
+
+    // ===================================================================
+    // DATA MODEL + DECK
+    // ===================================================================
+
+    public class PretestData
+    {
+        public string Title { get; set; } = "";
+        public int TotalQuestions { get; set; }
+        public List<string> Notes { get; set; } = new();
+        public List<Section> Sections { get; set; } = new();
+    }
+
+    public class Section
+    {
+        public string Id { get; set; } = "";
+        public string Title { get; set; } = "";
+        public string? Instruction { get; set; }
+        public List<Question> Questions { get; set; } = new();
+    }
+
+    public class Question
+    {
+        public int Number { get; set; }
+        public string Type { get; set; } = "";
+        public string Prompt { get; set; } = "";
+        public JsonElement Answer { get; set; }
+        public List<string>? AcceptableAnswers { get; set; }
+        public string? GroupId { get; set; }
+        public string? GroupLabel { get; set; }
+        public string? AnswerNote { get; set; }
+
+        // Filled at load
+        [JsonIgnore] public string SectionId { get; set; } = "";
+        [JsonIgnore] public string SectionTitle { get; set; } = "";
+
+        public string? AnswerString => Type is "shortAnswer" or "longAnswer"
+            ? (Answer.ValueKind == JsonValueKind.String ? Answer.GetString() : null)
+            : null;
+
+        public bool? AnswerBool => Type == "trueFalse"
+            ? Answer.ValueKind switch
+            {
+                JsonValueKind.True => true,
+                JsonValueKind.False => false,
+                _ => (bool?)null
+            }
+            : null;
+
+        public List<string>? AnswerList => Type == "list" && Answer.ValueKind == JsonValueKind.Array
+            ? Answer.EnumerateArray().Select(e => e.GetString() ?? "").ToList()
+            : null;
+
+        public CallClassification? CallClassificationAnswer => Type == "callClassification"
+            && Answer.ValueKind == JsonValueKind.Object
+            ? JsonSerializer.Deserialize<CallClassification>(Answer.GetRawText(),
+                new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase })
+            : null;
+
+        public bool HasAnswer => Type switch
+        {
+            "shortAnswer" or "longAnswer" => !string.IsNullOrWhiteSpace(AnswerString),
+            "trueFalse" => AnswerBool.HasValue,
+            "list" => AnswerList is { Count: > 0 },
+            "callClassification" => CallClassificationAnswer is not null,
+            _ => false
+        };
+    }
+
+    public class CallClassification
+    {
+        public string CallType { get; set; } = "";
+        public int? LePriority { get; set; }
+        public List<string> Agencies { get; set; } = new();
+    }
+
+    private record ExamResult(int Number, string Question, string Answer, bool WasCorrect);
+
+    private class Deck
+    {
+        private readonly List<int> _remaining = new();
+        public int PoolSize { get; private set; }
+        public List<(string Question, string Answer, bool WasCorrect)> History { get; } = new();
+        public bool IsComplete { get; private set; }
+
+        public int Pick(int poolSize, Random rng)
+        {
+            if (_remaining.Count == 0 && History.Count > 0)
+            {
+                IsComplete = true;
+                return -1;
+            }
+            if (_remaining.Count == 0) Shuffle(poolSize, rng);
+            var idx = _remaining[^1];
+            _remaining.RemoveAt(_remaining.Count - 1);
+            return idx;
+        }
+
+        public void Record(string question, string answer, bool wasCorrect)
+            => History.Add((question, answer, wasCorrect));
+
+        public void Shuffle(int poolSize, Random rng)
+        {
+            PoolSize = poolSize;
+            _remaining.Clear();
+            _remaining.AddRange(Enumerable.Range(0, poolSize).OrderBy(_ => rng.Next()));
+            History.Clear();
+            IsComplete = false;
+        }
+
+        public void Reset()
+        {
+            _remaining.Clear();
+            History.Clear();
+            IsComplete = false;
+            PoolSize = 0;
+        }
+    }
+}

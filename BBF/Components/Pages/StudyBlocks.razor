@@ -1,0 +1,2796 @@
+@page "/study-blocks"
+@using Microsoft.AspNetCore.Components
+
+<PageTitle>Call Taker Study - BBF</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="py-4">
+    <div class="d-flex justify-space-between align-center flex-wrap gap-2 mb-3">
+        <div>
+            <MudText Typo="Typo.h4">Call Taker Study</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary">
+                Sedgwick County Emergency Communications — Call Taker Academy
+            </MudText>
+        </div>
+        <MudButton Href="/final-pretest" Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Quiz">Final Exam Pretest</MudButton>
+    </div>
+
+    <MudTabs @bind-ActivePanelIndex="_activeTab" Elevation="2" Rounded ApplyEffectsToContainer Class="mb-4">
+
+        @* amamamamam MAP QUIZ TAB amamamamam *@
+        <MudTabPanel Text="Map Quiz" Icon="@Icons.Material.Filled.Map">
+            <MudPaper Class="pa-4">
+                <div class="d-flex align-center flex-wrap gap-2 mb-3">
+                    <MudSwitch @bind-Value="_mapStudyMode" Label="Study Mode" Color="Color.Primary" T="bool" />
+                    @if (!_mapStudyMode)
+                    {
+                        <MudButton Variant="Variant.Outlined" Color="Color.Warning" OnClick="ResetMap" Size="Size.Small"
+                                   StartIcon="@Icons.Material.Filled.Refresh">Reset</MudButton>
+                        <MudButton Variant="Variant.Outlined" Color="Color.Info" OnClick="RevealAllMap" Size="Size.Small"
+                                   StartIcon="@Icons.Material.Filled.Visibility">Reveal All</MudButton>
+                        <MudSpacer />
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">
+                            @MapCorrectCount of @_mapItems.Count correct
+                        </MudText>
+                    }
+                </div>
+
+                @if (!_mapStudyMode)
+                {
+                    <MudProgressLinear Value="@MapProgress" Color="Color.Success" Class="mb-4" Rounded="true" Size="Size.Large">
+                        <MudText Typo="Typo.caption"><b>@MapCorrectCount / @_mapItems.Count</b></MudText>
+                    </MudProgressLinear>
+                }
+
+                <MudGrid>
+                    <MudItem xs="12" lg="8">
+                        <MudPaper Elevation="3" Class="pa-0" Style="overflow:hidden;border-radius:8px;">
+                            <div style="position:relative;line-height:0;">
+                                @if (_mapStudyMode)
+                                {
+                                    <object data="images/sedgwick-county-map.svg" type="image/svg+xml"
+                                            style="width:100%;height:auto;display:block;"></object>
+                                }
+                                else
+                                {
+                                    <object data="images/sedgwick-county-map-blank.svg?v=2" type="image/svg+xml"
+                                            style="width:100%;height:auto;display:block;"></object>
+                                    <svg viewBox="0 0 5000 3750" xmlns="http://www.w3.org/2000/svg"
+                                         style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;font-family:'Arial',sans-serif;">
+                                        @foreach (var item in _mapItems.Where(i => i.Category == "City"))
+                                        {
+                                            var fill = GetMarkerFill(item);
+                                            <g style="pointer-events:auto;cursor:default;">
+                                                <circle cx="@item.X" cy="@item.Y" r="55" fill="@fill" stroke="white" stroke-width="6" opacity="0.92" />
+                                                @((MarkupString)$"<text x=\"{item.X}\" y=\"{item.Y + 14}\" text-anchor=\"middle\" fill=\"white\" font-size=\"38\" font-weight=\"bold\">{item.Label}</text>")
+                                            </g>
+                                        }
+                                        @foreach (var item in _mapItems.Where(i => i.Category == "Road"))
+                                        {
+                                            var fill = GetMarkerFill(item);
+                                            var w = item.Label.Length * 32 + 30;
+                                            <g style="pointer-events:auto;cursor:default;">
+                                                <rect x="@(item.X - w/2)" y="@(item.Y - 38)" width="@w" height="76" rx="14"
+                                                      fill="@fill" stroke="white" stroke-width="5" opacity="0.92" />
+                                                @((MarkupString)$"<text x=\"{item.X}\" y=\"{item.Y + 14}\" text-anchor=\"middle\" fill=\"white\" font-size=\"38\" font-weight=\"bold\">{item.Label}</text>")
+                                            </g>
+                                        }
+                                        @foreach (var item in _mapItems.Where(i => i.Category == "County"))
+                                        {
+                                            var fill = GetMarkerFill(item);
+                                            <g style="pointer-events:auto;cursor:default;">
+                                                <rect x="@(item.X - 65)" y="@(item.Y - 42)" width="130" height="84" rx="14"
+                                                      fill="@fill" stroke="white" stroke-width="5" opacity="0.92" />
+                                                @((MarkupString)$"<text x=\"{item.X}\" y=\"{item.Y + 16}\" text-anchor=\"middle\" fill=\"white\" font-size=\"42\" font-weight=\"bold\">{item.Label}</text>")
+                                            </g>
+                                        }
+                                    </svg>
+                                }
+                            </div>
+                        </MudPaper>
+                    </MudItem>
+
+                    <MudItem xs="12" lg="4">
+                        @if (!_mapStudyMode)
+                        {
+                            @if (MapCorrectCount == _mapItems.Count)
+                            {
+                                <MudAlert Severity="Severity.Success" Class="mb-3" Variant="Variant.Filled">
+                                    Perfect score! All @_mapItems.Count items correct!
+                                </MudAlert>
+                            }
+
+                            <MudExpansionPanels MultiExpansion="true" Elevation="2">
+                                <MudExpansionPanel Expanded="true" Icon="@Icons.Material.Filled.LocationCity">
+                                    <TitleContent>
+                                        <div class="d-flex align-center gap-2">
+                                            <MudText><b>Cities</b></MudText>
+                                            <MudChip T="string" Size="Size.Small" Color="Color.Primary">@MapCategoryCorrect("City") / @MapCategoryTotal("City")</MudChip>
+                                        </div>
+                                    </TitleContent>
+                                    <ChildContent>
+                                        @foreach (var item in _mapItems.Where(i => i.Category == "City"))
+                                        {
+                                            <MudTextField T="string" Value="@item.UserAnswer"
+                                                          ValueChanged="@((string v) => OnMapValueChanged(item, v))"
+                                                          Label="@item.Label" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-1"
+                                                          Immediate="true" Disabled="@item.IsCorrect"
+                                                          Adornment="Adornment.End" AdornmentIcon="@GetMapAdornmentIcon(item)"
+                                                          AdornmentColor="@GetMapAdornmentColor(item)" Style="@GetMapInputStyle(item)" />
+                                        }
+                                    </ChildContent>
+                                </MudExpansionPanel>
+                                <MudExpansionPanel Expanded="true" Icon="@Icons.Material.Filled.EditRoad">
+                                    <TitleContent>
+                                        <div class="d-flex align-center gap-2">
+                                            <MudText><b>Roads</b></MudText>
+                                            <MudChip T="string" Size="Size.Small" Color="Color.Primary">@MapCategoryCorrect("Road") / @MapCategoryTotal("Road")</MudChip>
+                                        </div>
+                                    </TitleContent>
+                                    <ChildContent>
+                                        @foreach (var item in _mapItems.Where(i => i.Category == "Road"))
+                                        {
+                                            <MudTextField T="string" Value="@item.UserAnswer"
+                                                          ValueChanged="@((string v) => OnMapValueChanged(item, v))"
+                                                          Label="@item.Label" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-1"
+                                                          Immediate="true" Disabled="@item.IsCorrect"
+                                                          Adornment="Adornment.End" AdornmentIcon="@GetMapAdornmentIcon(item)"
+                                                          AdornmentColor="@GetMapAdornmentColor(item)" Style="@GetMapInputStyle(item)" />
+                                        }
+                                    </ChildContent>
+                                </MudExpansionPanel>
+                                <MudExpansionPanel Expanded="true" Icon="@Icons.Material.Filled.Map">
+                                    <TitleContent>
+                                        <div class="d-flex align-center gap-2">
+                                            <MudText><b>Counties</b></MudText>
+                                            <MudChip T="string" Size="Size.Small" Color="Color.Primary">@MapCategoryCorrect("County") / @MapCategoryTotal("County")</MudChip>
+                                        </div>
+                                    </TitleContent>
+                                    <ChildContent>
+                                        @foreach (var item in _mapItems.Where(i => i.Category == "County"))
+                                        {
+                                            <MudTextField T="string" Value="@item.UserAnswer"
+                                                          ValueChanged="@((string v) => OnMapValueChanged(item, v))"
+                                                          Label="@item.Label" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-1"
+                                                          Immediate="true" Disabled="@item.IsCorrect"
+                                                          Adornment="Adornment.End" AdornmentIcon="@GetMapAdornmentIcon(item)"
+                                                          AdornmentColor="@GetMapAdornmentColor(item)" Style="@GetMapInputStyle(item)" />
+                                        }
+                                    </ChildContent>
+                                </MudExpansionPanel>
+                            </MudExpansionPanels>
+                        }
+                        else
+                        {
+                            <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mb-3">
+                                Review the map to learn city, road, and county locations. When you're ready, turn off
+                                <b>Study Mode</b> to quiz yourself.
+                            </MudAlert>
+                            <MudText Typo="Typo.h6" Class="mb-2">What to learn:</MudText>
+                            <MudList T="string" Dense="true">
+                                <MudListSubheader>18 Cities</MudListSubheader>
+                                @foreach (var item in _mapItems.Where(i => i.Category == "City"))
+                                {
+                                    <MudListItem T="string" Icon="@Icons.Material.Filled.Circle" IconColor="Color.Primary" IconSize="Size.Small">
+                                        @item.CorrectAnswer
+                                    </MudListItem>
+                                }
+                                <MudListSubheader>18 Roads</MudListSubheader>
+                                @foreach (var item in _mapItems.Where(i => i.Category == "Road"))
+                                {
+                                    <MudListItem T="string" Icon="@Icons.Material.Filled.LinearScale" IconColor="Color.Secondary" IconSize="Size.Small">
+                                        @item.CorrectAnswer
+                                    </MudListItem>
+                                }
+                                <MudListSubheader>5 Surrounding Counties</MudListSubheader>
+                                @foreach (var item in _mapItems.Where(i => i.Category == "County"))
+                                {
+                                    <MudListItem T="string" Icon="@Icons.Material.Filled.Map" IconColor="Color.Tertiary" IconSize="Size.Small">
+                                        @item.CorrectAnswer
+                                    </MudListItem>
+                                }
+                            </MudList>
+                        }
+                    </MudItem>
+                </MudGrid>
+            </MudPaper>
+        </MudTabPanel>
+
+        @* amamamamam STUDY REFERENCE TAB amamamamam *@
+        <MudTabPanel Text="Hundred Blocks" Icon="@Icons.Material.Filled.GridOn">
+            <MudPaper Class="pa-4">
+                <div class="d-flex align-center gap-2 mb-3">
+                    <MudSwitch @bind-Value="_showOnTestOnly" Label="On-Test Only" Color="Color.Primary" T="bool" />
+                    <MudChip T="string" Size="Size.Small" Color="Color.Info">
+                        @(_showOnTestOnly ? "Showing test items only" : "Showing all items (extra study in italics)")
+                    </MudChip>
+                    <MudSpacer />
+                    <MudText Typo="Typo.caption" Color="Color.Info">E/W: 1 mi = 16 blocks &nbsp; N/S: 1 mi = 8 blocks</MudText>
+                </div>
+                <MudGrid>
+                    <MudItem xs="12" md="6">
+                        <MudText Typo="Typo.h6" Class="mb-2">E/W Streets (North-South Running)</MudText>
+                        <MudSimpleTable Dense Hover Bordered Striped>
+                            <thead>
+                                <tr>
+                                    <th>Hundred Block</th>
+                                    <th>Named Street</th>
+                                    <th style="width:60px">On Test</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var s in EWStreets)
+                                {
+                                    if (_showOnTestOnly && !s.OnTest) continue;
+                                    <tr style="@(!s.OnTest ? "font-style:italic;opacity:0.7" : "")">
+                                        <td>@s.Display</td>
+                                        <td>
+                                            @if (s.AltName != null)
+                                            {
+                                                @s.AltName
+                                                @if (s.AltNote != null)
+                                                {
+                                                    <MudText Typo="Typo.caption" Color="Color.Secondary"> @s.AltNote</MudText>
+                                                }
+                                            }
+                                        </td>
+                                        <td style="text-align:center">
+                                            @if (s.OnTest)
+                                            {
+                                                <MudIcon Icon="@Icons.Material.Filled.Check" Color="Color.Success" Size="Size.Small" />
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </MudSimpleTable>
+                    </MudItem>
+                    <MudItem xs="12" md="6">
+                        <MudText Typo="Typo.h6" Class="mb-2">N/S Streets (East-West Running)</MudText>
+                        <MudSimpleTable Dense Hover Bordered Striped>
+                            <thead>
+                                <tr>
+                                    <th>Hundred Block</th>
+                                    <th>Named Street</th>
+                                    <th style="width:60px">On Test</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var s in NSStreets)
+                                {
+                                    if (_showOnTestOnly && !s.OnTest) continue;
+                                    <tr style="@(!s.OnTest ? "font-style:italic;opacity:0.7" : "")">
+                                        <td>@s.Display</td>
+                                        <td>
+                                            @if (s.AltName != null)
+                                            {
+                                                @s.AltName
+                                                @if (s.AltNote != null)
+                                                {
+                                                    <MudText Typo="Typo.caption" Color="Color.Secondary"> @s.AltNote</MudText>
+                                                }
+                                            }
+                                        </td>
+                                        <td style="text-align:center">
+                                            @if (s.OnTest)
+                                            {
+                                                <MudIcon Icon="@Icons.Material.Filled.Check" Color="Color.Success" Size="Size.Small" />
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </MudSimpleTable>
+                    </MudItem>
+                </MudGrid>
+            </MudPaper>
+        </MudTabPanel>
+
+        @* amamamamam STREET MATCH TAB amamamamam *@
+        <MudTabPanel Text="Street Match" Icon="@Icons.Material.Filled.SwapHoriz">
+            <MudPaper Class="pa-4">
+                <div class="d-flex align-center gap-2 mb-3">
+                    <MudSwitch @bind-Value="_matchOnTestOnly" Label="On-Test Only" Color="Color.Primary" T="bool" />
+                    <MudSwitch Value="_matchNoRepeat" ValueChanged="OnMatchNoRepeatChanged" Label="No Repeat" Color="Color.Secondary" T="bool" />
+                    <MudButton Variant="Variant.Outlined" Color="Color.Warning" OnClick="ResetMatchScore" Size="Size.Small"
+                               StartIcon="@Icons.Material.Filled.Refresh">Reset Score</MudButton>
+                    <MudSpacer />
+                    @if (_matchNoRepeat && _matchDeck.PoolSize > 0 && !_matchDeck.IsComplete)
+                    {
+                        <MudChip T="string" Size="Size.Small" Color="Color.Info">@(_matchDeck.History.Count + 1) of @_matchDeck.PoolSize</MudChip>
+                    }
+                    <MudChip T="string" Size="Size.Small" Color="Color.Success">@_matchCorrect / @_matchTotal correct</MudChip>
+                </div>
+
+                @if (_matchNoRepeat && _matchDeck.IsComplete)
+                {
+                    <MudAlert Severity="Severity.Success" Class="mb-3" Variant="Variant.Filled">
+                        Round complete! @_matchDeck.History.Count(h => h.WasCorrect) of @_matchDeck.History.Count correct
+                    </MudAlert>
+                    @if (_matchDeck.History.Any(h => !h.WasCorrect))
+                    {
+                        <MudText Typo="Typo.h6" Class="mb-2" Color="Color.Error">Missed Questions:</MudText>
+                        @foreach (var m in _matchDeck.History.Where(h => !h.WasCorrect))
+                        {
+                            <MudAlert Severity="Severity.Error" Class="mb-1" Dense="true">
+                                @m.Question — <b>@m.Answer</b>
+                            </MudAlert>
+                        }
+                    }
+                    else
+                    {
+                        <MudAlert Severity="Severity.Success" Class="mb-2">Perfect score!</MudAlert>
+                    }
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Class="mt-2"
+                               OnClick="@(() => { _matchDeck.Reset(); _matchCorrect = 0; _matchTotal = 0; GenerateMatchQuestion(); })"
+                               StartIcon="@Icons.Material.Filled.Refresh">New Round</MudButton>
+                }
+                else if (_matchQuestion != null)
+                {
+                    <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mb-3" NoIcon>
+                        <MudText Typo="Typo.h6">@_matchQuestion.Prompt</MudText>
+                    </MudAlert>
+
+                    <div class="d-flex align-center gap-2 mb-3">
+                        <MudTextField @ref="_matchInput" @bind-Value="_matchUserAnswer" T="string" Label="Your Answer"
+                                      Variant="Variant.Outlined" Immediate OnKeyDown="OnMatchKeyDown"
+                                      Disabled="_matchAnswered"
+                                      Style="max-width:400px" />
+                        @if (!_matchAnswered)
+                        {
+                            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="CheckMatchAnswer"
+                                       StartIcon="@Icons.Material.Filled.Check">Check</MudButton>
+                        }
+                        else
+                        {
+                            <MudButton @ref="_matchNextBtn" Variant="Variant.Filled" Color="Color.Primary" OnClick="NextMatchQuestion"
+                                       StartIcon="@Icons.Material.Filled.ArrowForward">Next</MudButton>
+                        }
+                    </div>
+
+                    @if (_matchAnswered)
+                    {
+                        @if (_matchWasCorrect)
+                        {
+                            <MudAlert Severity="Severity.Success" Class="mb-2">Correct!</MudAlert>
+                        }
+                        else
+                        {
+                            <MudAlert Severity="Severity.Error" Class="mb-2">
+                                Incorrect. The answer is: <b>@_matchQuestion.Answer</b>
+                                @if (_matchQuestion.AnswerNote != null)
+                                {
+                                    <span> @_matchQuestion.AnswerNote</span>
+                                }
+                            </MudAlert>
+                        }
+                    }
+                }
+            </MudPaper>
+        </MudTabPanel>
+
+        @* amamamamam NEIGHBORS TAB amamamamam *@
+        <MudTabPanel Text="Neighbors" Icon="@Icons.Material.Filled.CompareArrows">
+            <MudPaper Class="pa-4">
+                <div class="d-flex align-center gap-2 mb-3">
+                    <MudSwitch @bind-Value="_neighborOnTestOnly" Label="On-Test Only" Color="Color.Primary" T="bool" />
+                    <MudSwitch Value="_neighborNoRepeat" ValueChanged="OnNeighborNoRepeatChanged" Label="No Repeat" Color="Color.Secondary" T="bool" />
+                    <MudButton Variant="Variant.Outlined" Color="Color.Warning" OnClick="ResetNeighborScore" Size="Size.Small"
+                               StartIcon="@Icons.Material.Filled.Refresh">Reset Score</MudButton>
+                    <MudSpacer />
+                    @if (_neighborNoRepeat && _neighborDeck.PoolSize > 0 && !_neighborDeck.IsComplete)
+                    {
+                        <MudChip T="string" Size="Size.Small" Color="Color.Info">@(_neighborDeck.History.Count + 1) of @_neighborDeck.PoolSize</MudChip>
+                    }
+                    <MudChip T="string" Size="Size.Small" Color="Color.Success">@_neighborCorrect / @_neighborTotal correct</MudChip>
+                </div>
+
+                @if (_neighborNoRepeat && _neighborDeck.IsComplete)
+                {
+                    <MudAlert Severity="Severity.Success" Class="mb-3" Variant="Variant.Filled">
+                        Round complete! @_neighborDeck.History.Count(h => h.WasCorrect) of @_neighborDeck.History.Count correct
+                    </MudAlert>
+                    @if (_neighborDeck.History.Any(h => !h.WasCorrect))
+                    {
+                        <MudText Typo="Typo.h6" Class="mb-2" Color="Color.Error">Missed Questions:</MudText>
+                        @foreach (var m in _neighborDeck.History.Where(h => !h.WasCorrect))
+                        {
+                            <MudAlert Severity="Severity.Error" Class="mb-1" Dense="true">
+                                @m.Question — <b>@m.Answer</b>
+                            </MudAlert>
+                        }
+                    }
+                    else
+                    {
+                        <MudAlert Severity="Severity.Success" Class="mb-2">Perfect score!</MudAlert>
+                    }
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Class="mt-2"
+                               OnClick="@(() => { _neighborDeck.Reset(); _neighborCorrect = 0; _neighborTotal = 0; GenerateNeighborQuestion(); })"
+                               StartIcon="@Icons.Material.Filled.Refresh">New Round</MudButton>
+                }
+                else if (_neighborQuestion != null)
+                {
+                    <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mb-3" NoIcon>
+                        <MudText Typo="Typo.h6">@_neighborQuestion.Prompt</MudText>
+                    </MudAlert>
+
+                    <MudGrid>
+                        @if (_neighborQuestion.HasBefore)
+                        {
+                            <MudItem xs="12" sm="6">
+                                <MudTextField @ref="_neighborInput" @bind-Value="_neighborAnswer1" T="string"
+                                              Label="@_neighborQuestion.BeforeLabel"
+                                              Variant="Variant.Outlined" Immediate
+                                              Disabled="_neighborAnswered" />
+                            </MudItem>
+                        }
+                        @if (_neighborQuestion.HasAfter)
+                        {
+                            <MudItem xs="12" sm="6">
+                                <MudTextField @bind-Value="_neighborAnswer2" T="string"
+                                              Label="@_neighborQuestion.AfterLabel"
+                                              Variant="Variant.Outlined" Immediate
+                                              Disabled="_neighborAnswered" />
+                            </MudItem>
+                        }
+                    </MudGrid>
+
+                    <div class="d-flex align-center gap-2 mt-3">
+                        @if (!_neighborAnswered)
+                        {
+                            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="CheckNeighborAnswer"
+                                       StartIcon="@Icons.Material.Filled.Check">Check</MudButton>
+                        }
+                        else
+                        {
+                            <MudButton @ref="_neighborNextBtn" Variant="Variant.Filled" Color="Color.Primary" OnClick="NextNeighborQuestion"
+                                       StartIcon="@Icons.Material.Filled.ArrowForward">Next</MudButton>
+                        }
+                    </div>
+
+                    @if (_neighborAnswered)
+                    {
+                        <MudAlert Severity="@(_neighborWasCorrect ? Severity.Success : Severity.Error)" Class="mt-2">
+                            @if (_neighborWasCorrect)
+                            {
+                                <span>Correct!</span>
+                            }
+                            else
+                            {
+                                <span>
+                                    @if (_neighborQuestion.HasBefore)
+                                    {
+                                        <div>@_neighborQuestion.BeforeLabel: <b>@_neighborQuestion.BeforeAnswer</b></div>
+                                    }
+                                    @if (_neighborQuestion.HasAfter)
+                                    {
+                                        <div>@_neighborQuestion.AfterLabel: <b>@_neighborQuestion.AfterAnswer</b></div>
+                                    }
+                                </span>
+                            }
+                        </MudAlert>
+                    }
+                }
+            </MudPaper>
+        </MudTabPanel>
+
+        @* amamamamam ADDRESS LOOKUP TAB amamamamam *@
+        <MudTabPanel Text="Address Lookup" Icon="@Icons.Material.Filled.LocationOn">
+            <MudPaper Class="pa-4">
+                <div class="d-flex align-center gap-2 mb-3">
+                    <MudButton Variant="Variant.Outlined" Color="Color.Warning" OnClick="ResetAddressScore" Size="Size.Small"
+                               StartIcon="@Icons.Material.Filled.Refresh">Reset Score</MudButton>
+                    <MudSpacer />
+                    <MudChip T="string" Size="Size.Small" Color="Color.Success">@_addrCorrect / @_addrTotal correct</MudChip>
+                </div>
+
+                @if (_addrQuestion != null)
+                {
+                    <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mb-3" NoIcon>
+                        <MudText Typo="Typo.h5">@_addrQuestion.Address</MudText>
+                    </MudAlert>
+
+                    <MudGrid>
+                        <MudItem xs="12" sm="6">
+                            <MudTextField @ref="_addrInput" @bind-Value="_addrCrossStreet" T="string"
+                                          Label="Nearest cross street"
+                                          Variant="Variant.Outlined" Immediate
+                                          Disabled="_addrAnswered"
+                                          HelperText="The nearest street from the hundred blocks list" />
+                        </MudItem>
+                        <MudItem xs="12" sm="6">
+                            <MudSelect @bind-Value="_addrSide" T="string" Label="Which side of the street?"
+                                       Variant="Variant.Outlined" Disabled="_addrAnswered">
+                                <MudSelectItem Value="@("North")">North</MudSelectItem>
+                                <MudSelectItem Value="@("South")">South</MudSelectItem>
+                                <MudSelectItem Value="@("East")">East</MudSelectItem>
+                                <MudSelectItem Value="@("West")">West</MudSelectItem>
+                            </MudSelect>
+                        </MudItem>
+                    </MudGrid>
+
+                    <div class="d-flex align-center gap-2 mt-3">
+                        @if (!_addrAnswered)
+                        {
+                            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="CheckAddressAnswer"
+                                       StartIcon="@Icons.Material.Filled.Check">Check</MudButton>
+                        }
+                        else
+                        {
+                            <MudButton @ref="_addrNextBtn" Variant="Variant.Filled" Color="Color.Primary" OnClick="NextAddressQuestion"
+                                       StartIcon="@Icons.Material.Filled.ArrowForward">Next</MudButton>
+                        }
+                    </div>
+
+                    @if (_addrAnswered)
+                    {
+                        <div class="mt-2">
+                            <MudAlert Severity="@(_addrCrossCorrect ? Severity.Success : Severity.Error)" Class="mb-1">
+                                Cross street: <b>@_addrQuestion.CrossStreetAnswer</b>
+                                @if (_addrQuestion.CrossStreetAlt != null)
+                                {
+                                    <span> (@_addrQuestion.CrossStreetAlt)</span>
+                                }
+                                — you said: <b>@(string.IsNullOrWhiteSpace(_addrCrossStreet) ? "(blank)" : _addrCrossStreet)</b>
+                            </MudAlert>
+                            <MudAlert Severity="@(_addrSideCorrect ? Severity.Success : Severity.Error)">
+                                Side of street: <b>@_addrQuestion.CorrectSide</b>
+                                — you said: <b>@(string.IsNullOrWhiteSpace(_addrSide) ? "(blank)" : _addrSide)</b>
+                            </MudAlert>
+                        </div>
+                    }
+                }
+            </MudPaper>
+        </MudTabPanel>
+
+        @* amamamamam CITY CODES TAB amamamamam *@
+        <MudTabPanel Text="City Codes" Icon="@Icons.Material.Filled.LocationCity">
+            <MudPaper Class="pa-4">
+                <div class="d-flex align-center gap-2 mb-3">
+                    <MudSwitch @bind-Value="_cityStudyMode" Label="Study Mode" Color="Color.Primary" T="bool" />
+                    @if (!_cityStudyMode)
+                    {
+                        <MudSwitch Value="_cityNoRepeat" ValueChanged="OnCityNoRepeatChanged" Label="No Repeat" Color="Color.Secondary" T="bool" />
+                        <MudButton Variant="Variant.Outlined" Color="Color.Warning" OnClick="ResetCityScore" Size="Size.Small"
+                                   StartIcon="@Icons.Material.Filled.Refresh">Reset Score</MudButton>
+                        <MudSpacer />
+                        @if (_cityNoRepeat && _cityDeck.PoolSize > 0 && !_cityDeck.IsComplete)
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Info">@(_cityDeck.History.Count + 1) of @_cityDeck.PoolSize</MudChip>
+                        }
+                        <MudChip T="string" Size="Size.Small" Color="Color.Success">@_cityCorrect / @_cityTotal correct</MudChip>
+                    }
+                </div>
+
+                @if (_cityStudyMode)
+                {
+                    <MudText Typo="Typo.h6" Class="mb-2">Two-Letter City Abbreviations</MudText>
+                    <MudGrid>
+                        <MudItem xs="12" sm="6" md="4">
+                            <MudSimpleTable Dense Hover Bordered Striped>
+                                <thead><tr><th>Code</th><th>City</th></tr></thead>
+                                <tbody>
+                                    @foreach (var c in CityCodes.Take(8))
+                                    {
+                                        <tr><td><b>@c.Code</b></td><td>@c.Name</td></tr>
+                                    }
+                                </tbody>
+                            </MudSimpleTable>
+                        </MudItem>
+                        <MudItem xs="12" sm="6" md="4">
+                            <MudSimpleTable Dense Hover Bordered Striped>
+                                <thead><tr><th>Code</th><th>City</th></tr></thead>
+                                <tbody>
+                                    @foreach (var c in CityCodes.Skip(8).Take(8))
+                                    {
+                                        <tr><td><b>@c.Code</b></td><td>@c.Name</td></tr>
+                                    }
+                                </tbody>
+                            </MudSimpleTable>
+                        </MudItem>
+                        <MudItem xs="12" sm="6" md="4">
+                            <MudSimpleTable Dense Hover Bordered Striped>
+                                <thead><tr><th>Code</th><th>City</th></tr></thead>
+                                <tbody>
+                                    @foreach (var c in CityCodes.Skip(16))
+                                    {
+                                        <tr><td><b>@c.Code</b></td><td>@c.Name</td></tr>
+                                    }
+                                </tbody>
+                            </MudSimpleTable>
+                        </MudItem>
+                    </MudGrid>
+                }
+                else if (_cityNoRepeat && _cityDeck.IsComplete)
+                {
+                    <MudAlert Severity="Severity.Success" Class="mb-3" Variant="Variant.Filled">
+                        Round complete! @_cityDeck.History.Count(h => h.WasCorrect) of @_cityDeck.History.Count correct
+                    </MudAlert>
+                    @if (_cityDeck.History.Any(h => !h.WasCorrect))
+                    {
+                        <MudText Typo="Typo.h6" Class="mb-2" Color="Color.Error">Missed Questions:</MudText>
+                        @foreach (var m in _cityDeck.History.Where(h => !h.WasCorrect))
+                        {
+                            <MudAlert Severity="Severity.Error" Class="mb-1" Dense="true">
+                                @m.Question — <b>@m.Answer</b>
+                            </MudAlert>
+                        }
+                    }
+                    else
+                    {
+                        <MudAlert Severity="Severity.Success" Class="mb-2">Perfect score!</MudAlert>
+                    }
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Class="mt-2"
+                               OnClick="@(() => { _cityDeck.Reset(); _cityCorrect = 0; _cityTotal = 0; GenerateCityQuestion(); })"
+                               StartIcon="@Icons.Material.Filled.Refresh">New Round</MudButton>
+                }
+                else if (_cityQuestion != null)
+                {
+                    <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mb-3" NoIcon>
+                        <MudText Typo="Typo.h6">@_cityQuestion.Prompt</MudText>
+                    </MudAlert>
+
+                    <div class="d-flex align-center gap-2 mb-3">
+                        <MudTextField @ref="_cityInput" @bind-Value="_cityUserAnswer" T="string" Label="Your Answer"
+                                      Variant="Variant.Outlined" Immediate OnKeyDown="OnCityKeyDown"
+                                      Disabled="_cityAnswered" Style="max-width:400px" />
+                        @if (!_cityAnswered)
+                        {
+                            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="CheckCityAnswer"
+                                       StartIcon="@Icons.Material.Filled.Check">Check</MudButton>
+                        }
+                        else
+                        {
+                            <MudButton @ref="_cityNextBtn" Variant="Variant.Filled" Color="Color.Primary" OnClick="NextCityQuestion"
+                                       StartIcon="@Icons.Material.Filled.ArrowForward">Next</MudButton>
+                        }
+                    </div>
+
+                    @if (_cityAnswered)
+                    {
+                        <MudAlert Severity="@(_cityWasCorrect ? Severity.Success : Severity.Error)" Class="mb-2">
+                            @if (_cityWasCorrect) { <span>Correct!</span> }
+                            else { <span>Incorrect. The answer is: <b>@_cityQuestion.Answer</b></span> }
+                        </MudAlert>
+                    }
+                }
+            </MudPaper>
+        </MudTabPanel>
+
+        @* amamamamam RADIO CODES TAB amamamamam *@
+        <MudTabPanel Text="Radio Codes" Icon="@Icons.Material.Filled.Radio">
+            <MudPaper Class="pa-4">
+                <div class="d-flex align-center gap-2 mb-3">
+                    <MudSwitch @bind-Value="_radioStudyMode" Label="Study Mode" Color="Color.Primary" T="bool" />
+                    @if (!_radioStudyMode)
+                    {
+                        <MudSwitch Value="_radioNoRepeat" ValueChanged="OnRadioNoRepeatChanged" Label="No Repeat" Color="Color.Secondary" T="bool" />
+                        <MudButton Variant="Variant.Outlined" Color="Color.Warning" OnClick="ResetRadioScore" Size="Size.Small"
+                                   StartIcon="@Icons.Material.Filled.Refresh">Reset Score</MudButton>
+                        <MudSpacer />
+                        @if (_radioNoRepeat && _radioDeck.PoolSize > 0 && !_radioDeck.IsComplete)
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Info">@(_radioDeck.History.Count + 1) of @_radioDeck.PoolSize</MudChip>
+                        }
+                        <MudChip T="string" Size="Size.Small" Color="Color.Success">@_radioCorrect / @_radioTotal correct</MudChip>
+                    }
+                </div>
+
+                @if (_radioStudyMode)
+                {
+                    <MudGrid>
+                        <MudItem xs="12" md="4">
+                            <MudText Typo="Typo.h6" Class="mb-2">10-Codes / Codes</MudText>
+                            <MudSimpleTable Dense Hover Bordered Striped>
+                                <thead><tr><th>Code</th><th>Meaning</th></tr></thead>
+                                <tbody>
+                                    @foreach (var c in RadioCodes.Where(r => r.Category == "Code"))
+                                    {
+                                        <tr><td><b>@c.Code</b></td><td>@c.Meaning</td></tr>
+                                    }
+                                </tbody>
+                            </MudSimpleTable>
+                        </MudItem>
+                        <MudItem xs="12" md="4">
+                            <MudText Typo="Typo.h6" Class="mb-2">Signals</MudText>
+                            <MudSimpleTable Dense Hover Bordered Striped>
+                                <thead><tr><th>Signal</th><th>Meaning</th></tr></thead>
+                                <tbody>
+                                    @foreach (var c in RadioCodes.Where(r => r.Category == "Signal"))
+                                    {
+                                        <tr><td><b>@c.Code</b></td><td>@c.Meaning</td></tr>
+                                    }
+                                </tbody>
+                            </MudSimpleTable>
+                        </MudItem>
+                        <MudItem xs="12" md="4">
+                            <MudText Typo="Typo.h6" Class="mb-2">N-Dispositions</MudText>
+                            <MudSimpleTable Dense Hover Bordered Striped>
+                                <thead><tr><th>Code</th><th>Meaning</th></tr></thead>
+                                <tbody>
+                                    @foreach (var c in RadioCodes.Where(r => r.Category == "N-Code"))
+                                    {
+                                        <tr><td><b>@c.Code</b></td><td>@c.Meaning</td></tr>
+                                    }
+                                </tbody>
+                            </MudSimpleTable>
+
+                            <MudText Typo="Typo.h6" Class="mb-2 mt-4">Disposition Letters</MudText>
+                            <MudSimpleTable Dense Hover Bordered Striped>
+                                <thead><tr><th>Code</th><th>Meaning</th></tr></thead>
+                                <tbody>
+                                    @foreach (var c in RadioCodes.Where(r => r.Category == "Disposition"))
+                                    {
+                                        <tr><td><b>@c.Code</b></td><td>@c.Meaning</td></tr>
+                                    }
+                                </tbody>
+                            </MudSimpleTable>
+
+                            <MudText Typo="Typo.h6" Class="mb-2 mt-4">Triage Codes</MudText>
+                            <MudSimpleTable Dense Hover Bordered Striped>
+                                <thead><tr><th>Code</th><th>Meaning</th></tr></thead>
+                                <tbody>
+                                    @foreach (var c in TriageCodes)
+                                    {
+                                        <tr><td><b>@c.Code</b></td><td>@c.Meaning</td></tr>
+                                    }
+                                </tbody>
+                            </MudSimpleTable>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-1">
+                                * Prefaced with patient count (e.g. 1 RD)
+                            </MudText>
+                        </MudItem>
+                    </MudGrid>
+                }
+                else if (_radioNoRepeat && _radioDeck.IsComplete)
+                {
+                    <MudAlert Severity="Severity.Success" Class="mb-3" Variant="Variant.Filled">
+                        Round complete! @_radioDeck.History.Count(h => h.WasCorrect) of @_radioDeck.History.Count correct
+                    </MudAlert>
+                    @if (_radioDeck.History.Any(h => !h.WasCorrect))
+                    {
+                        <MudText Typo="Typo.h6" Class="mb-2" Color="Color.Error">Missed Questions:</MudText>
+                        @foreach (var m in _radioDeck.History.Where(h => !h.WasCorrect))
+                        {
+                            <MudAlert Severity="Severity.Error" Class="mb-1" Dense="true">
+                                @m.Question — <b>@m.Answer</b>
+                            </MudAlert>
+                        }
+                    }
+                    else
+                    {
+                        <MudAlert Severity="Severity.Success" Class="mb-2">Perfect score!</MudAlert>
+                    }
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Class="mt-2"
+                               OnClick="@(() => { _radioDeck.Reset(); _radioCorrect = 0; _radioTotal = 0; GenerateRadioQuestion(); })"
+                               StartIcon="@Icons.Material.Filled.Refresh">New Round</MudButton>
+                }
+                else if (_radioQuestion != null)
+                {
+                    <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mb-3" NoIcon>
+                        <MudText Typo="Typo.h6">@_radioQuestion.Prompt</MudText>
+                    </MudAlert>
+
+                    <div class="d-flex align-center gap-2 mb-3">
+                        <MudTextField @ref="_radioInput" @bind-Value="_radioUserAnswer" T="string" Label="Your Answer"
+                                      Variant="Variant.Outlined" Immediate OnKeyDown="OnRadioKeyDown"
+                                      Disabled="_radioAnswered" Style="max-width:500px" />
+                        @if (!_radioAnswered)
+                        {
+                            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="CheckRadioAnswer"
+                                       StartIcon="@Icons.Material.Filled.Check">Check</MudButton>
+                        }
+                        else
+                        {
+                            <MudButton @ref="_radioNextBtn" Variant="Variant.Filled" Color="Color.Primary" OnClick="NextRadioQuestion"
+                                       StartIcon="@Icons.Material.Filled.ArrowForward">Next</MudButton>
+                        }
+                    </div>
+
+                    @if (_radioAnswered)
+                    {
+                        <MudAlert Severity="@(_radioWasCorrect ? Severity.Success : Severity.Error)" Class="mb-2">
+                            @if (_radioWasCorrect) { <span>Correct!</span> }
+                            else { <span>Incorrect. The answer is: <b>@_radioQuestion.Answer</b></span> }
+                        </MudAlert>
+                    }
+                }
+            </MudPaper>
+        </MudTabPanel>
+
+        @* amamamamam PHONETIC ALPHABET TAB amamamamam *@
+        <MudTabPanel Text="Phonetic Alphabet" Icon="@Icons.Material.Filled.Abc">
+            <MudPaper Class="pa-4">
+                <div class="d-flex align-center gap-2 mb-3">
+                    <MudSwitch @bind-Value="_phoneticStudyMode" Label="Study Mode" Color="Color.Primary" T="bool" />
+                    @if (!_phoneticStudyMode)
+                    {
+                        <MudSwitch Value="_phoneticNoRepeat" ValueChanged="OnPhoneticNoRepeatChanged" Label="No Repeat" Color="Color.Secondary" T="bool" />
+                        <MudButton Variant="Variant.Outlined" Color="Color.Warning" OnClick="ResetPhoneticScore" Size="Size.Small"
+                                   StartIcon="@Icons.Material.Filled.Refresh">Reset Score</MudButton>
+                        <MudSpacer />
+                        @if (_phoneticNoRepeat && _phoneticDeck.PoolSize > 0 && !_phoneticDeck.IsComplete)
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Info">@(_phoneticDeck.History.Count + 1) of @_phoneticDeck.PoolSize</MudChip>
+                        }
+                        <MudChip T="string" Size="Size.Small" Color="Color.Success">@_phoneticCorrect / @_phoneticTotal correct</MudChip>
+                    }
+                </div>
+
+                @if (_phoneticStudyMode)
+                {
+                    <MudText Typo="Typo.h6" Class="mb-2">Phonetic Alphabet</MudText>
+                    <MudGrid>
+                        <MudItem xs="6" sm="4" md="2">
+                            <MudSimpleTable Dense Hover Bordered Striped>
+                                <thead><tr><th>Letter</th><th>Word</th></tr></thead>
+                                <tbody>
+                                    @foreach (var p in PhoneticAlphabet.Take(5))
+                                    {
+                                        <tr><td><b>@p.Letter</b></td><td>@p.Word</td></tr>
+                                    }
+                                </tbody>
+                            </MudSimpleTable>
+                        </MudItem>
+                        <MudItem xs="6" sm="4" md="2">
+                            <MudSimpleTable Dense Hover Bordered Striped>
+                                <thead><tr><th>Letter</th><th>Word</th></tr></thead>
+                                <tbody>
+                                    @foreach (var p in PhoneticAlphabet.Skip(5).Take(5))
+                                    {
+                                        <tr><td><b>@p.Letter</b></td><td>@p.Word</td></tr>
+                                    }
+                                </tbody>
+                            </MudSimpleTable>
+                        </MudItem>
+                        <MudItem xs="6" sm="4" md="2">
+                            <MudSimpleTable Dense Hover Bordered Striped>
+                                <thead><tr><th>Letter</th><th>Word</th></tr></thead>
+                                <tbody>
+                                    @foreach (var p in PhoneticAlphabet.Skip(10).Take(5))
+                                    {
+                                        <tr><td><b>@p.Letter</b></td><td>@p.Word</td></tr>
+                                    }
+                                </tbody>
+                            </MudSimpleTable>
+                        </MudItem>
+                        <MudItem xs="6" sm="4" md="2">
+                            <MudSimpleTable Dense Hover Bordered Striped>
+                                <thead><tr><th>Letter</th><th>Word</th></tr></thead>
+                                <tbody>
+                                    @foreach (var p in PhoneticAlphabet.Skip(15).Take(5))
+                                    {
+                                        <tr><td><b>@p.Letter</b></td><td>@p.Word</td></tr>
+                                    }
+                                </tbody>
+                            </MudSimpleTable>
+                        </MudItem>
+                        <MudItem xs="6" sm="4" md="2">
+                            <MudSimpleTable Dense Hover Bordered Striped>
+                                <thead><tr><th>Letter</th><th>Word</th></tr></thead>
+                                <tbody>
+                                    @foreach (var p in PhoneticAlphabet.Skip(20))
+                                    {
+                                        <tr><td><b>@p.Letter</b></td><td>@p.Word</td></tr>
+                                    }
+                                </tbody>
+                            </MudSimpleTable>
+                        </MudItem>
+                    </MudGrid>
+                }
+                else if (_phoneticNoRepeat && _phoneticDeck.IsComplete)
+                {
+                    <MudAlert Severity="Severity.Success" Class="mb-3" Variant="Variant.Filled">
+                        Round complete! @_phoneticDeck.History.Count(h => h.WasCorrect) of @_phoneticDeck.History.Count correct
+                    </MudAlert>
+                    @if (_phoneticDeck.History.Any(h => !h.WasCorrect))
+                    {
+                        <MudText Typo="Typo.h6" Class="mb-2" Color="Color.Error">Missed Questions:</MudText>
+                        @foreach (var m in _phoneticDeck.History.Where(h => !h.WasCorrect))
+                        {
+                            <MudAlert Severity="Severity.Error" Class="mb-1" Dense="true">
+                                @m.Question — <b>@m.Answer</b>
+                            </MudAlert>
+                        }
+                    }
+                    else
+                    {
+                        <MudAlert Severity="Severity.Success" Class="mb-2">Perfect score!</MudAlert>
+                    }
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Class="mt-2"
+                               OnClick="@(() => { _phoneticDeck.Reset(); _phoneticCorrect = 0; _phoneticTotal = 0; GeneratePhoneticQuestion(); })"
+                               StartIcon="@Icons.Material.Filled.Refresh">New Round</MudButton>
+                }
+                else if (_phoneticQuestion != null)
+                {
+                    <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mb-3" NoIcon>
+                        <MudText Typo="Typo.h6">@_phoneticQuestion.Prompt</MudText>
+                    </MudAlert>
+
+                    <div class="d-flex align-center gap-2 mb-3">
+                        <MudTextField @ref="_phoneticInput" @bind-Value="_phoneticUserAnswer" T="string" Label="Your Answer"
+                                      Variant="Variant.Outlined" Immediate OnKeyDown="OnPhoneticKeyDown"
+                                      Disabled="_phoneticAnswered" Style="max-width:400px" />
+                        @if (!_phoneticAnswered)
+                        {
+                            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="CheckPhoneticAnswer"
+                                       StartIcon="@Icons.Material.Filled.Check">Check</MudButton>
+                        }
+                        else
+                        {
+                            <MudButton @ref="_phoneticNextBtn" Variant="Variant.Filled" Color="Color.Primary" OnClick="NextPhoneticQuestion"
+                                       StartIcon="@Icons.Material.Filled.ArrowForward">Next</MudButton>
+                        }
+                    </div>
+
+                    @if (_phoneticAnswered)
+                    {
+                        <MudAlert Severity="@(_phoneticWasCorrect ? Severity.Success : Severity.Error)" Class="mb-2">
+                            @if (_phoneticWasCorrect) { <span>Correct!</span> }
+                            else { <span>Incorrect. The answer is: <b>@_phoneticQuestion.Answer</b></span> }
+                        </MudAlert>
+                    }
+                }
+            </MudPaper>
+        </MudTabPanel>
+        @* amamamamam IMPORTANT PEOPLE TAB amamamamam *@
+        <MudTabPanel Text="Important People" Icon="@Icons.Material.Filled.People">
+            <MudPaper Class="pa-4">
+                <div class="d-flex align-center gap-2 mb-3">
+                    <MudSwitch @bind-Value="_peopleStudyMode" Label="Study Mode" Color="Color.Primary" T="bool" />
+                    @if (_peopleStudyMode)
+                    {
+                        <MudSwitch @bind-Value="_peopleOnTestOnly" Label="On-Test Only" Color="Color.Secondary" T="bool" />
+                        <MudChip T="string" Size="Size.Small" Color="Color.Info">
+                            @(_peopleOnTestOnly ? "Showing test items only" : "Showing all people (extra study in italics)")
+                        </MudChip>
+                    }
+                    else
+                    {
+                        <MudSwitch @bind-Value="_peopleQuizOnTestOnly" Label="On-Test Only" Color="Color.Secondary" T="bool" />
+                        <MudSwitch Value="_peopleNoRepeat" ValueChanged="OnPeopleNoRepeatChanged" Label="No Repeat" Color="Color.Secondary" T="bool" />
+                        <MudButton Variant="Variant.Outlined" Color="Color.Warning" OnClick="ResetPeopleScore" Size="Size.Small"
+                                   StartIcon="@Icons.Material.Filled.Refresh">Reset Score</MudButton>
+                        <MudSpacer />
+                        @if (_peopleNoRepeat && _peopleDeck.PoolSize > 0 && !_peopleDeck.IsComplete)
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Info">@(_peopleDeck.History.Count + 1) of @_peopleDeck.PoolSize</MudChip>
+                        }
+                        <MudChip T="string" Size="Size.Small" Color="Color.Success">@_peopleCorrect / @_peopleTotal correct</MudChip>
+                    }
+                </div>
+
+                @if (_peopleStudyMode)
+                {
+                    <MudSimpleTable Dense Hover Bordered Striped>
+                        <thead>
+                            <tr>
+                                <th>Title</th>
+                                <th>Name</th>
+                                <th style="width:60px">On Test</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var p in ImportantPeople)
+                            {
+                                if (_peopleOnTestOnly && !p.OnTest) continue;
+                                <tr style="@(!p.OnTest ? "font-style:italic;opacity:0.7" : "")">
+                                    <td>@p.Title</td>
+                                    <td><b>@p.Name</b></td>
+                                    <td style="text-align:center">
+                                        @if (p.OnTest)
+                                        {
+                                            <MudIcon Icon="@Icons.Material.Filled.Check" Color="Color.Success" Size="Size.Small" />
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </MudSimpleTable>
+                }
+                else if (_peopleNoRepeat && _peopleDeck.IsComplete)
+                {
+                    <MudAlert Severity="Severity.Success" Class="mb-3" Variant="Variant.Filled">
+                        Round complete! @_peopleDeck.History.Count(h => h.WasCorrect) of @_peopleDeck.History.Count correct
+                    </MudAlert>
+                    @if (_peopleDeck.History.Any(h => !h.WasCorrect))
+                    {
+                        <MudText Typo="Typo.h6" Class="mb-2" Color="Color.Error">Missed Questions:</MudText>
+                        @foreach (var m in _peopleDeck.History.Where(h => !h.WasCorrect))
+                        {
+                            <MudAlert Severity="Severity.Error" Class="mb-1" Dense="true">
+                                @m.Question — <b>@m.Answer</b>
+                            </MudAlert>
+                        }
+                    }
+                    else
+                    {
+                        <MudAlert Severity="Severity.Success" Class="mb-2">Perfect score!</MudAlert>
+                    }
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Class="mt-2"
+                               OnClick="@(() => { _peopleDeck.Reset(); _peopleCorrect = 0; _peopleTotal = 0; GeneratePeopleQuestion(); })"
+                               StartIcon="@Icons.Material.Filled.Refresh">New Round</MudButton>
+                }
+                else if (_peopleQuestion != null)
+                {
+                    <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mb-3" NoIcon>
+                        <MudText Typo="Typo.h6">@_peopleQuestion.Prompt</MudText>
+                    </MudAlert>
+
+                    <div class="d-flex align-center gap-2 mb-3">
+                        <MudTextField @ref="_peopleInput" @bind-Value="_peopleUserAnswer" T="string" Label="Your Answer"
+                                      Variant="Variant.Outlined" Immediate OnKeyDown="OnPeopleKeyDown"
+                                      Disabled="_peopleAnswered" Style="max-width:500px" />
+                        @if (!_peopleAnswered)
+                        {
+                            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="CheckPeopleAnswer"
+                                       StartIcon="@Icons.Material.Filled.Check">Check</MudButton>
+                        }
+                        else
+                        {
+                            <MudButton @ref="_peopleNextBtn" Variant="Variant.Filled" Color="Color.Primary" OnClick="NextPeopleQuestion"
+                                       StartIcon="@Icons.Material.Filled.ArrowForward">Next</MudButton>
+                        }
+                    </div>
+
+                    @if (_peopleAnswered)
+                    {
+                        <MudAlert Severity="@(_peopleWasCorrect ? Severity.Success : Severity.Error)" Class="mb-2">
+                            @if (_peopleWasCorrect) { <span>Correct!</span> }
+                            else { <span>Incorrect. The answer is: <b>@_peopleQuestion.Answer</b></span> }
+                        </MudAlert>
+                    }
+                }
+            </MudPaper>
+        </MudTabPanel>
+
+        @* amamamamam COMMON LOCATIONS TAB amamamamam *@
+        <MudTabPanel Text="Common Locations" Icon="@Icons.Material.Filled.Place">
+            <MudPaper Class="pa-4">
+                <div class="d-flex align-center gap-2 mb-3">
+                    <MudSwitch @bind-Value="_locationStudyMode" Label="Study Mode" Color="Color.Primary" T="bool" />
+                    @if (!_locationStudyMode)
+                    {
+                        <MudSwitch Value="_locationNoRepeat" ValueChanged="OnLocationNoRepeatChanged" Label="No Repeat" Color="Color.Secondary" T="bool" />
+                        <MudButton Variant="Variant.Outlined" Color="Color.Warning" OnClick="ResetLocationScore" Size="Size.Small"
+                                   StartIcon="@Icons.Material.Filled.Refresh">Reset Score</MudButton>
+                        <MudSpacer />
+                        @if (_locationNoRepeat && _locationDeck.PoolSize > 0 && !_locationDeck.IsComplete)
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Info">@(_locationDeck.History.Count + 1) of @_locationDeck.PoolSize</MudChip>
+                        }
+                        <MudChip T="string" Size="Size.Small" Color="Color.Success">@_locationCorrect / @_locationTotal correct</MudChip>
+                    }
+                </div>
+
+                @if (_locationStudyMode)
+                {
+                    <MudSimpleTable Dense Hover Bordered Striped>
+                        <thead>
+                            <tr>
+                                <th>Location</th>
+                                <th>Relative Location</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var loc in CommonLocations)
+                            {
+                                <tr>
+                                    <td><b>@loc.Name</b></td>
+                                    <td>@loc.RelativeLocation</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </MudSimpleTable>
+                }
+                else if (_locationNoRepeat && _locationDeck.IsComplete)
+                {
+                    <MudAlert Severity="Severity.Success" Class="mb-3" Variant="Variant.Filled">
+                        Round complete! @_locationDeck.History.Count(h => h.WasCorrect) of @_locationDeck.History.Count correct
+                    </MudAlert>
+                    @if (_locationDeck.History.Any(h => !h.WasCorrect))
+                    {
+                        <MudText Typo="Typo.h6" Class="mb-2" Color="Color.Error">Missed Questions:</MudText>
+                        @foreach (var m in _locationDeck.History.Where(h => !h.WasCorrect))
+                        {
+                            <MudAlert Severity="Severity.Error" Class="mb-1" Dense="true">
+                                @m.Question — <b>@m.Answer</b>
+                            </MudAlert>
+                        }
+                    }
+                    else
+                    {
+                        <MudAlert Severity="Severity.Success" Class="mb-2">Perfect score!</MudAlert>
+                    }
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Class="mt-2"
+                               OnClick="@(() => { _locationDeck.Reset(); _locationCorrect = 0; _locationTotal = 0; GenerateLocationQuestion(); })"
+                               StartIcon="@Icons.Material.Filled.Refresh">New Round</MudButton>
+                }
+                else if (_locationQuestion != null)
+                {
+                    <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mb-3" NoIcon>
+                        <MudText Typo="Typo.h6">@_locationQuestion.Prompt</MudText>
+                    </MudAlert>
+
+                    <div class="d-flex align-center gap-2 mb-3">
+                        <MudTextField @ref="_locationInput" @bind-Value="_locationUserAnswer" T="string" Label="Your Answer"
+                                      Variant="Variant.Outlined" Immediate OnKeyDown="OnLocationKeyDown"
+                                      Disabled="_locationAnswered" Style="max-width:500px" />
+                        @if (!_locationAnswered)
+                        {
+                            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="CheckLocationAnswer"
+                                       StartIcon="@Icons.Material.Filled.Check">Check</MudButton>
+                        }
+                        else
+                        {
+                            <MudButton @ref="_locationNextBtn" Variant="Variant.Filled" Color="Color.Primary" OnClick="NextLocationQuestion"
+                                       StartIcon="@Icons.Material.Filled.ArrowForward">Next</MudButton>
+                        }
+                    </div>
+
+                    @if (_locationAnswered)
+                    {
+                        <MudAlert Severity="@(_locationWasCorrect ? Severity.Success : Severity.Error)" Class="mb-2">
+                            @if (_locationWasCorrect) { <span>Correct!</span> }
+                            else { <span>Incorrect. The answer is: <b>@_locationQuestion.Answer</b></span> }
+                        </MudAlert>
+                    }
+                }
+            </MudPaper>
+        </MudTabPanel>
+
+        @* amamamamam CALL TYPE TEST TAB amamamamam *@
+        <MudTabPanel Text="Call Type Test" Icon="@Icons.Material.Filled.Phone">
+            <MudPaper Class="pa-4">
+                <div class="d-flex align-center gap-2 mb-3">
+                    <MudSwitch Value="_codeTestNoRepeat" ValueChanged="OnCodeTestNoRepeatChanged" Label="No Repeat" Color="Color.Secondary" T="bool" />
+                    <MudButton Variant="Variant.Outlined" Color="Color.Warning" OnClick="ResetCodeTestScore" Size="Size.Small"
+                               StartIcon="@Icons.Material.Filled.Refresh">Reset Score</MudButton>
+                    <MudSpacer />
+                    @if (_codeTestNoRepeat && _codeTestDeck.PoolSize > 0 && !_codeTestDeck.IsComplete)
+                    {
+                        <MudChip T="string" Size="Size.Small" Color="Color.Info">@(_codeTestDeck.History.Count + 1) of @_codeTestDeck.PoolSize</MudChip>
+                    }
+                    <MudChip T="string" Size="Size.Small" Color="Color.Success">@_codeTestCorrect / @_codeTestTotal correct</MudChip>
+                </div>
+
+                @if (_codeTestNoRepeat && _codeTestDeck.IsComplete)
+                {
+                    <MudAlert Severity="Severity.Success" Class="mb-3" Variant="Variant.Filled">
+                        Round complete! @_codeTestDeck.History.Count(h => h.WasCorrect) of @_codeTestDeck.History.Count correct
+                    </MudAlert>
+                    @if (_codeTestDeck.History.Any(h => !h.WasCorrect))
+                    {
+                        <MudText Typo="Typo.h6" Class="mb-2" Color="Color.Error">Missed Questions:</MudText>
+                        @foreach (var m in _codeTestDeck.History.Where(h => !h.WasCorrect))
+                        {
+                            <MudAlert Severity="Severity.Error" Class="mb-1" Dense="true">
+                                @m.Question — <b>@m.Answer</b>
+                            </MudAlert>
+                        }
+                    }
+                    else
+                    {
+                        <MudAlert Severity="Severity.Success" Class="mb-2">Perfect score!</MudAlert>
+                    }
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Class="mt-2"
+                               OnClick="@(() => { _codeTestDeck.Reset(); _codeTestCorrect = 0; _codeTestTotal = 0; GenerateCodeTestQuestion(); })"
+                               StartIcon="@Icons.Material.Filled.Refresh">New Round</MudButton>
+                }
+                else if (_currentCallGuide != null)
+                {
+                    <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mb-3" NoIcon>
+                        <MudText Typo="Typo.h6">@_currentCallGuide.Scenario</MudText>
+                    </MudAlert>
+
+                    <MudGrid>
+                        <MudItem xs="12" sm="5">
+                            <MudTextField @ref="_codeTestInput" @bind-Value="_ctCallType" T="string" Label="Call Type"
+                                          Variant="Variant.Outlined" Immediate OnKeyDown="OnCodeTestKeyDown"
+                                          Disabled="_codeTestAnswered" />
+                        </MudItem>
+                        <MudItem xs="12" sm="4">
+                            <MudText Typo="Typo.caption" Class="mb-1">Agencies</MudText>
+                            <div class="d-flex gap-4">
+                                <MudCheckBox @bind-Value="_ctAgencyP" Label="P" Color="Color.Primary" T="bool" Disabled="_codeTestAnswered" />
+                                <MudCheckBox @bind-Value="_ctAgencyF" Label="F" Color="Color.Error" T="bool" Disabled="_codeTestAnswered" />
+                                <MudCheckBox @bind-Value="_ctAgencyE" Label="E" Color="Color.Warning" T="bool" Disabled="_codeTestAnswered" />
+                            </div>
+                        </MudItem>
+                        <MudItem xs="12" sm="3">
+                            <MudTextField @bind-Value="_ctPriority" T="string" Label="LE Priority"
+                                          Variant="Variant.Outlined" Immediate OnKeyDown="OnCodeTestKeyDown"
+                                          Disabled="_codeTestAnswered" />
+                        </MudItem>
+                    </MudGrid>
+
+                    <div class="d-flex align-center gap-2 mt-3 mb-3">
+                        @if (!_codeTestAnswered)
+                        {
+                            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="CheckCodeTestAnswer"
+                                       StartIcon="@Icons.Material.Filled.Check">Check</MudButton>
+                        }
+                        else
+                        {
+                            <MudButton @ref="_codeTestNextBtn" Variant="Variant.Filled" Color="Color.Primary" OnClick="NextCodeTestQuestion"
+                                       StartIcon="@Icons.Material.Filled.ArrowForward">Next</MudButton>
+                        }
+                    </div>
+
+                    @if (_codeTestAnswered)
+                    {
+                        <MudGrid>
+                            <MudItem xs="12" sm="4">
+                                @if (_ctCallTypeCorrect)
+                                {
+                                    <MudAlert Severity="Severity.Success" Dense>Call Type: Correct!</MudAlert>
+                                }
+                                else
+                                {
+                                    <MudAlert Severity="Severity.Error" Dense>
+                                        Call Type: <b>@_currentCallGuide.CallType</b>
+                                        @if (_currentCallGuide.AcceptableCallTypes.Count > 1)
+                                        {
+                                            <span class="ml-1">(also: @string.Join(", ", _currentCallGuide.AcceptableCallTypes.Skip(1)))</span>
+                                        }
+                                    </MudAlert>
+                                }
+                            </MudItem>
+                            <MudItem xs="12" sm="4">
+                                @if (_ctAgenciesCorrect)
+                                {
+                                    <MudAlert Severity="Severity.Success" Dense>Agencies: Correct!</MudAlert>
+                                }
+                                else
+                                {
+                                    <MudAlert Severity="Severity.Error" Dense>Agencies: <b>@_currentCallGuide.AgenciesDisplay</b></MudAlert>
+                                }
+                            </MudItem>
+                            <MudItem xs="12" sm="4">
+                                @if (_ctPriorityCorrect)
+                                {
+                                    <MudAlert Severity="Severity.Success" Dense>Priority: Correct!</MudAlert>
+                                }
+                                else
+                                {
+                                    <MudAlert Severity="Severity.Error" Dense>Priority: <b>@_currentCallGuide.PriorityDisplay</b></MudAlert>
+                                }
+                            </MudItem>
+                        </MudGrid>
+
+                        @if (_codeTestWasCorrect)
+                        {
+                            <MudAlert Severity="Severity.Success" Class="mt-2">All correct!</MudAlert>
+                        }
+                    }
+                }
+            </MudPaper>
+        </MudTabPanel>
+    </MudTabs>
+</MudContainer>
+
+@code {
+    private int _activeTab;
+    private bool _showOnTestOnly;
+    private readonly Random _rng = new();
+
+    // ===== ELEMENT REFERENCES FOR FOCUS MANAGEMENT =====
+    private MudBlazor.MudTextField<string>? _matchInput, _neighborInput, _addrInput,
+        _cityInput, _radioInput, _phoneticInput, _peopleInput, _locationInput, _codeTestInput;
+    private MudBlazor.MudButton? _matchNextBtn, _neighborNextBtn, _addrNextBtn,
+        _cityNextBtn, _radioNextBtn, _phoneticNextBtn, _peopleNextBtn, _locationNextBtn, _codeTestNextBtn;
+
+    private enum FocusTarget { None, MatchNext, MatchInput, NeighborNext, NeighborInput,
+        AddrNext, AddrInput, CityNext, CityInput, RadioNext, RadioInput,
+        PhoneticNext, PhoneticInput, PeopleNext, PeopleInput, LocationNext, LocationInput,
+        CodeTestNext, CodeTestInput }
+    private FocusTarget _pendingFocus = FocusTarget.None;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        var target = _pendingFocus;
+        if (target == FocusTarget.None) return;
+        _pendingFocus = FocusTarget.None;
+
+        await Task.Delay(50);
+        try
+        {
+            switch (target)
+            {
+                case FocusTarget.MatchNext:     if (_matchNextBtn is not null) await _matchNextBtn.FocusAsync(); break;
+                case FocusTarget.MatchInput:     if (_matchInput is not null) await _matchInput.FocusAsync(); break;
+                case FocusTarget.NeighborNext:   if (_neighborNextBtn is not null) await _neighborNextBtn.FocusAsync(); break;
+                case FocusTarget.NeighborInput:  if (_neighborInput is not null) await _neighborInput.FocusAsync(); break;
+                case FocusTarget.AddrNext:       if (_addrNextBtn is not null) await _addrNextBtn.FocusAsync(); break;
+                case FocusTarget.AddrInput:      if (_addrInput is not null) await _addrInput.FocusAsync(); break;
+                case FocusTarget.CityNext:       if (_cityNextBtn is not null) await _cityNextBtn.FocusAsync(); break;
+                case FocusTarget.CityInput:      if (_cityInput is not null) await _cityInput.FocusAsync(); break;
+                case FocusTarget.RadioNext:      if (_radioNextBtn is not null) await _radioNextBtn.FocusAsync(); break;
+                case FocusTarget.RadioInput:     if (_radioInput is not null) await _radioInput.FocusAsync(); break;
+                case FocusTarget.PhoneticNext:   if (_phoneticNextBtn is not null) await _phoneticNextBtn.FocusAsync(); break;
+                case FocusTarget.PhoneticInput:  if (_phoneticInput is not null) await _phoneticInput.FocusAsync(); break;
+                case FocusTarget.PeopleNext:     if (_peopleNextBtn is not null) await _peopleNextBtn.FocusAsync(); break;
+                case FocusTarget.PeopleInput:    if (_peopleInput is not null) await _peopleInput.FocusAsync(); break;
+                case FocusTarget.LocationNext:   if (_locationNextBtn is not null) await _locationNextBtn.FocusAsync(); break;
+                case FocusTarget.LocationInput:  if (_locationInput is not null) await _locationInput.FocusAsync(); break;
+                case FocusTarget.CodeTestNext:   if (_codeTestNextBtn is not null) await _codeTestNextBtn.FocusAsync(); break;
+                case FocusTarget.CodeTestInput:  if (_codeTestInput is not null) await _codeTestInput.FocusAsync(); break;
+            }
+        }
+        catch { /* element not yet in DOM, ignore */ }
+    }
+
+    // ===== MAP QUIZ DATA =====
+
+    private bool _mapStudyMode = true;
+
+    private int MapCorrectCount => _mapItems.Count(i => i.IsCorrect);
+    private double MapProgress => _mapItems.Count > 0 ? (double)MapCorrectCount / _mapItems.Count * 100 : 0;
+    private int MapCategoryCorrect(string cat) => _mapItems.Count(i => i.Category == cat && i.IsCorrect);
+    private int MapCategoryTotal(string cat) => _mapItems.Count(i => i.Category == cat);
+
+    private void OnMapValueChanged(MapItem item, string value)
+    {
+        item.UserAnswer = value;
+        item.IsCorrect = CheckMapAnswer(item);
+    }
+
+    private bool CheckMapAnswer(MapItem item)
+    {
+        if (string.IsNullOrWhiteSpace(item.UserAnswer)) return false;
+        var normalized = NormalizeMap(item.UserAnswer);
+        return item.AcceptableNormalized.Contains(normalized);
+    }
+
+    private static string NormalizeMap(string s) =>
+        s.Trim().ToLowerInvariant()
+         .Replace("-", "").Replace(".", "").Replace(" ", "").Replace("'", "")
+         .Replace("mount", "mt").Replace("saint", "st");
+
+    private void ResetMap()
+    {
+        foreach (var item in _mapItems) { item.UserAnswer = ""; item.IsCorrect = false; }
+    }
+
+    private void RevealAllMap()
+    {
+        foreach (var item in _mapItems) { item.UserAnswer = item.CorrectAnswer; item.IsCorrect = true; }
+    }
+
+    private string GetMarkerFill(MapItem item)
+    {
+        if (item.IsCorrect) return "#2e7d32";
+        if (!string.IsNullOrWhiteSpace(item.UserAnswer)) return "#e65100";
+        return item.Category switch
+        {
+            "City" => "#1565c0", "Road" => "#5e548e", "County" => "#6d4c41", _ => "#757575"
+        };
+    }
+
+    private string GetMapAdornmentIcon(MapItem item)
+    {
+        if (item.IsCorrect) return Icons.Material.Filled.CheckCircle;
+        if (!string.IsNullOrWhiteSpace(item.UserAnswer)) return Icons.Material.Filled.Help;
+        return Icons.Material.Filled.RadioButtonUnchecked;
+    }
+
+    private Color GetMapAdornmentColor(MapItem item)
+    {
+        if (item.IsCorrect) return Color.Success;
+        if (!string.IsNullOrWhiteSpace(item.UserAnswer)) return Color.Warning;
+        return Color.Default;
+    }
+
+    private string GetMapInputStyle(MapItem item) =>
+        item.IsCorrect ? "background-color: rgba(46,125,50,0.08);" : "";
+
+    private class MapItem
+    {
+        public required string Label { get; set; }
+        public required string Category { get; set; }
+        public required string CorrectAnswer { get; set; }
+        public required double X { get; set; }
+        public required double Y { get; set; }
+        public string[] AcceptableAnswers { get; set; } = [];
+        public HashSet<string> AcceptableNormalized { get; set; } = [];
+        public string UserAnswer { get; set; } = "";
+        public bool IsCorrect { get; set; }
+    }
+
+    private static MapItem MakeMapItem(string label, string category, string answer, double x, double y, params string[] alts)
+    {
+        var allAnswers = new[] { answer }.Concat(alts).ToArray();
+        return new MapItem
+        {
+            Label = label, Category = category, CorrectAnswer = answer, X = x, Y = y,
+            AcceptableAnswers = allAnswers,
+            AcceptableNormalized = allAnswers.Select(NormalizeMap).ToHashSet()
+        };
+    }
+
+    private readonly List<MapItem> _mapItems =
+    [
+        MakeMapItem("C1",  "City", "Sedgwick",      2365, 376),
+        MakeMapItem("C2",  "City", "Bentley",        1870, 460),
+        MakeMapItem("C3",  "City", "Mount Hope",     1123, 601, "Mt Hope", "Mt. Hope"),
+        MakeMapItem("C4",  "City", "Valley Center",  2670, 860, "ValleyCenter"),
+        MakeMapItem("C5",  "City", "Park City",      2880, 1080, "ParkCity"),
+        MakeMapItem("C6",  "City", "Kechi",          3120, 1047),
+        MakeMapItem("C7",  "City", "Andale",         1305, 1100),
+        MakeMapItem("C8",  "City", "Maize",          2274, 1089),
+        MakeMapItem("C9",  "City", "Colwich",        1730, 1160),
+        MakeMapItem("C10", "City", "Bel Aire",       3180, 1270, "Bel Air", "BelAire", "Belair"),
+        MakeMapItem("C11", "City", "Eastborough",    3170, 1750, "East Borough"),
+        MakeMapItem("C12", "City", "Garden Plain",   1038, 1981, "GardenPlain"),
+        MakeMapItem("C13", "City", "Goddard",        1644, 1920),
+        MakeMapItem("C14", "City", "Cheney",          480, 2220),
+        MakeMapItem("C15", "City", "Haysville",      2742, 2650),
+        MakeMapItem("C16", "City", "Derby",          3294, 2690),
+        MakeMapItem("C17", "City", "Clearwater",     1980, 3025),
+        MakeMapItem("C18", "City", "Mulvane",        3330, 3180),
+        MakeMapItem("R1",  "Road", "I-35",        2920, 2600, "I35"),
+        MakeMapItem("R2",  "Road", "I-135",       2884, 800,  "I135"),
+        MakeMapItem("R3",  "Road", "I-235",       2460, 1780,  "I235"),
+        MakeMapItem("R4",  "Road", "US-54/400",   1223, 1964, "US54/400", "US 54/400", "54/400", "Kellogg", "US54", "US-54"),
+        MakeMapItem("R5",  "Road", "US-81",       2880, 3000, "US81", "US 81"),
+        MakeMapItem("R6",  "Road", "K-96 W",      1731, 889,  "K96W", "K96 W", "K-96W", "K96"),
+        MakeMapItem("R7",  "Road", "K-96 E",      3430, 1457, "K96E", "K96 E", "K-96E", "K96"),
+        MakeMapItem("R8",  "Road", "K-254",       3254, 1065, "K254", "K 254"),
+        MakeMapItem("R9",  "Road", "K-15",        3177, 2610, "K15", "K 15"),
+        MakeMapItem("R10",  "Road", "K-251",        468, 1780, "K251", "K 251"),
+        MakeMapItem("R11", "Road", "K-42",        1756, 2582, "K42", "K 42"),
+        MakeMapItem("R12", "Road", "K-49",        1279, 3180, "K49", "K 49"),
+        MakeMapItem("R13", "Road", "K-53",        3100, 3177, "K53", "K 53"),
+        MakeMapItem("R14", "Road", "159th E",     3830, 1800, "159thE", "159 E", "159th St E"),
+        MakeMapItem("R15", "Road", "125th N",     2100, 500,  "125thN", "125 N", "125th St N"),
+        MakeMapItem("R16", "Road", "311 W",        950, 1800, "311W", "311th W", "311th St W"),
+        MakeMapItem("R17", "Road", "29 N",        2100, 1550, "29N", "29th N", "29th St N"),
+        MakeMapItem("R18", "Road", "407 W",        400, 1200, "407W", "407th W", "407th St W"),
+        MakeMapItem("R19", "Road", "119th S",     2420, 3280, "119thS", "119 S", "119th St S"),
+        MakeMapItem("K1", "County", "Harvey",     2187, 207,  "Harvye"),
+        MakeMapItem("K2", "County", "Butler",     3990, 1886),
+        MakeMapItem("K3", "County", "Sumner",     2280, 3365),
+        MakeMapItem("K4", "County", "Reno",        513, 1399),
+        MakeMapItem("K5", "County", "Kingman",     249, 2536),
+    ];
+
+    // ===== HUNDRED BLOCKS DATA =====
+
+    private record Street(string Display, string? AltName, string? AltNote, bool OnTest, int BlockNumber, string Direction);
+
+    private static readonly List<Street> EWStreets =
+    [
+        new("407th W",    "County Line West south of 29th N",    null, true,  407, "W"),
+        new("391st W",    "Cheney \"Lake\" Rd",  null,              true,  391, "W"),
+        new("375th W",    null,                  null,              true,  375, "W"),
+        new("359th W",    null,                  null,              true,  359, "W"),
+        new("343rd W",    "St Joe Rd",           null,              true,  343, "W"),
+        new("327th W",    null,                  null,              true,  327, "W"),
+        new("311th W",    "County Line West north of 29th N",    null, true,  311, "W"),
+        new("295th W",    "Garden Plain Rd",     null,              true,  295, "W"),
+        new("279th W",    null,                  null,              true,  279, "W"),
+        new("263rd W",    "Viola Rd",            null,              true,  263, "W"),
+        new("247th W",    "Andale Rd",           null,              true,  247, "W"),
+        new("231st W",    null,                  null,              true,  231, "W"),
+        new("215th W",    null,                  null,              true,  215, "W"),
+        new("199th W",    "Goddard Rd",          null,              true,  199, "W"),
+        new("183rd W",    null,                  null,              true,  183, "W"),
+        new("167th W",    "Colwich Rd",          null,              true,  167, "W"),
+        new("151st W",    "Bentley/Halstead Rd", null,              true,  151, "W"),
+        new("135th W",    "Clearwater Rd",       null,              true,  135, "W"),
+        new("119th W",    null,                  null,              true,  119, "W"),
+        new("Maize",      "103rd W",             null,              true,  103, "W"),
+        new("Tyler",      "87th W",              null,              true,  87,  "W"),
+        new("Ridge",      "71st W",              null,              true,  71,  "W"),
+        new("Hoover",     "55th W",              null,              true,  55,  "W"),
+        new("West",       "39th W",              null,              true,  39,  "W"),
+        new("Meridian",   "24th W",              null,              true,  24,  "W"),
+        new("Seneca",     "10th W",              null,              true,  10,  "W"),
+        new("Broadway",   "2nd E",               null,              true,  2,   "E"),
+        new("Washington", "9th E",               " (1/2 mile)",      true,  9,   "E"),
+        new("Hydraulic",  "16th E",              null,              true,  16,  "E"),
+        new("Grove",      "23rd E",              " (1/2 mile)",      true,  23,  "E"),
+        new("Hillside",   "31st E",              null,              true,  31,  "E"),
+        new("Oliver",     "47th E",              null,              true,  47,  "E"),
+        new("Edgemoor",   "55th E",              " (1/2 mile)",      true,  55,  "E"),
+        new("Woodlawn",   "63rd E",              null,              true,  63,  "E"),
+        new("Rock",       "79th E",              null,              true,  79,  "E"),
+        new("Webb",       "95th E",              null,              true,  95,  "E"),
+        new("Greenwich",  "111th E",             null,              true,  111, "E"),
+        new("127th E",    null,                  null,              true,  127, "E"),
+        new("143rd E",    null,                  null,              true,  143, "E"),
+        new("159th E",    "County Line East",    null,              true,  159, "E"),
+    ];
+
+    private static readonly List<Street> NSStreets =
+    [
+        new("125th N",    "County Line North east of 311th W",  null,                          true,  125, "N"),
+        new("117th N",    null,                 null,                                        true,  117, "N"),
+        new("109th N",    null,                 null,                                        true,  109, "N"),
+        new("101st N",    null,                 null,                                        true,  101, "N"),
+        new("93rd N",     null,                 null,                                        true,  93,  "N"),
+        new("85th N",     null,                 null,                                        true,  85,  "N"),
+        new("77th N",     null,                 null,                                        true,  77,  "N"),
+        new("69th N",     null,                 null,                                        true,  69,  "N"),
+        new("61st N",     "Kechi Rd / K254",    " east of Kechi",                             true,  61,  "N"),
+        new("53rd N",     null,                 null,                                        true,  53,  "N"),
+        new("45th N",     null,                 null,                                        true,  45,  "N"),
+        new("37th N",     null,                 null,                                        true,  37,  "N"),
+        new("29th N",     "County Line North west of 311th W",  null,                           true,  29,  "N"),
+        new("21st N",     null,                 null,                                        true,  21,  "N"),
+        new("13th N",     null,                 null,                                        true,  13,  "N"),
+        new("Central",    null,                 "4th N E of Ark River / 6th N W of Meridian", false, 0,   ""),
+        new("Maple",      null,                 "3rd S in City / 6th S in County",            false, 3,   "S"),
+        new("Kellogg",    null,                 "4th S E of I-135 / 6th S downtown / 15th S W of Maize", false, 4, "S"),
+        new("Lincoln",    null,                 "9th S E of I-135 / 12th S W of I-135",      false, 9,   "S"),
+        new("Harry",      "15th S",             null,                                        true,  15,  "S"),
+        new("Mt Vernon",  "19th S",             "(1/2 mile)",                                true,  19,  "S"),
+        new("Pawnee",     "23rd S",             null,                                        true,  23,  "S"),
+        new("31st S",     null,                 null,                                        true,  31,  "S"),
+        new("MacArthur",  "39th S",             null,                                        true,  39,  "S"),
+        new("47th S",     null,                 null,                                        true,  47,  "S"),
+        new("55th S",     null,                 null,                                        true,  55,  "S"),
+        new("63rd S",     "Patriot in Derby",   null,                                        true,  63,  "S"),
+        new("71st S",     "Grand in Haysville / Meadowlark in Derby",null,                   true,  71,  "S"),
+        new("79th S",     "Madison in Derby",   null,                                        true,  79,  "S"),
+        new("87th S",     null,                 null,                                        true,  87,  "S"),
+        new("95th S",     null,                 null,                                        true,  95,  "S"),
+        new("103rd S",    "Clearwater Rd",      null,                                        true,  103, "S"),
+        new("111th S",    null,                 null,                                        true,  111, "S"),
+        new("119th S",    "County Line South",  null,                                        true,  119, "S"),
+    ];
+
+    // ===== NORMALIZATION =====
+
+    private static string Normalize(string s) =>
+        s.Trim().ToLowerInvariant()
+         .Replace("-", "").Replace(".", "").Replace("'", "").Replace("\"", "")
+         .Replace("  ", " ")
+         .Replace("road", "rd").Replace("street", "st")
+         .Replace("mount ", "mt ").Replace("mount", "mt");
+
+    private static bool AnswerMatches(string userAnswer, List<string> acceptable)
+    {
+        if (string.IsNullOrWhiteSpace(userAnswer)) return false;
+        var norm = Normalize(userAnswer);
+        return acceptable.Any(a => Normalize(a) == norm);
+    }
+
+    private static List<string> GetAcceptable(Street s)
+    {
+        var list = new List<string> { s.Display };
+        if (s.AltName != null) list.Add(s.AltName);
+        if (s.Display.Contains("th ") || s.Display.Contains("st ") || s.Display.Contains("nd ") || s.Display.Contains("rd "))
+        {
+            var numOnly = System.Text.RegularExpressions.Regex.Replace(s.Display, @"(st|nd|rd|th)\b", "");
+            list.Add(numOnly);
+        }
+        if (s.AltName != null && (s.AltName.Contains("th ") || s.AltName.Contains("st ") || s.AltName.Contains("nd ") || s.AltName.Contains("rd ")))
+        {
+            var numOnly = System.Text.RegularExpressions.Regex.Replace(s.AltName, @"(st|nd|rd|th)\b", "");
+            list.Add(numOnly);
+        }
+        return list;
+    }
+
+    // ===== MATCH QUIZ =====
+
+    private record MatchQ(string Prompt, string Answer, string? AnswerNote, List<string> Acceptable);
+    private MatchQ? _matchQuestion;
+    private string _matchUserAnswer = "";
+    private bool _matchAnswered;
+    private bool _matchWasCorrect;
+    private int _matchCorrect, _matchTotal;
+    private bool _matchOnTestOnly = true;
+    private bool _matchNoRepeat;
+    private readonly Deck _matchDeck = new();
+
+    protected override void OnInitialized()
+    {
+        GenerateMatchQuestion();
+        GenerateNeighborQuestion();
+        GenerateAddressQuestion();
+        GenerateCityQuestion();
+        GenerateRadioQuestion();
+        GeneratePhoneticQuestion();
+        GeneratePeopleQuestion();
+        GenerateLocationQuestion();
+        GenerateCodeTestQuestion();
+    }
+
+    private List<Street> GetPairedStreets(bool onTestOnly)
+    {
+        return EWStreets.Concat(NSStreets)
+            .Where(s => s.AltName != null)
+            .Where(s => !onTestOnly || s.OnTest)
+            .ToList();
+    }
+
+    private void GenerateMatchQuestion()
+    {
+        var paired = GetPairedStreets(_matchOnTestOnly);
+        if (paired.Count == 0) return;
+
+        Street street;
+        if (_matchNoRepeat)
+        {
+            var idx = _matchDeck.Pick(paired.Count, _rng);
+            if (idx == -1) { _matchQuestion = null; return; }
+            street = paired[idx];
+        }
+        else
+        {
+            street = paired[_rng.Next(paired.Count)];
+        }
+        bool askForAlt = _rng.Next(2) == 0;
+
+        if (askForAlt)
+        {
+            _matchQuestion = new(
+                $"What is the alternate name for {street.Display}?",
+                street.AltName!, street.AltNote,
+                new List<string> { street.AltName! }
+            );
+        }
+        else
+        {
+            var displayWithNote = street.AltNote != null ? $"{street.AltName} {street.AltNote}" : street.AltName!;
+            _matchQuestion = new(
+                $"What is the hundred block / street name for {displayWithNote}?",
+                street.Display, null,
+                new List<string> { street.Display }
+            );
+        }
+
+        _matchUserAnswer = "";
+        _matchAnswered = false;
+        _matchWasCorrect = false;
+    }
+
+    private async Task CheckMatchAnswer()
+    {
+        if (_matchQuestion == null) return;
+        _matchAnswered = true;
+        _matchTotal++;
+        _matchWasCorrect = AnswerMatches(_matchUserAnswer, _matchQuestion.Acceptable);
+        if (_matchWasCorrect) _matchCorrect++;
+        if (_matchNoRepeat)
+            _matchDeck.Record(_matchQuestion.Prompt, _matchQuestion.Answer, _matchWasCorrect);
+        _pendingFocus = FocusTarget.MatchNext;
+    }
+
+    private async Task NextMatchQuestion()
+    {
+        GenerateMatchQuestion();
+        _pendingFocus = FocusTarget.MatchInput;
+    }
+
+    private void ResetMatchScore()
+    {
+        _matchCorrect = 0;
+        _matchTotal = 0;
+        _matchDeck.Reset();
+        GenerateMatchQuestion();
+    }
+
+    private void OnMatchNoRepeatChanged(bool value)
+    {
+        _matchNoRepeat = value;
+        _matchDeck.Reset();
+        _matchCorrect = 0;
+        _matchTotal = 0;
+        GenerateMatchQuestion();
+    }
+
+    private async Task OnMatchKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            if (!_matchAnswered) await CheckMatchAnswer();
+            else await NextMatchQuestion();
+        }
+    }
+
+    // ===== NEIGHBOR QUIZ =====
+
+    private record NeighborQ(string Prompt, bool HasBefore, string BeforeLabel, string BeforeAnswer,
+                             List<string> BeforeAcceptable, bool HasAfter, string AfterLabel,
+                             string AfterAnswer, List<string> AfterAcceptable);
+    private NeighborQ? _neighborQuestion;
+    private string _neighborAnswer1 = "", _neighborAnswer2 = "";
+    private bool _neighborAnswered, _neighborWasCorrect;
+    private int _neighborCorrect, _neighborTotal;
+    private bool _neighborOnTestOnly = true;
+    private bool _neighborNoRepeat;
+    private readonly Deck _neighborDeck = new();
+
+    private List<(bool IsEW, int OrigIdx)> GetNeighborPool()
+    {
+        var pool = new List<(bool IsEW, int OrigIdx)>();
+        for (int i = 0; i < EWStreets.Count; i++)
+            if (!_neighborOnTestOnly || EWStreets[i].OnTest) pool.Add((true, i));
+        for (int i = 0; i < NSStreets.Count; i++)
+            if (!_neighborOnTestOnly || NSStreets[i].OnTest) pool.Add((false, i));
+        return pool;
+    }
+
+    private void GenerateNeighborQuestion()
+    {
+        var pool = GetNeighborPool();
+        if (pool.Count == 0) return;
+
+        (bool isEW, int idx) picked;
+        if (_neighborNoRepeat)
+        {
+            var deckIdx = _neighborDeck.Pick(pool.Count, _rng);
+            if (deckIdx == -1) { _neighborQuestion = null; return; }
+            picked = pool[deckIdx];
+        }
+        else
+        {
+            picked = pool[_rng.Next(pool.Count)];
+        }
+
+        var list = picked.isEW ? EWStreets : NSStreets;
+        var street = list[picked.idx];
+        var idx = picked.idx;
+
+        string dirBefore = picked.isEW ? "West" : "North";
+        string dirAfter = picked.isEW ? "East" : "South";
+
+        bool hasBefore = idx > 0;
+        bool hasAfter = idx < list.Count - 1;
+
+        var beforeStreet = hasBefore ? list[idx - 1] : null;
+        var afterStreet = hasAfter ? list[idx + 1] : null;
+
+        _neighborQuestion = new(
+            $"What streets are immediately {dirBefore} and {dirAfter} of {street.Display}?",
+            hasBefore, $"{dirBefore} of {street.Display}",
+            hasBefore ? beforeStreet!.Display : "",
+            hasBefore ? GetAcceptable(beforeStreet!) : [],
+            hasAfter, $"{dirAfter} of {street.Display}",
+            hasAfter ? afterStreet!.Display : "",
+            hasAfter ? GetAcceptable(afterStreet!) : []
+        );
+
+        _neighborAnswer1 = "";
+        _neighborAnswer2 = "";
+        _neighborAnswered = false;
+        _neighborWasCorrect = false;
+    }
+
+    private async Task CheckNeighborAnswer()
+    {
+        if (_neighborQuestion == null) return;
+        _neighborAnswered = true;
+        _neighborTotal++;
+
+        bool beforeOk = !_neighborQuestion.HasBefore || AnswerMatches(_neighborAnswer1, _neighborQuestion.BeforeAcceptable);
+        bool afterOk = !_neighborQuestion.HasAfter || AnswerMatches(_neighborAnswer2, _neighborQuestion.AfterAcceptable);
+        _neighborWasCorrect = beforeOk && afterOk;
+        if (_neighborWasCorrect) _neighborCorrect++;
+        if (_neighborNoRepeat && _neighborQuestion != null)
+        {
+            var answer = (_neighborQuestion.HasBefore ? _neighborQuestion.BeforeAnswer : "") +
+                         " / " +
+                         (_neighborQuestion.HasAfter ? _neighborQuestion.AfterAnswer : "");
+            _neighborDeck.Record(_neighborQuestion.Prompt, answer, _neighborWasCorrect);
+        }
+        _pendingFocus = FocusTarget.NeighborNext;
+    }
+
+    private async Task NextNeighborQuestion()
+    {
+        GenerateNeighborQuestion();
+        _pendingFocus = FocusTarget.NeighborInput;
+    }
+
+    private void ResetNeighborScore()
+    {
+        _neighborCorrect = 0;
+        _neighborTotal = 0;
+        _neighborDeck.Reset();
+        GenerateNeighborQuestion();
+    }
+
+    private void OnNeighborNoRepeatChanged(bool value)
+    {
+        _neighborNoRepeat = value;
+        _neighborDeck.Reset();
+        _neighborCorrect = 0;
+        _neighborTotal = 0;
+        GenerateNeighborQuestion();
+    }
+
+    // ===== ADDRESS QUIZ =====
+
+    private record AddressQ(string Address, string CrossStreetAnswer, string? CrossStreetAlt,
+                            List<string> CrossAcceptable, string CorrectSide);
+    private AddressQ? _addrQuestion;
+    private string _addrCrossStreet = "", _addrSide = "";
+    private bool _addrAnswered, _addrCrossCorrect, _addrSideCorrect;
+    private int _addrCorrect, _addrTotal;
+
+    private void GenerateAddressQuestion()
+    {
+        bool baseIsEW = _rng.Next(2) == 0;
+
+        var baseList = baseIsEW ? EWStreets : NSStreets;
+        var crossList = baseIsEW ? NSStreets : EWStreets;
+
+        var baseFiltered = baseList.Where(s => s.OnTest).ToList();
+        var crossFiltered = crossList.Where(s => s.OnTest && s.BlockNumber > 0).ToList();
+
+        if (baseFiltered.Count == 0 || crossFiltered.Count == 0)
+        {
+            _addrQuestion = null;
+            return;
+        }
+
+        var baseStreet = baseFiltered[_rng.Next(baseFiltered.Count)];
+        var crossStreet = crossFiltered[_rng.Next(crossFiltered.Count)];
+
+        int block = crossStreet.BlockNumber;
+        int lastTwo = _rng.Next(0, 100);
+        int houseNumber = block * 100 + lastTwo;
+        string direction = crossStreet.Direction;
+
+        bool isEven = houseNumber % 2 == 0;
+        string side;
+        if (baseIsEW)
+            side = isEven ? "East" : "West";
+        else
+            side = isEven ? "North" : "South";
+
+        string address = $"{houseNumber} {direction} {baseStreet.Display}";
+
+        _addrQuestion = new(address, crossStreet.Display, crossStreet.AltName, GetAcceptable(crossStreet), side);
+
+        _addrCrossStreet = "";
+        _addrSide = "";
+        _addrAnswered = false;
+        _addrCrossCorrect = false;
+        _addrSideCorrect = false;
+    }
+
+    private async Task CheckAddressAnswer()
+    {
+        if (_addrQuestion == null) return;
+        _addrAnswered = true;
+        _addrTotal++;
+
+        _addrCrossCorrect = AnswerMatches(_addrCrossStreet, _addrQuestion.CrossAcceptable);
+        _addrSideCorrect = string.Equals(_addrSide, _addrQuestion.CorrectSide, StringComparison.OrdinalIgnoreCase);
+
+        if (_addrCrossCorrect && _addrSideCorrect) _addrCorrect++;
+        _pendingFocus = FocusTarget.AddrNext;
+    }
+
+    private async Task NextAddressQuestion()
+    {
+        GenerateAddressQuestion();
+        _pendingFocus = FocusTarget.AddrInput;
+    }
+
+    private void ResetAddressScore()
+    {
+        _addrCorrect = 0;
+        _addrTotal = 0;
+        GenerateAddressQuestion();
+    }
+
+    // ===== CITY CODES DATA & QUIZ =====
+
+    private record CityCode(string Code, string Name);
+
+    private static readonly List<CityCode> CityCodes =
+    [
+        new("AN", "Andale"),
+        new("BA", "Bel Aire"),
+        new("BE", "Bentley"),
+        new("CH", "Cheney"),
+        new("CL", "Clearwater"),
+        new("CO", "Colwich"),
+        new("DE", "Derby"),
+        new("EB", "Eastborough"),
+        //new("FU", "Furley"),
+        new("GO", "Goddard"),
+        new("GP", "Garden Plain"),
+        //new("GR", "Greenwich"),
+        new("HA", "Haysville"),
+        new("KE", "Kechi"),
+        new("MH", "Mount Hope"),
+        new("MA", "Maize"),
+        new("MU", "Mulvane"),
+        new("PC", "Park City"),
+        //new("PE", "Peck"),
+        new("SG", "City of Sedgwick"),
+        //new("SC", "Sedgwick County"),
+        new("VC", "Valley Center"),
+        //new("VI", "Viola"),
+        //new("WI", "Wichita"),
+    ];
+
+    private bool _cityStudyMode = true;
+    private MatchQ? _cityQuestion;
+    private string _cityUserAnswer = "";
+    private bool _cityAnswered, _cityWasCorrect;
+    private int _cityCorrect, _cityTotal;
+    private bool _cityNoRepeat;
+    private readonly Deck _cityDeck = new();
+
+    private void GenerateCityQuestion()
+    {
+        CityCode entry;
+        if (_cityNoRepeat)
+        {
+            var idx = _cityDeck.Pick(CityCodes.Count, _rng);
+            if (idx == -1) { _cityQuestion = null; return; }
+            entry = CityCodes[idx];
+        }
+        else
+        {
+            entry = CityCodes[_rng.Next(CityCodes.Count)];
+        }
+        bool askForName = _rng.Next(2) == 0;
+
+        if (askForName)
+        {
+            _cityQuestion = new(
+                $"What city does the code \"{entry.Code}\" stand for?",
+                entry.Name, null,
+                new List<string> { entry.Name, entry.Name.Replace("City of ", ""), entry.Name.Replace(" ", "") }
+            );
+        }
+        else
+        {
+            _cityQuestion = new(
+                $"What is the two-letter code for {entry.Name}?",
+                entry.Code, null,
+                new List<string> { entry.Code }
+            );
+        }
+
+        _cityUserAnswer = "";
+        _cityAnswered = false;
+        _cityWasCorrect = false;
+    }
+
+    private async Task CheckCityAnswer()
+    {
+        if (_cityQuestion == null) return;
+        _cityAnswered = true;
+        _cityTotal++;
+        _cityWasCorrect = AnswerMatches(_cityUserAnswer, _cityQuestion.Acceptable);
+        if (_cityWasCorrect) _cityCorrect++;
+        if (_cityNoRepeat)
+            _cityDeck.Record(_cityQuestion.Prompt, _cityQuestion.Answer, _cityWasCorrect);
+        _pendingFocus = FocusTarget.CityNext;
+    }
+
+    private async Task NextCityQuestion()
+    {
+        GenerateCityQuestion();
+        _pendingFocus = FocusTarget.CityInput;
+    }
+
+    private void ResetCityScore()
+    {
+        _cityCorrect = 0;
+        _cityTotal = 0;
+        _cityDeck.Reset();
+        GenerateCityQuestion();
+    }
+
+    private void OnCityNoRepeatChanged(bool value)
+    {
+        _cityNoRepeat = value;
+        _cityDeck.Reset();
+        _cityCorrect = 0;
+        _cityTotal = 0;
+        GenerateCityQuestion();
+    }
+
+    private async Task OnCityKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            if (!_cityAnswered) await CheckCityAnswer();
+            else await NextCityQuestion();
+        }
+    }
+
+    // ===== RADIO CODES DATA & QUIZ =====
+
+    private record RadioCode(string Code, string Meaning, string Category);
+
+    private static readonly List<RadioCode> RadioCodes =
+    [
+        new("10-4",    "Acknowledge",                       "Code"),
+        new("10-8",    "In service",                        "Code"),
+        new("10-12",   "Officials or visitors present",     "Code"),
+        new("Code 1",  "No people or flames visible",       "Code"),
+        new("Code 2",  "Smoke visible",                     "Code"),
+        new("Code 3",  "Smoke and flames visible",          "Code"),
+        new("Code 4",  "Fire under control",                "Code"),
+        new("Code 99", "Emergency button reset",            "Code"),
+        new("Signal 1",  "Armed and dangerous",             "Signal"),
+        new("Signal 2",  "Resists arrest",                  "Signal"),
+        new("Signal 3",  "Suicidal person",                 "Signal"),
+        new("Signal 12", "Communicable disease",            "Signal"),
+        new("Signal 32", "Wanted or stolen",                "Signal"),
+        new("Signal 33", "Known gang member or associate",  "Signal"),
+        new("Signal 35", "Violent offender",                "Signal"),
+        new("N1",  "Cancelled prior to arrival",            "N-Code"),
+        new("N2",  "Duplicate case",                        "N-Code"),
+        new("N3",  "Nothing or no one located",             "N-Code"),
+        new("N4",  "False alarm",                           "N-Code"),
+        new("N5",  "Non-police incident",                   "N-Code"),
+        new("N7",  "Assist another agency",                 "N-Code"),
+        new("N8",  "Transferred to expediter unit",         "N-Code"),
+        new("N9",  "Alarm set off by weather",              "N-Code"),
+        new("N10", "Transport for Services",                "N-Code"),
+        new("N11", "Report made / valid",                   "N-Code"),
+        new("V", "Valid alarm",                             "Disposition"),
+        new("F", "False alarm",                             "Disposition"),
+        new("X", "Call cancelled",                          "Disposition"),
+        new("C", "Contact made",                            "Disposition"),
+        new("D", "Disregarded / duplicate call",            "Disposition"),
+        new("N", "No contact made",                         "Disposition"),
+    ];
+
+    private record TriageCode(string Code, string Meaning);
+
+    private static readonly List<TriageCode> TriageCodes =
+    [
+        new("GN", "Code green — not serious"),
+        new("RD", "Code red — critical"),
+        new("BK", "Code black — dead"),
+        new("YW", "Code yellow — potentially serious"),
+        new("BL", "Code blue — in or near arrest / not breathing"),
+        new("OR", "Code orange — mental"),
+    ];
+
+    private bool _radioStudyMode = true;
+    private MatchQ? _radioQuestion;
+    private string _radioUserAnswer = "";
+    private bool _radioAnswered, _radioWasCorrect;
+    private int _radioCorrect, _radioTotal;
+    private bool _radioNoRepeat;
+    private readonly Deck _radioDeck = new();
+
+    private void GenerateRadioQuestion()
+    {
+        var allCodes = RadioCodes.Select(r => (r.Code, r.Meaning))
+            .Concat(TriageCodes.Select(t => (t.Code, t.Meaning)))
+            .ToList();
+
+        (string Code, string Meaning) entry;
+        if (_radioNoRepeat)
+        {
+            var idx = _radioDeck.Pick(allCodes.Count, _rng);
+            if (idx == -1) { _radioQuestion = null; return; }
+            entry = allCodes[idx];
+        }
+        else
+        {
+            entry = allCodes[_rng.Next(allCodes.Count)];
+        }
+        bool askForMeaning = _rng.Next(2) == 0;
+
+        if (askForMeaning)
+        {
+            _radioQuestion = new($"What does \"{entry.Code}\" mean?", entry.Meaning, null, new List<string> { entry.Meaning });
+        }
+        else
+        {
+            _radioQuestion = new($"What is the code for: {entry.Meaning}?", entry.Code, null, new List<string> { entry.Code });
+        }
+
+        _radioUserAnswer = "";
+        _radioAnswered = false;
+        _radioWasCorrect = false;
+    }
+
+    private async Task CheckRadioAnswer()
+    {
+        if (_radioQuestion == null) return;
+        _radioAnswered = true;
+        _radioTotal++;
+        _radioWasCorrect = AnswerMatches(_radioUserAnswer, _radioQuestion.Acceptable);
+        if (_radioWasCorrect) _radioCorrect++;
+        if (_radioNoRepeat)
+            _radioDeck.Record(_radioQuestion.Prompt, _radioQuestion.Answer, _radioWasCorrect);
+        _pendingFocus = FocusTarget.RadioNext;
+    }
+
+    private async Task NextRadioQuestion()
+    {
+        GenerateRadioQuestion();
+        _pendingFocus = FocusTarget.RadioInput;
+    }
+
+    private void ResetRadioScore()
+    {
+        _radioCorrect = 0;
+        _radioTotal = 0;
+        _radioDeck.Reset();
+        GenerateRadioQuestion();
+    }
+
+    private void OnRadioNoRepeatChanged(bool value)
+    {
+        _radioNoRepeat = value;
+        _radioDeck.Reset();
+        _radioCorrect = 0;
+        _radioTotal = 0;
+        GenerateRadioQuestion();
+    }
+
+    private async Task OnRadioKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            if (!_radioAnswered) await CheckRadioAnswer();
+            else await NextRadioQuestion();
+        }
+    }
+
+    // ===== PHONETIC ALPHABET DATA & QUIZ =====
+
+    private record PhoneticEntry(string Letter, string Word);
+
+    private static readonly List<PhoneticEntry> PhoneticAlphabet =
+    [
+        new("A", "Adam"),
+        new("B", "Boy"),
+        new("C", "Charles"),
+        new("D", "David"),
+        new("E", "Edward"),
+        new("F", "Frank"),
+        new("G", "George"),
+        new("H", "Henry"),
+        new("I", "Ida"),
+        new("J", "John"),
+        new("K", "King"),
+        new("L", "Lincoln"),
+        new("M", "Mary"),
+        new("N", "Nora"),
+        new("O", "Ocean"),
+        new("P", "Paul"),
+        new("Q", "Queen"),
+        new("R", "Robert"),
+        new("S", "Sam"),
+        new("T", "Tom"),
+        new("U", "Union"),
+        new("V", "Victor"),
+        new("W", "William"),
+        new("X", "Xray"),
+        new("Y", "Young"),
+        new("Z", "Zebra"),
+    ];
+
+    private bool _phoneticStudyMode = true;
+    private MatchQ? _phoneticQuestion;
+    private string _phoneticUserAnswer = "";
+    private bool _phoneticAnswered, _phoneticWasCorrect;
+    private int _phoneticCorrect, _phoneticTotal;
+    private bool _phoneticNoRepeat;
+    private readonly Deck _phoneticDeck = new();
+
+    private void GeneratePhoneticQuestion()
+    {
+        PhoneticEntry entry;
+        if (_phoneticNoRepeat)
+        {
+            var idx = _phoneticDeck.Pick(PhoneticAlphabet.Count, _rng);
+            if (idx == -1) { _phoneticQuestion = null; return; }
+            entry = PhoneticAlphabet[idx];
+        }
+        else
+        {
+            entry = PhoneticAlphabet[_rng.Next(PhoneticAlphabet.Count)];
+        }
+
+        _phoneticQuestion = new(
+            $"What is the phonetic word for the letter \"{entry.Letter}\"?",
+            entry.Word, null, new List<string> { entry.Word }
+        );
+
+        _phoneticUserAnswer = "";
+        _phoneticAnswered = false;
+        _phoneticWasCorrect = false;
+    }
+
+    private async Task CheckPhoneticAnswer()
+    {
+        if (_phoneticQuestion == null) return;
+        _phoneticAnswered = true;
+        _phoneticTotal++;
+        _phoneticWasCorrect = AnswerMatches(_phoneticUserAnswer, _phoneticQuestion.Acceptable);
+        if (_phoneticWasCorrect) _phoneticCorrect++;
+        if (_phoneticNoRepeat)
+            _phoneticDeck.Record(_phoneticQuestion.Prompt, _phoneticQuestion.Answer, _phoneticWasCorrect);
+        _pendingFocus = FocusTarget.PhoneticNext;
+    }
+
+    private async Task NextPhoneticQuestion()
+    {
+        GeneratePhoneticQuestion();
+        _pendingFocus = FocusTarget.PhoneticInput;
+    }
+
+    private void ResetPhoneticScore()
+    {
+        _phoneticCorrect = 0;
+        _phoneticTotal = 0;
+        _phoneticDeck.Reset();
+        GeneratePhoneticQuestion();
+    }
+
+    private void OnPhoneticNoRepeatChanged(bool value)
+    {
+        _phoneticNoRepeat = value;
+        _phoneticDeck.Reset();
+        _phoneticCorrect = 0;
+        _phoneticTotal = 0;
+        GeneratePhoneticQuestion();
+    }
+
+    private async Task OnPhoneticKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            if (!_phoneticAnswered) await CheckPhoneticAnswer();
+            else await NextPhoneticQuestion();
+        }
+    }
+
+    // ===== IMPORTANT PEOPLE DATA & QUIZ =====
+
+    private record ImportantPerson(string Title, string Name, bool OnTest);
+
+    private static readonly List<ImportantPerson> ImportantPeople =
+    [
+        new("City Manager",                            "Dennis Marstall",                              false),
+        new("County Manager",                          "Tom Stolz",                                    false),
+        new("Wichita Mayor",                           "Lily Wu",                                      false),
+        new("Sedgwick County Sheriff",                 "Jeff Easter, unit number 5500",                true),
+        new("Wichita Police Chief",                    "Joseph Sullivan, unit number 100",             true),
+        new("Sedgwick County Fire Chief",              "Douglas Williams, unit number F90",            true),
+        new("Wichita Fire Chief",                      "Elizabeth Snow (Tammy), unit number F190",     true),
+        new("Sedgwick County Medical Director",        "Dr. Kevin Brinker",                            false),
+        new("Sedgwick County EMS Director",            "Kevin Lanterman, EMS1",                        true),
+        new("911 Director",                            "Elora Forshee",                                false),
+        new("911 Deputy Director",                     "Alayna Moreno",                                false),
+        new("Public Safety Director",                  "Russel (Rusty) Leeds",                         false),
+        new("Director of Emergency Management",        "Julie Stimson",                                false),
+    ];
+
+    private bool _peopleStudyMode = true;
+    private bool _peopleOnTestOnly;
+    private bool _peopleQuizOnTestOnly = true;
+    private MatchQ? _peopleQuestion;
+    private string _peopleUserAnswer = "";
+    private bool _peopleAnswered, _peopleWasCorrect;
+    private int _peopleCorrect, _peopleTotal;
+    private bool _peopleNoRepeat;
+    private readonly Deck _peopleDeck = new();
+
+    private List<ImportantPerson> GetFilteredPeople() =>
+        _peopleQuizOnTestOnly ? ImportantPeople.Where(p => p.OnTest).ToList() : ImportantPeople;
+
+    private void GeneratePeopleQuestion()
+    {
+        var filtered = GetFilteredPeople();
+        if (filtered.Count == 0) return;
+
+        ImportantPerson entry;
+        if (_peopleNoRepeat)
+        {
+            var idx = _peopleDeck.Pick(filtered.Count, _rng);
+            if (idx == -1) { _peopleQuestion = null; return; }
+            entry = filtered[idx];
+        }
+        else
+        {
+            entry = filtered[_rng.Next(filtered.Count)];
+        }
+        bool askForName = _rng.Next(2) == 0;
+
+        if (askForName)
+        {
+            _peopleQuestion = new(
+                $"Who holds the title: {entry.Title}?",
+                entry.Name, null,
+                new List<string> { entry.Name }
+            );
+        }
+        else
+        {
+            _peopleQuestion = new(
+                $"What is the title for {entry.Name}?",
+                entry.Title, null,
+                new List<string> { entry.Title }
+            );
+        }
+
+        _peopleUserAnswer = "";
+        _peopleAnswered = false;
+        _peopleWasCorrect = false;
+    }
+
+    private async Task CheckPeopleAnswer()
+    {
+        if (_peopleQuestion == null) return;
+        _peopleAnswered = true;
+        _peopleTotal++;
+        _peopleWasCorrect = AnswerMatches(_peopleUserAnswer, _peopleQuestion.Acceptable);
+        if (_peopleWasCorrect) _peopleCorrect++;
+        if (_peopleNoRepeat)
+            _peopleDeck.Record(_peopleQuestion.Prompt, _peopleQuestion.Answer, _peopleWasCorrect);
+        _pendingFocus = FocusTarget.PeopleNext;
+    }
+
+    private async Task NextPeopleQuestion()
+    {
+        GeneratePeopleQuestion();
+        _pendingFocus = FocusTarget.PeopleInput;
+    }
+
+    private void ResetPeopleScore()
+    {
+        _peopleCorrect = 0;
+        _peopleTotal = 0;
+        _peopleDeck.Reset();
+        GeneratePeopleQuestion();
+    }
+
+    private void OnPeopleNoRepeatChanged(bool value)
+    {
+        _peopleNoRepeat = value;
+        _peopleDeck.Reset();
+        _peopleCorrect = 0;
+        _peopleTotal = 0;
+        GeneratePeopleQuestion();
+    }
+
+    private async Task OnPeopleKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            if (!_peopleAnswered) await CheckPeopleAnswer();
+            else await NextPeopleQuestion();
+        }
+    }
+
+    // ===== COMMON LOCATIONS DATA & QUIZ =====
+
+    private record CommonLocation(string Name, string RelativeLocation);
+
+    private static readonly List<CommonLocation> CommonLocations =
+    [
+        new("Wesley",                  "Central and Hillside"),
+        new("Keeper of the Plains",    "Arkansas River near Seneca and Central"),
+        new("Century 2",               "Douglas and Main"),
+        new("Lake Afton",              "Goddard"),
+        new("Sedgwick Park",           "Ridge and 13th N"),
+        new("Tent City",               "I135 and Hydraulic"),
+        new("Johnny Mack Bridge",      "Pawnee and 31st S"),
+        new("Town East",               "Rock and Kellogg"),
+        new("Public Safety Building",  "714 N Main"),
+        new("LETC",                    "4310 E 19th N"),
+        new("County Courthouse",       "525 N Main"),
+        new("City Building",           "455 N Main"),
+        new("North Sub-Station",       "21st N and Hillside"),
+        new("East Sub-Station",        "Lincoln and Pinecrest"),
+        new("South Sub-Station",       "Pawnee and Broadway"),
+        new("West Sub-Station",        "Central and Elder"),
+    ];
+
+    private bool _locationStudyMode = true;
+    private MatchQ? _locationQuestion;
+    private string _locationUserAnswer = "";
+    private bool _locationAnswered, _locationWasCorrect;
+    private int _locationCorrect, _locationTotal;
+    private bool _locationNoRepeat;
+    private readonly Deck _locationDeck = new();
+
+    private void GenerateLocationQuestion()
+    {
+        if (CommonLocations.Count == 0) return;
+
+        CommonLocation entry;
+        if (_locationNoRepeat)
+        {
+            var idx = _locationDeck.Pick(CommonLocations.Count, _rng);
+            if (idx == -1) { _locationQuestion = null; return; }
+            entry = CommonLocations[idx];
+        }
+        else
+        {
+            entry = CommonLocations[_rng.Next(CommonLocations.Count)];
+        }
+        bool askForLocation = _rng.Next(2) == 0;
+
+        if (askForLocation)
+        {
+            _locationQuestion = new(
+                $"Where is {entry.Name} located?",
+                entry.RelativeLocation, null,
+                new List<string> { entry.RelativeLocation }
+            );
+        }
+        else
+        {
+            _locationQuestion = new(
+                $"What is located at: {entry.RelativeLocation}?",
+                entry.Name, null,
+                new List<string> { entry.Name }
+            );
+        }
+
+        _locationUserAnswer = "";
+        _locationAnswered = false;
+        _locationWasCorrect = false;
+    }
+
+    private async Task CheckLocationAnswer()
+    {
+        if (_locationQuestion == null) return;
+        _locationAnswered = true;
+        _locationTotal++;
+        _locationWasCorrect = AnswerMatches(_locationUserAnswer, _locationQuestion.Acceptable);
+        if (_locationWasCorrect) _locationCorrect++;
+        if (_locationNoRepeat)
+            _locationDeck.Record(_locationQuestion.Prompt, _locationQuestion.Answer, _locationWasCorrect);
+        _pendingFocus = FocusTarget.LocationNext;
+    }
+
+    private async Task NextLocationQuestion()
+    {
+        GenerateLocationQuestion();
+        _pendingFocus = FocusTarget.LocationInput;
+    }
+
+    private void ResetLocationScore()
+    {
+        _locationCorrect = 0;
+        _locationTotal = 0;
+        _locationDeck.Reset();
+        GenerateLocationQuestion();
+    }
+
+    private void OnLocationNoRepeatChanged(bool value)
+    {
+        _locationNoRepeat = value;
+        _locationDeck.Reset();
+        _locationCorrect = 0;
+        _locationTotal = 0;
+        GenerateLocationQuestion();
+    }
+
+    private async Task OnLocationKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            if (!_locationAnswered) await CheckLocationAnswer();
+            else await NextLocationQuestion();
+        }
+    }
+
+    // ===== NO-REPEAT DECK HELPER =====
+
+    private class Deck
+    {
+        private readonly List<int> _remaining = new();
+        public int PoolSize { get; private set; }
+        public List<(string Question, string Answer, bool WasCorrect)> History { get; } = new();
+        public bool IsComplete { get; private set; }
+        public int Remaining => _remaining.Count;
+
+        public int Pick(int poolSize, Random rng)
+        {
+            if (_remaining.Count == 0 && History.Count > 0)
+            {
+                IsComplete = true;
+                return -1;
+            }
+            if (_remaining.Count == 0) Shuffle(poolSize, rng);
+            var idx = _remaining[^1];
+            _remaining.RemoveAt(_remaining.Count - 1);
+            return idx;
+        }
+
+        public void Record(string question, string answer, bool wasCorrect)
+            => History.Add((question, answer, wasCorrect));
+
+        public void Shuffle(int poolSize, Random rng)
+        {
+            PoolSize = poolSize;
+            _remaining.Clear();
+            _remaining.AddRange(Enumerable.Range(0, poolSize).OrderBy(_ => rng.Next()));
+            History.Clear();
+            IsComplete = false;
+        }
+
+        public void Reset()
+        {
+            _remaining.Clear();
+            History.Clear();
+            IsComplete = false;
+            PoolSize = 0;
+        }
+    }
+
+    // ===== CODE TEST (Call Classification Quiz) =====
+
+    private record CallGuide(
+        string Scenario,
+        string CallType,
+        List<string> AcceptableCallTypes,
+        string Agencies,   // e.g. "P", "PF", "PFE"
+        int? Priority)      // null when police aren't involved (fire/EMS only)
+    {
+        public string AgenciesDisplay => string.Join(", ", Agencies.Select(c => c.ToString()));
+        public string PriorityDisplay => Priority.HasValue ? Priority.Value.ToString() : "N/A";
+    }
+
+    private CallGuide? _currentCallGuide;
+    private string _ctCallType = "";
+    private bool _ctAgencyP, _ctAgencyF, _ctAgencyE;
+    private string _ctPriority = "";
+    private bool _codeTestAnswered;
+    private bool _codeTestWasCorrect;
+    private bool _ctCallTypeCorrect, _ctAgenciesCorrect, _ctPriorityCorrect;
+    private int _codeTestCorrect, _codeTestTotal;
+    private bool _codeTestNoRepeat;
+    private readonly Deck _codeTestDeck = new();
+
+    private static readonly List<CallGuide> _callGuides = new()
+    {
+        new("I just went outside to go to work and my car is missing out of my driveway. I do not owe any payments on it and I have no idea who may have taken it. It occurred sometime during the night.",
+            "ATRT", new() { "ATRT", "Auto Theft" }, "P", 4),
+        new("When I left for dinner my bicycle was sitting on the front porch. I just returned home and it is gone. I have no idea who could have taken it. I've been gone for about two hours.",
+            "LARCRT", new() { "LARCRT", "Larceny Petit", "Larceny/Petit", "Petit Larceny" }, "P", 4),
+        new("There is a guy in the parking lot trying to bust the steering column on a blue Ford F150 pickup. He appears to be alone. I have no idea who owns the vehicle.",
+            "ATIP", new() { "ATIP", "Auto Theft in Progress" }, "P", 2),
+        new("I just returned home from work and someone has come into my house and stolen all of my electronics. I have been through the house and no one else is here.",
+            "BURGRT", new() { "Burgrt", "Burglary" }, "P", 3),
+        new("There is a flower shop at the corner that is closed and the lights are off — I just drove past there and the front door is standing wide open. I haven't seen anyone around and there are no vehicles parked in the lot.",
+            "CKBUSN", new() { "CK/Busn", "CKbusn", "Check Business", "Check Bus" }, "P", 3),
+        new("This is Sam at Walgreens and we have a guy in here that is trying to get some Percocet. We think it is a fake prescription and we have someone stalling him at the counter right now.",
+            "FORGIP", new() { "Forg/Fraud", "Forg", "Forgip", "Forgery", "Forgery/Fraud", "Fraud/Forgery" }, "P", 2),
+        new("I just got home from work and someone has spray-painted a bunch of derogatory words all over the front of my house. It was fine when I left at 7:00 this morning.",
+            "VANDRT", new() { "Vandrt", "Vandalism", "Damage to Property", "VanRT" }, "P", 4),
+        new("I own the smoke shop on 21st. When I pulled in to the parking lot to open the business, two guys came running out the front door carrying sacks of cigarettes. They took off on foot 2 minutes ago and there is no one else inside the store.",
+            "BURGJO", new() { "Burgjo", "Burglary" }, "P", 2),
+        new("This is Carrie from Southwest National Bank. A guy just held up one of our tellers and ran out the front door with a moneybag full of money and the dye pack.",
+            "ROBJO", new() { "Robjo", "Robbery" }, "P", 2),
+        new("There are 2 kids across the street throwing eggs at the neighbor's house. They also have a couple rolls of toilet paper throwing it in the trees. My neighbors are not home so you better hurry and get someone here.",
+            "VANJO", new() { "Vanjo", "Vandalism", "Vandalism" }, "P", 2),
+        new("I just got home from work and my front door was standing wide open. I know I locked it when I left this morning. I'm afraid to go inside by myself.",
+            "CKRES", new() { "Ckres", "Check Res" }, "P", 3),
+        new("This is Home Depot and we have a known shoplifter in the store that has a cart full of items that we think he is getting ready to steal. He is currently by the power tools at the front of the store and we are watching him from our security cameras.",
+            "SC", new() { "Shoplift", "Shoplifter", "Theft/Shoplift" }, "P", 3),
+        new("I was going to stop at McDonald's for breakfast this morning but when I pulled up I saw someone standing at the counter pointing a gun at the clerk. I came across the street to call and the guy is still inside at the counter.",
+            "ROBIP", new() { "Robip", "Robbery in Progress", "Rob IP" }, "P", 1),
+        new("This is Chico from Bob's Liquor and I've just been robbed. Two punk kids came in here and took four bottles of Crown before they ran out the front door. They didn't say anything nor did they have weapons. They just grabbed the bottles and took off.",
+            "LARCJO", new() { "Larcjo", "Larceny Just Occured" }, "P", 3),
+        new("I went out and started my car so the windows could defrost. I just looked out the window and some guy was driving off in my car.",
+            "ATJO", new() { "ATJo", "Auto Theft Just Occured" }, "P", 3),
+        new("I was putting something in my trunk and noticed that my tag was missing. I don't know how long it has been gone.",
+            "LOSTP", new() { "Lostp", "Lost Property" }, "P", 4),
+        new("This guy rang my doorbell and when I opened the door he pushed his way in and forced me to lie on the floor while he stole my wallet and X-Box. He left about two minutes ago.",
+            "ROBJO", new() { "Robjo", "Robbery" }, "P", 2),
+        new("This is Emprise Bank and we had someone in here about 5 minutes ago who was trying to cash a stolen check. She did not get any money, there were no weapons and no one was hurt.",
+            "FORGJO", new() { "Forgjo", "Forg", "Forgery", "Forgery/Fraud" }, "P", 3),
+        new("Last night we were in the Old Town parking garage and some guy pulled a knife on us and threatened to kill us. Before anything happen a car pulled in and he took off. We weren't hurt, but we decided we should report it in case anything happens like this to someone else.",
+            "AGGRT", new() { "Aggrt", "Aggrevated Report"}, "P", 3),
+        new("I had a few friends over last night to celebrate my birthday. I woke up this morning and my mother's diamond ring and diamond earrings are missing from her room. My friends didn't have permission to be in her room let alone take her jewelry.",
+            "LARCRT", new() { "Larcrt", "Larceny Grand", "Larceny/Grand Theft", "Grand Theft", "LARC" }, "P", 4),
+
+        // ===== Pre-Test #1 — Page 9 (Questions 1-7) =====
+        new("The caller states that there has been a brown truck driving around the neighborhood for the past twenty minutes. There are two white males in the vehicle. She does not know what they are doing. No weapons have been seen.",
+            "SC", new() { "Sc" }, "P", 3),
+        new("The caller states that there are approximately four males fighting outside a bar. There is also a group of people standing around them cheering them on. The caller does not think that anyone needs an ambulance and has not seen any weapons.",
+            "Dist", new() { "P" }, "", 3),
+        new("Mildred lost control of her vehicle and slid into the ditch. She is not injured.",
+            "47", new() { "47" }, "P", 4),
+        new("Ray reports that there is a man standing at the counter inside the Speedy Cash, and he is pointing a gun at the clerk. The employee is complying and no one has been injured yet.",
+            "ROBIP", new() { "Robip" }, "P", 1),
+        new("Geneva calls and asks you to send the police to her house. Her ex-husband arrived drunk and flashed a gun at her saying he is going to kill her because she has started dating someone else. No one needs an ambulance.",
+            "DVWPN", new() { "Dvwpn" }, "P", 2),
+        new("Roberta calls to report that she just arrived home with her 8-year-old son. She had picked him up from the babysitter's earlier today and has just found some bruising on his legs. Her son said the babysitter spanked him. The child does not need an ambulance.",
+            "ABUSE", new() { "Abuse" }, "P", 3),
+        new("Erica from St. Francis ER calls to report that they have a victim who was just brought into the ER with a gunshot wound to the chest.",
+            "WALKIN", new() { "Walk in" }, "P", 2),
+
+        // ===== Call Type Quiz #5 — Page 3 (Questions 8-15) =====
+        new("You take a call from Walmart reporting that someone called the store to say there was a bomb that is going to go off in 30 minutes. They said it was a male and have no other information.",
+            "26", new() { "26" }, "PFE", 2),
+        new("Sarah calls to report that there has been a 50-year old male sitting on a swing at the park for the last two hours. She doesn't know what he is doing, but he isn't there with a child and the caller is concerned he might be watching the other children.",
+            "SC", new() { "SC" }, "P", 3),
+        new("Timothy calls to report that his girlfriend is mad at him and has hit him in the face a couple of times. Now she went into the kitchen and said she is going to come back and stab him. No one has been hurt or needs medical attention. They are both 21 years old.",
+            "DV", new() { "DV" }, "P", 3),
+        new("Mike just returned home from work and found his front door standing open. He does not know if the burglars are still inside or not and does not know if anything is missing. He has not seen any strange people or vehicles in the neighborhood. He will wait outside for officers.",
+            "CKRES", new() { "Ckres" }, "P", 3),
+        new("Carrie calls to report that during the night, someone broke out the passenger window of her Camaro and stole her backpack. She does not know who did it and nothing was left behind.",
+            "LARCRPT", new() { "Larcrpt" }, "P", 4),
+        new("Trent reports that the grass in the ditch at US54 and 263rd W is on fire. No one is injured.",
+            "VEGFIRE", new() { "Vegfire" }, "F", null),
+        new("This is Butler County and we need assistance from Sedgwick County with a house fire in Rose Hill.",
+            "MUTUAL", new() { "Mutual" }, "F", null),
+        new("Michael calls to say that someone just stole his car. He went out to warm it up before work and while he was getting his coffee, someone drove off in it.",
+            "AUTOJO", new() { "Autojo" }, "P", 3),
+
+        // ===== Call Type Quiz #5 — Page 4 (Questions 16-22) =====
+        new("The caller can hear the husband and wife neighbors arguing inside their apartment. The caller doesn't know if anyone is hurt. The caller hasn't heard anything about weapons.",
+            "DV", new() { "Dv" }, "P", 3),
+        new("Richard calls and states that a truck has just been involved in an accident with a small, foreign car. The truck is lying on its side. He also states that the person in the small car is bleeding from the head.",
+            "48", new() { "48" }, "PFE", 2),
+        new("Sergio calls to report that his unattached two car garage has flames and smoke coming from the roof. Everyone is out and no one is injured.",
+            "STRUCT", new() { "Struct" }, "PFE", 3),
+        new("Amanda reports an elderly male standing near an intersection that appears to be either confused or upset. She would like someone to check on him.",
+            "WELFARE", new() { "Welfare" }, "P", 3),
+        new("The caller is the clerk from the QT at 750 S. Broadway. He is reporting that someone just grabbed chips and a pop and took off running southbound on Broadway. No weapons were seen and no force was used.",
+            "LARCJO", new() { "Larcjo" }, "P", 3),
+        new("Terry from the QT at 750 S. Broadway calls and says a man with a gun just came in and demanded all of the money from the register. No one has been injured and the man left one minute ago out the front door and then southbound on foot.",
+            "ROBJO", new() { "Robjo" }, "P", 3),
+        new("The caller states that she can see a male fighting with a WPD police officer in the street.",
+            "LIT", new() { "lit" }, "P", 1),
+
+        // ===== Call Type Quiz #6 — Page 5 (Questions 1-7) =====
+        new("Sarah calls to report that she has not seen her neighbor for the past week and his mail has started building up and there are multiple newspapers in the drive. His car is parked in the drive.",
+            "WELFARE", new() { "Welfare" }, "P", 3),
+        new("Timothy calls to report that his girlfriend is mad at him. She is currently chasing him through the apartment with a big knife. No one has been hurt or needs medical attention. They are both 21 years old.",
+            "DVWPN", new() { "Dvwpn" }, "P", 2),
+        new("Gary calls to report that he had a blowout on his vehicle. The blowout caused him to hit a telephone pole on the side of the road. No one is injured. Everyone can get out of the vehicle. The vehicle is not on fire.",
+            "47", new() { "EHAZARD","E-HAZARD" }, "PF", 4),
+        new("Tami calls to report that she just arrived home with her 3-year-old son. She had picked him up from the babysitter 30 minutes before calling and now wants to report that he has numerous bruises on his back and legs. She is sure that the babysitter's husband caused them. The child does not need an ambulance.",
+            "ABUSE", new() { "Abuse" }, "P", 3),
+        new("Carrie calls to report that during the night, someone broke out the passenger window of her Camaro and stole her laptop. She does not know who did it and nothing was left behind.",
+            "LARCRPT", new() { "Larcrpt" }, "P", 4),
+        new("There is a motorhome on fire in the Dillon's parking lot at 31st S and Seneca.",
+            "VEHFIRE", new() { "Vehfire" }, "PF", 2),
+        new("Wanda from St. Francis ER calls to report that someone in a purple Neon just dropped off a male at the hospital who has been shot. Wanda does not know where the shooting occurred nor when. The suspect vehicle was last seen northbound on Broadway five minutes ago. It was occupied by two white males. The nurse does not think the patient is going to survive.",
+            "WALKIN", new() { "Walk in" }, "P", 2),
+
+        // ===== Call Type Quiz #6 — Page 6 (Questions 8-13) =====
+        new("Julian calls to report that he just drove past an unattached two car garage that had flames and smoke coming from the roof. He did not see anyone around the garage. It is not by any other structures and he does not know what is inside the garage.",
+            "STRUCTURE", new() { "Structure" }, "PFE", 3),
+        new("You take a call from a male reporting that a bomb is going to go off at Northwest High School in 30 minutes. The male sounded very young (possibly pre-teens). During the short time you were on the phone with him, you did not hear any background noises.",
+            "26", new() { "26" }, "PFE", 2),
+        new("Opal called to report that she had just returned home from work and found her front door standing open. She does not know if the burglars are still inside or not and she does not know if anything is missing. She has not seen any strange people or vehicles in the neighborhood. Opal will be waiting in the driveway in a white mini van.",
+            "CKRES", new() { "Ckres" }, "P", 3),
+        new("Trent calls to report that one minute ago, he watched a black male go on his neighbor's front porch and take a mountain bike. The suspect just left northbound on the bike. Trent does not know if anyone is home at his neighbor's house. No weapons were seen.",
+            "LARCJO", new() { "Larcjo" }, "P", 3),
+        new("Michael calls to report that two white males kicked in the front door to his house and held him and his wife at gunpoint. They wanted to know where he kept the drugs. The caller states that he has no drugs at his house and thinks they came to the wrong residence. The suspects looked for a while and then left 3 minutes ago without taking anything.",
+            "ROBJO", new() { "Robjo" }, "P", 2),
+        new("The caller states that the male and female who live together just south of her residence have been fighting all day. Both are still at the house, no one is injured, and now the female is throwing the male's belongings out the front door. There are no weapons involved.",
+            "DV", new() { "Dv" }, "P", 3),
+
+        // ===== Call Type Quiz #6 — Page 7 (Questions 14-20) =====
+        new("Richard calls and states that a SUV has just been involved in an accident with a small, foreign car. The car rolled over and is laying on its roof. The caller states that the person in the small car is bleeding from the head.",
+            "48", new() { "48" }, "PFE", null),
+        new("Terry from the QT at 730 N Broadway calls and says a man with a gun just came in and demanded all of the money from the register. No one has been injured and the man left one minute ago out the front door and then southbound on foot.",
+            "ROBJO", new() { "Robjo" }, "P", 2),
+        new("Samantha calls and says she just got home from work and it appears someone broke into her house. The TV and X-Box are gone as well as a few other items. She does not see anyone else in the house.",
+            "BURGRPT", new() { "Burgrpt" }, "P", 3),
+        new("The caller states that there is a yellow truck parked in front of her residence. It has been there for the last hour. There are two white males in the vehicle. She does not know what they are doing. No weapons have been seen.",
+            "SC", new() { "Sc" }, "P", 3),
+        new("This is KHP and we have a trooper chasing a vehicle SB on I-135 at K-96, does Sedgwick County have anyone that can assist them?",
+            "MUTUAL", new() { "ASSIST", "MUTUAL ASSIST" }, "P", 2),
+        new("The caller says his house is on fire and he cannot get out of the house.",
+            "STRUCTURE", new() { "Structure" }, "PFE", 3),
+        new("The caller states that there are approximately ten juveniles in the schoolyard fighting. He thinks that only two or three of them are actually fighting and the others are just cheering them on. They all appear to be 14-15 years old. The caller does not think that anyone needs an ambulance and has not seen any weapons.",
+            "DIST", new() { "Dist" }, "P", 3),
+
+        // ===== Call Type Quiz #6 — Page 8 (Questions 21-25) =====
+        new("The caller states that she can see a male fighting with a WPD police officer in the street. The officer and the male are fighting over the officer's gun.",
+            "OIT", new() { "Oit" }, "P", 1),
+        new("Amanda calls and states that there is a man parked on the corner by the elementary school watching children at the playground. She is afraid he is casing the school to abduct one of the children. He has been parked there for the last hour. She does not see anyone else with him and has not seen any weapons.",
+            "SC", new() { "Sc" }, "P", 3),
+        new("The caller is the clerk from the QT at 1532 S Seneca. He is reporting that someone just grabbed a case of beer and took off running southbound on Seneca past the train tracks. He does not know where the suspect went after he got to the other side of the tracks. No weapons were seen and no force was used.",
+            "LARCJO", new() { "Larcjo" }, "P", 3),
+        new("Ray calls from the drive thru at McDonalds and tells you that a male is standing at the counter with gun and demanding the money from the register. The employee is complying and no one has been injured yet.",
+            "ROBIP", new() { "Robip" }, "P", 1),
+        new("This is Butler County and we need help from Sedgwick County with a house fire in Rose Hill.",
+            "MUTUAL", new() { "Mutual" }, "F", null),
+    };
+
+    private void GenerateCodeTestQuestion()
+    {
+        if (_callGuides.Count == 0) return;
+
+        CallGuide guide;
+        if (_codeTestNoRepeat)
+        {
+            var idx = _codeTestDeck.Pick(_callGuides.Count, _rng);
+            if (idx == -1) { _currentCallGuide = null; return; }
+            guide = _callGuides[idx];
+        }
+        else
+        {
+            guide = _callGuides[_rng.Next(_callGuides.Count)];
+        }
+
+        _currentCallGuide = guide;
+        _ctCallType = "";
+        _ctAgencyP = false;
+        _ctAgencyF = false;
+        _ctAgencyE = false;
+        _ctPriority = "";
+        _codeTestAnswered = false;
+        _codeTestWasCorrect = false;
+        _ctCallTypeCorrect = false;
+        _ctAgenciesCorrect = false;
+        _ctPriorityCorrect = false;
+    }
+
+    private async Task CheckCodeTestAnswer()
+    {
+        if (_currentCallGuide == null) return;
+        _codeTestAnswered = true;
+        _codeTestTotal++;
+
+        // Check call type
+        var userType = Normalize(_ctCallType);
+        _ctCallTypeCorrect = _currentCallGuide.AcceptableCallTypes.Any(a => Normalize(a) == userType);
+
+        // Check agencies
+        var userAgencies = "";
+        if (_ctAgencyP) userAgencies += "P";
+        if (_ctAgencyF) userAgencies += "F";
+        if (_ctAgencyE) userAgencies += "E";
+        _ctAgenciesCorrect = userAgencies == _currentCallGuide.Agencies;
+
+        // Check priority (null means no LE priority — user should leave blank)
+        if (_currentCallGuide.Priority == null)
+            _ctPriorityCorrect = string.IsNullOrWhiteSpace(_ctPriority);
+        else
+            _ctPriorityCorrect = int.TryParse(_ctPriority.Trim(), out var p) && p == _currentCallGuide.Priority;
+
+        _codeTestWasCorrect = _ctCallTypeCorrect && _ctAgenciesCorrect && _ctPriorityCorrect;
+        if (_codeTestWasCorrect) _codeTestCorrect++;
+        if (_codeTestNoRepeat)
+        {
+            var correctAnswer = $"{_currentCallGuide.CallType} | {_currentCallGuide.AgenciesDisplay} | Pri {_currentCallGuide.PriorityDisplay}";
+            _codeTestDeck.Record(_currentCallGuide.Scenario[..Math.Min(80, _currentCallGuide.Scenario.Length)] + "...", correctAnswer, _codeTestWasCorrect);
+        }
+        _pendingFocus = FocusTarget.CodeTestNext;
+    }
+
+    private async Task NextCodeTestQuestion()
+    {
+        GenerateCodeTestQuestion();
+        _pendingFocus = FocusTarget.CodeTestInput;
+    }
+
+    private void ResetCodeTestScore()
+    {
+        _codeTestCorrect = 0;
+        _codeTestTotal = 0;
+        _codeTestDeck.Reset();
+        GenerateCodeTestQuestion();
+    }
+
+    private void OnCodeTestNoRepeatChanged(bool val)
+    {
+        _codeTestNoRepeat = val;
+        _codeTestDeck.Reset();
+        _codeTestCorrect = 0;
+        _codeTestTotal = 0;
+        GenerateCodeTestQuestion();
+    }
+
+    private async Task OnCodeTestKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            if (!_codeTestAnswered) await CheckCodeTestAnswer();
+            else await NextCodeTestQuestion();
+        }
+    }
+}
