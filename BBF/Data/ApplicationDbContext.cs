@@ -26,6 +26,14 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
     public DbSet<GoalContribution> GoalContributions => Set<GoalContribution>();
     public DbSet<UserGroup> UserGroups => Set<UserGroup>();
     public DbSet<UserGroupMember> UserGroupMembers => Set<UserGroupMember>();
+    public DbSet<GrocerySection> GrocerySections => Set<GrocerySection>();
+    public DbSet<Ingredient> Ingredients => Set<Ingredient>();
+    public DbSet<Recipe> Recipes => Set<Recipe>();
+    public DbSet<RecipeIngredient> RecipeIngredients => Set<RecipeIngredient>();
+    public DbSet<MealPlanWeek> MealPlanWeeks => Set<MealPlanWeek>();
+    public DbSet<MealPlanEntry> MealPlanEntries => Set<MealPlanEntry>();
+    public DbSet<GroceryList> GroceryLists => Set<GroceryList>();
+    public DbSet<GroceryListItem> GroceryListItems => Set<GroceryListItem>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -267,6 +275,114 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
              .WithMany()
              .HasForeignKey(s => s.SharedWithUserId)
              .OnDelete(DeleteBehavior.NoAction);
+        });
+
+        // GrocerySection -> Ingredient (set null on delete)
+        builder.Entity<GrocerySection>(e =>
+        {
+            e.HasOne(s => s.Group)
+             .WithMany()
+             .HasForeignKey(s => s.GroupId)
+             .OnDelete(DeleteBehavior.SetNull);
+
+            e.HasMany(s => s.Ingredients)
+             .WithOne(i => i.Section)
+             .HasForeignKey(i => i.SectionId)
+             .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        builder.Entity<Ingredient>(e =>
+        {
+            e.Property(i => i.PackageQuantity).HasColumnType("decimal(10,3)");
+
+            e.HasOne(i => i.Group)
+             .WithMany()
+             .HasForeignKey(i => i.GroupId)
+             .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        // Recipe -> RecipeIngredient (cascade delete, owned by the recipe)
+        builder.Entity<Recipe>(e =>
+        {
+            e.HasOne(r => r.Group)
+             .WithMany()
+             .HasForeignKey(r => r.GroupId)
+             .OnDelete(DeleteBehavior.SetNull);
+
+            e.HasMany(r => r.Ingredients)
+             .WithOne(ri => ri.Recipe)
+             .HasForeignKey(ri => ri.RecipeId)
+             .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<RecipeIngredient>(e =>
+        {
+            e.Property(ri => ri.Quantity).HasColumnType("decimal(10,3)");
+
+            // Restrict, not SetNull: Recipe already cascades into this table (SQL Server rejects two
+            // cascade paths), and IngredientId is non-nullable. Must remove the line from recipes
+            // before deleting the ingredient — guarded in application code.
+            e.HasOne(ri => ri.Ingredient)
+             .WithMany(i => i.RecipeIngredients)
+             .HasForeignKey(ri => ri.IngredientId)
+             .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // MealPlanWeek -> MealPlanEntry (cascade delete), MealPlanWeek -> GroceryList (cascade delete)
+        builder.Entity<MealPlanWeek>(e =>
+        {
+            e.HasIndex(w => new { w.GroupId, w.WeekStartDate }).IsUnique();
+
+            e.HasOne(w => w.Group)
+             .WithMany()
+             .HasForeignKey(w => w.GroupId)
+             .OnDelete(DeleteBehavior.SetNull);
+
+            e.HasMany(w => w.Entries)
+             .WithOne(en => en.MealPlanWeek)
+             .HasForeignKey(en => en.MealPlanWeekId)
+             .OnDelete(DeleteBehavior.Cascade);
+
+            e.HasOne(w => w.GroceryList)
+             .WithOne(gl => gl.MealPlanWeek)
+             .HasForeignKey<GroceryList>(gl => gl.MealPlanWeekId)
+             .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<MealPlanEntry>(e =>
+        {
+            e.HasIndex(en => new { en.MealPlanWeekId, en.Date, en.MealSlot }).IsUnique();
+
+            // Restrict: MealPlanWeek already cascades into this table. Must unschedule before
+            // deleting a recipe — guarded in application code.
+            e.HasOne(en => en.Recipe)
+             .WithMany()
+             .HasForeignKey(en => en.RecipeId)
+             .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // GroceryList -> GroceryListItem (cascade delete)
+        builder.Entity<GroceryList>(e =>
+        {
+            e.HasMany(gl => gl.Items)
+             .WithOne(i => i.GroceryList)
+             .HasForeignKey(i => i.GroceryListId)
+             .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<GroceryListItem>(e =>
+        {
+            e.Property(i => i.RequiredQuantity).HasColumnType("decimal(10,3)");
+
+            e.HasOne(i => i.Ingredient)
+             .WithMany()
+             .HasForeignKey(i => i.IngredientId)
+             .OnDelete(DeleteBehavior.SetNull);
+
+            e.HasOne(i => i.Section)
+             .WithMany()
+             .HasForeignKey(i => i.SectionId)
+             .OnDelete(DeleteBehavior.SetNull);
         });
     }
 }
