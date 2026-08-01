@@ -508,6 +508,11 @@
                             }
                             <span>Answer: <b>@FormatAnswer(q)</b></span>
                         </MudAlert>
+                        <MudButton Variant="Variant.Outlined" Color="Color.Success" Size="Size.Small"
+                                   Class="mt-2" StartIcon="@Icons.Material.Filled.ThumbUp"
+                                   OnClick="@(() => OverrideAsCorrect(isExam))">
+                            That was Right
+                        </MudButton>
                     }
                     @if (!string.IsNullOrWhiteSpace(q.AnswerNote))
                     {
@@ -529,8 +534,8 @@
     {
         <MudRadioGroup T="bool?" Value="_userTrue ? true : _userFalse ? false : (bool?)null"
                        ValueChanged="@((bool? v) => { _userTrue = v == true; _userFalse = v == false; })">
-            <MudRadio Value="@(true)" Color="Color.Primary" Disabled="_answered">True</MudRadio>
-            <MudRadio Value="@(false)" Color="Color.Primary" Disabled="_answered">False</MudRadio>
+            <MudRadio T="bool?" Value="@((bool?)true)" Color="Color.Primary" Disabled="_answered">True</MudRadio>
+            <MudRadio T="bool?" Value="@((bool?)false)" Color="Color.Primary" Disabled="_answered">False</MudRadio>
         </MudRadioGroup>
     };
 
@@ -680,6 +685,31 @@
                 _randomDeck.Record(TruncatePrompt(q.Prompt), FormatAnswer(q), _wasCorrect);
             }
         }
+    }
+
+    private void OverrideAsCorrect(bool isExam)
+    {
+        if (!_answered || _wasCorrect) return;
+        _wasCorrect = true;
+        _correctnessReason = "";
+
+        if (isExam)
+        {
+            if (_examResults.Count > 0)
+            {
+                var last = _examResults[^1];
+                _examResults[^1] = last with { WasCorrect = true };
+            }
+        }
+        else
+        {
+            _randomCorrect++;
+            if (_randomNoRepeat)
+            {
+                _randomDeck.MarkLastCorrect();
+            }
+        }
+        _pendingFocus = FocusTarget.Next;
     }
 
     private void Advance(bool isExam)
@@ -845,6 +875,13 @@
 
         public void Record(string question, string answer, bool wasCorrect)
             => History.Add((question, answer, wasCorrect));
+
+        public void MarkLastCorrect()
+        {
+            if (History.Count == 0) return;
+            var last = History[^1];
+            History[^1] = (last.Question, last.Answer, true);
+        }
 
         public void Shuffle(int poolSize, Random rng)
         {
