@@ -88,6 +88,13 @@ builder.Services.AddScoped<GoalService>();
 // User context (multi-tenancy)
 builder.Services.AddScoped<UserContextService>();
 
+// Meal planning: sections/ingredients maintenance, recipes, weekly plan, grocery list generation
+builder.Services.AddScoped<GrocerySectionService>();
+builder.Services.AddScoped<IngredientService>();
+builder.Services.AddScoped<RecipeService>();
+builder.Services.AddScoped<MealPlanService>();
+builder.Services.AddScoped<GroceryListService>();
+
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
