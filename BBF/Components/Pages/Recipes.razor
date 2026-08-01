@@ -1,0 +1,194 @@
+@page "/recipes"
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@using BBF.Data.Entities
+@using BBF.Services
+@inject RecipeService RecipeSvc
+@inject IngredientService IngredientSvc
+@inject UserContextService UserContext
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@implements IDisposable
+
+<PageTitle>Recipes - BBF</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="py-4">
+    @if (!UserContext.IsInitialized || UserContext.ActiveGroupId is null)
+    {
+        <MudPaper Class="pa-6 text-center" Elevation="2">
+            <MudText Typo="Typo.h5" Class="mb-2">No Group</MudText>
+            <MudText Typo="Typo.body1" Color="Color.Secondary">Join or create a group first.</MudText>
+        </MudPaper>
+    }
+    else
+    {
+        <MudStack Row AlignItems="AlignItems.Center" Style="flex-wrap: wrap; gap: 8px;" Class="mb-4">
+            <MudIcon Icon="@Icons.Material.Filled.MenuBook" Size="Size.Large" Color="Color.Primary" />
+            <MudText Typo="Typo.h4">Recipes</MudText>
+        </MudStack>
+
+        <MudStack Row AlignItems="AlignItems.Center" Style="flex-wrap: wrap; gap: 8px;" Class="mb-4">
+            <MudTextField T="string" @bind-Value="_search" Placeholder="Search recipes..." Immediate
+                          Variant="Variant.Outlined" Adornment="Adornment.Start"
+                          AdornmentIcon="@Icons.Material.Filled.Search" Style="max-width: 300px; flex: 1;" />
+            <MudSpacer />
+            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Add" OnClick="AddRecipe">
+                Add Recipe
+            </MudButton>
+        </MudStack>
+
+        <MudGrid>
+            @foreach (var recipe in FilteredRecipes)
+            {
+                <MudItem xs="12" sm="6" md="4">
+                    <MudPaper Class="pa-3" Elevation="2" Style="height: 100%;">
+                        <MudStack Spacing="1">
+                            <MudStack Row AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
+                                <MudText Typo="Typo.subtitle1">@recipe.Name</MudText>
+                                <MudStack Row Spacing="0">
+                                    <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                                                   OnClick="@(() => EditRecipe(recipe))" />
+                                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error"
+                                                   OnClick="@(() => DeleteRecipe(recipe))" />
+                                </MudStack>
+                            </MudStack>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                Serves @recipe.BaseServings &middot; @recipe.Ingredients.Count ingredient@(recipe.Ingredients.Count != 1 ? "s" : "")
+                            </MudText>
+                            @if (!string.IsNullOrWhiteSpace(recipe.Notes))
+                            {
+                                <MudText Typo="Typo.body2">@recipe.Notes</MudText>
+                            }
+                        </MudStack>
+                    </MudPaper>
+                </MudItem>
+            }
+        </MudGrid>
+
+        @if (_recipes.Count == 0)
+        {
+            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="pa-4 text-center">
+                No recipes yet. Add one to start planning meals.
+            </MudText>
+        }
+        else if (!FilteredRecipes.Any())
+        {
+            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="pa-4 text-center">
+                No recipes match "@_search".
+            </MudText>
+        }
+    }
+</MudContainer>
+
+@code {
+    private List<Recipe> _recipes = [];
+    private List<Ingredient> _ingredients = [];
+    private string _search = "";
+
+    private IEnumerable<Recipe> FilteredRecipes => string.IsNullOrWhiteSpace(_search)
+        ? _recipes
+        : _recipes.Where(r => r.Name.Contains(_search, StringComparison.OrdinalIgnoreCase));
+
+    protected override async Task OnInitializedAsync()
+    {
+        UserContext.OnGroupChanged += OnGroupChanged;
+        if (UserContext.ActiveGroupId is not null)
+            await LoadData();
+    }
+
+    private async void OnGroupChanged()
+    {
+        await InvokeAsync(async () =>
+        {
+            await LoadData();
+            StateHasChanged();
+        });
+    }
+
+    private async Task LoadData()
+    {
+        if (UserContext.ActiveGroupId is not int groupId) return;
+        _recipes = await RecipeSvc.GetRecipesAsync(groupId);
+        _ingredients = await IngredientSvc.GetIngredientsAsync(groupId);
+    }
+
+    private async Task AddRecipe()
+    {
+        if (_ingredients.Count == 0)
+        {
+            Snackbar.Add("Add at least one ingredient first.", Severity.Warning);
+            return;
+        }
+
+        var parameters = new DialogParameters<RecipeDialog>
+        {
+            { x => x.Recipe, new Recipe { BaseServings = 4 } },
+            { x => x.Ingredients, _ingredients }
+        };
+        var dialog = await DialogService.ShowAsync<RecipeDialog>("Add Recipe", parameters);
+        var result = await dialog.Result;
+
+        if (result is not null && !result.Canceled && result.Data is Recipe recipe && UserContext.ActiveGroupId is int groupId)
+        {
+            recipe.GroupId = groupId;
+            await RecipeSvc.CreateAsync(recipe);
+            Snackbar.Add($"Recipe '{recipe.Name}' added.", Severity.Success);
+            await LoadData();
+        }
+    }
+
+    private async Task EditRecipe(Recipe recipe)
+    {
+        var parameters = new DialogParameters<RecipeDialog>
+        {
+            { x => x.Recipe, new Recipe
+                {
+                    Id = recipe.Id, Name = recipe.Name, BaseServings = recipe.BaseServings,
+                    Instructions = recipe.Instructions, Notes = recipe.Notes,
+                    Ingredients = recipe.Ingredients
+                }
+            },
+            { x => x.Ingredients, _ingredients }
+        };
+        var dialog = await DialogService.ShowAsync<RecipeDialog>("Edit Recipe", parameters);
+        var result = await dialog.Result;
+
+        if (result is not null && !result.Canceled && result.Data is Recipe updated)
+        {
+            await RecipeSvc.UpdateAsync(recipe.Id, updated.Name, updated.BaseServings, updated.Instructions,
+                updated.Notes, updated.Ingredients);
+            await LoadData();
+        }
+    }
+
+    private async Task DeleteRecipe(Recipe recipe)
+    {
+        var parameters = new DialogParameters<MessageBoxDialog>
+        {
+            { x => x.ContentText, $"Delete recipe '{recipe.Name}'? This will fail if it's still scheduled on a meal plan." },
+            { x => x.ButtonText, "Delete" },
+            { x => x.Color, Color.Error }
+        };
+        var dialog = await DialogService.ShowAsync<MessageBoxDialog>("Delete Recipe", parameters);
+        var result = await dialog.Result;
+
+        if (result is not null && !result.Canceled)
+        {
+            try
+            {
+                await RecipeSvc.DeleteAsync(recipe.Id);
+                await LoadData();
+            }
+            catch (Exception)
+            {
+                Snackbar.Add($"Can't delete '{recipe.Name}' — it's still scheduled on a meal plan. Unschedule it first.", Severity.Warning);
+            }
+        }
+    }
+
+    public void Dispose()
+    {
+        UserContext.OnGroupChanged -= OnGroupChanged;
+    }
+}

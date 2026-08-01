@@ -1,0 +1,188 @@
+@page "/ingredients"
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@using BBF.Data.Entities
+@using BBF.Services
+@inject IngredientService IngredientSvc
+@inject GrocerySectionService SectionSvc
+@inject UserContextService UserContext
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@implements IDisposable
+
+<PageTitle>Ingredients - BBF</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="py-4">
+    @if (!UserContext.IsInitialized || UserContext.ActiveGroupId is null)
+    {
+        <MudPaper Class="pa-6 text-center" Elevation="2">
+            <MudText Typo="Typo.h5" Class="mb-2">No Group</MudText>
+            <MudText Typo="Typo.body1" Color="Color.Secondary">Join or create a group first.</MudText>
+        </MudPaper>
+    }
+    else
+    {
+        <MudStack Row AlignItems="AlignItems.Center" Style="flex-wrap: wrap; gap: 8px;" Class="mb-4">
+            <MudIcon Icon="@Icons.Material.Filled.Kitchen" Size="Size.Large" Color="Color.Primary" />
+            <MudText Typo="Typo.h4">Ingredients</MudText>
+        </MudStack>
+
+        <MudPaper Class="pa-4" Elevation="2">
+            <MudStack Row AlignItems="AlignItems.Center" Style="flex-wrap: wrap; gap: 8px;" Class="mb-3">
+                <MudTextField T="string" @bind-Value="_search" Placeholder="Search ingredients..." Immediate
+                              Variant="Variant.Outlined" Adornment="Adornment.Start"
+                              AdornmentIcon="@Icons.Material.Filled.Search" Style="max-width: 300px; flex: 1;" />
+                <MudSpacer />
+                <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.Add" OnClick="AddIngredient"
+                           Disabled="@(_sections.Count == 0 && _ingredients.Count == 0)">
+                    Add Ingredient
+                </MudButton>
+            </MudStack>
+
+            @foreach (var ingredient in FilteredIngredients)
+            {
+                <MudPaper Class="pa-3 mb-2" Elevation="1">
+                    <MudStack Row AlignItems="AlignItems.Center" Style="flex-wrap: wrap; gap: 12px;">
+                        <MudStack Spacing="0" Style="min-width: 150px; flex: 1;">
+                            <MudText Typo="Typo.subtitle2">@ingredient.Name</MudText>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                @ingredient.MeasurementType
+                                @if (ingredient.Section is not null)
+                                {
+                                    @($" · {ingredient.Section.Name}")
+                                }
+                                @if (ingredient.PackageQuantity is not null)
+                                {
+                                    @($" · {ingredient.PackageQuantity} {ingredient.PackageUnit}/package")
+                                }
+                            </MudText>
+                        </MudStack>
+                        <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                                       OnClick="@(() => EditIngredient(ingredient))" />
+                        <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error"
+                                       OnClick="@(() => DeleteIngredient(ingredient))" />
+                    </MudStack>
+                </MudPaper>
+            }
+
+            @if (_ingredients.Count == 0)
+            {
+                <MudText Typo="Typo.body2" Color="Color.Secondary" Class="pa-4 text-center">
+                    No ingredients yet. Add one to start building recipes.
+                </MudText>
+            }
+            else if (!FilteredIngredients.Any())
+            {
+                <MudText Typo="Typo.body2" Color="Color.Secondary" Class="pa-4 text-center">
+                    No ingredients match "@_search".
+                </MudText>
+            }
+        </MudPaper>
+    }
+</MudContainer>
+
+@code {
+    private List<Ingredient> _ingredients = [];
+    private List<GrocerySection> _sections = [];
+    private string _search = "";
+
+    private IEnumerable<Ingredient> FilteredIngredients => string.IsNullOrWhiteSpace(_search)
+        ? _ingredients
+        : _ingredients.Where(i => i.Name.Contains(_search, StringComparison.OrdinalIgnoreCase));
+
+    protected override async Task OnInitializedAsync()
+    {
+        UserContext.OnGroupChanged += OnGroupChanged;
+        if (UserContext.ActiveGroupId is not null)
+            await LoadData();
+    }
+
+    private async void OnGroupChanged()
+    {
+        await InvokeAsync(async () =>
+        {
+            await LoadData();
+            StateHasChanged();
+        });
+    }
+
+    private async Task LoadData()
+    {
+        if (UserContext.ActiveGroupId is not int groupId) return;
+        _ingredients = await IngredientSvc.GetIngredientsAsync(groupId);
+        _sections = await SectionSvc.GetSectionsAsync(groupId);
+    }
+
+    private async Task AddIngredient()
+    {
+        var parameters = new DialogParameters<IngredientDialog>
+        {
+            { x => x.Ingredient, new Ingredient() },
+            { x => x.Sections, _sections }
+        };
+        var dialog = await DialogService.ShowAsync<IngredientDialog>("Add Ingredient", parameters);
+        var result = await dialog.Result;
+
+        if (result is not null && !result.Canceled && result.Data is Ingredient ingredient && UserContext.ActiveGroupId is int groupId)
+        {
+            ingredient.GroupId = groupId;
+            await IngredientSvc.CreateAsync(ingredient);
+            Snackbar.Add($"Ingredient '{ingredient.Name}' added.", Severity.Success);
+            await LoadData();
+        }
+    }
+
+    private async Task EditIngredient(Ingredient ingredient)
+    {
+        var parameters = new DialogParameters<IngredientDialog>
+        {
+            { x => x.Ingredient, new Ingredient
+                {
+                    Id = ingredient.Id, Name = ingredient.Name, MeasurementType = ingredient.MeasurementType,
+                    SectionId = ingredient.SectionId, PackageQuantity = ingredient.PackageQuantity, PackageUnit = ingredient.PackageUnit
+                }
+            },
+            { x => x.Sections, _sections }
+        };
+        var dialog = await DialogService.ShowAsync<IngredientDialog>("Edit Ingredient", parameters);
+        var result = await dialog.Result;
+
+        if (result is not null && !result.Canceled && result.Data is Ingredient updated)
+        {
+            await IngredientSvc.UpdateAsync(ingredient.Id, updated.Name, updated.MeasurementType,
+                updated.SectionId, updated.PackageQuantity, updated.PackageUnit);
+            await LoadData();
+        }
+    }
+
+    private async Task DeleteIngredient(Ingredient ingredient)
+    {
+        var parameters = new DialogParameters<MessageBoxDialog>
+        {
+            { x => x.ContentText, $"Delete ingredient '{ingredient.Name}'? This will fail if it's still used in any recipe." },
+            { x => x.ButtonText, "Delete" },
+            { x => x.Color, Color.Error }
+        };
+        var dialog = await DialogService.ShowAsync<MessageBoxDialog>("Delete Ingredient", parameters);
+        var result = await dialog.Result;
+
+        if (result is not null && !result.Canceled)
+        {
+            try
+            {
+                await IngredientSvc.DeleteAsync(ingredient.Id);
+                await LoadData();
+            }
+            catch (Exception)
+            {
+                Snackbar.Add($"Can't delete '{ingredient.Name}' — it's still used in a recipe. Remove it from recipes first.", Severity.Warning);
+            }
+        }
+    }
+
+    public void Dispose()
+    {
+        UserContext.OnGroupChanged -= OnGroupChanged;
+    }
+}

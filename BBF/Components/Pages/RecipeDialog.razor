@@ -1,0 +1,120 @@
+@using BBF.Data.Entities
+@using BBF.Services
+
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">@(Recipe.Id == 0 ? "Add Recipe" : "Edit Recipe")</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudTextField @bind-Value="Recipe.Name" Label="Recipe Name" Required
+                      Variant="Variant.Outlined" Class="mb-3" />
+        <MudStack Row Style="flex-wrap: wrap; gap: 8px;" Class="mb-3">
+            <MudNumericField @bind-Value="Recipe.BaseServings" Label="Base Servings" Min="1"
+                              Variant="Variant.Outlined" Style="min-width: 140px; flex: 1;" />
+        </MudStack>
+        <MudTextField @bind-Value="Recipe.Instructions" Label="Instructions" Lines="4"
+                      Variant="Variant.Outlined" Class="mb-3" />
+        <MudTextField @bind-Value="Recipe.Notes" Label="Notes" Variant="Variant.Outlined" Class="mb-4" />
+
+        <MudText Typo="Typo.subtitle1" Class="mb-2">Ingredients</MudText>
+
+        @if (Ingredients.Count == 0)
+        {
+            <MudAlert Severity="Severity.Warning" Class="mb-3">
+                No ingredients exist yet. <MudLink Href="/ingredients">Add some first</MudLink>, then come back.
+            </MudAlert>
+        }
+
+        @foreach (var line in _lines)
+        {
+            <MudStack Row AlignItems="AlignItems.Start" Style="flex-wrap: wrap; gap: 8px;" Class="mb-2">
+                <MudSelect T="int" Value="line.IngredientId" ValueChanged="@(id => OnIngredientChanged(line, id))"
+                           Label="Ingredient" Variant="Variant.Outlined" Style="min-width: 160px; flex: 2;">
+                    @foreach (var ingredient in Ingredients)
+                    {
+                        <MudSelectItem T="int" Value="@ingredient.Id">@ingredient.Name</MudSelectItem>
+                    }
+                </MudSelect>
+                <MudNumericField @bind-Value="line.Quantity" Label="Qty" Min="0"
+                                  Variant="Variant.Outlined" Style="min-width: 90px; flex: 1;" />
+                <MudSelect T="string" @bind-Value="line.Unit" Label="Unit"
+                           Variant="Variant.Outlined" Style="min-width: 110px; flex: 1;">
+                    @foreach (var unit in UnitsFor(line.IngredientId))
+                    {
+                        <MudSelectItem T="string" Value="@unit">@unit</MudSelectItem>
+                    }
+                </MudSelect>
+                <MudTextField @bind-Value="line.Notes" Label="Notes" Placeholder="diced, optional..."
+                              Variant="Variant.Outlined" Style="min-width: 130px; flex: 2;" />
+                <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error"
+                               OnClick="@(() => _lines.Remove(line))" Class="mt-1" />
+            </MudStack>
+        }
+
+        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Add"
+                   OnClick="AddLine" Disabled="@(Ingredients.Count == 0)" Class="mt-2">
+            Add Ingredient Line
+        </MudButton>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Submit"
+                   Disabled="@(string.IsNullOrWhiteSpace(Recipe.Name))">
+            Save
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance MudDialog { get; set; } = null!;
+
+    [Parameter]
+    public Recipe Recipe { get; set; } = new();
+
+    [Parameter]
+    public List<Ingredient> Ingredients { get; set; } = [];
+
+    private List<RecipeIngredient> _lines = [];
+
+    protected override void OnInitialized()
+    {
+        // Work off a copy so cancelling the dialog doesn't mutate the caller's list.
+        _lines = Recipe.Ingredients.Select(l => new RecipeIngredient
+        {
+            IngredientId = l.IngredientId, Quantity = l.Quantity, Unit = l.Unit, Notes = l.Notes
+        }).ToList();
+    }
+
+    private IEnumerable<string> UnitsFor(int ingredientId)
+    {
+        var ingredient = Ingredients.FirstOrDefault(i => i.Id == ingredientId);
+        return UnitConversion.UnitsFor(ingredient?.MeasurementType ?? "Count");
+    }
+
+    private void OnIngredientChanged(RecipeIngredient line, int ingredientId)
+    {
+        line.IngredientId = ingredientId;
+        // Reset the unit to match the newly-selected ingredient's measurement type.
+        line.Unit = UnitsFor(ingredientId).First();
+    }
+
+    private void AddLine()
+    {
+        var first = Ingredients[0];
+        _lines.Add(new RecipeIngredient
+        {
+            IngredientId = first.Id,
+            Quantity = 1,
+            Unit = UnitConversion.UnitsFor(first.MeasurementType).First()
+        });
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+
+    private void Submit()
+    {
+        Recipe.Ingredients = _lines;
+        MudDialog.Close(DialogResult.Ok(Recipe));
+    }
+}

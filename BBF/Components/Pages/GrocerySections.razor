@@ -1,0 +1,167 @@
+@page "/grocery-sections"
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@using BBF.Data.Entities
+@using BBF.Services
+@inject GrocerySectionService SectionSvc
+@inject UserContextService UserContext
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@implements IDisposable
+
+<PageTitle>Grocery Sections - BBF</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Medium" Class="py-4">
+    @if (!UserContext.IsInitialized || UserContext.ActiveGroupId is null)
+    {
+        <MudPaper Class="pa-6 text-center" Elevation="2">
+            <MudText Typo="Typo.h5" Class="mb-2">No Group</MudText>
+            <MudText Typo="Typo.body1" Color="Color.Secondary">Join or create a group first.</MudText>
+        </MudPaper>
+    }
+    else
+    {
+        <MudStack Row AlignItems="AlignItems.Center" Style="flex-wrap: wrap; gap: 8px;" Class="mb-4">
+            <MudIcon Icon="@Icons.Material.Filled.Storefront" Size="Size.Large" Color="Color.Primary" />
+            <MudText Typo="Typo.h4">Grocery Sections</MudText>
+        </MudStack>
+
+        <MudPaper Class="pa-4" Elevation="2">
+            <MudStack Row AlignItems="AlignItems.Center" Style="flex-wrap: wrap; gap: 8px;" Class="mb-3">
+                <MudText Typo="Typo.body2" Color="Color.Secondary">
+                    Sections control how the grocery list is grouped — order them to match your store's layout.
+                </MudText>
+                <MudSpacer />
+                <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.Add" OnClick="AddSection">
+                    Add Section
+                </MudButton>
+            </MudStack>
+
+            @for (var i = 0; i < _sections.Count; i++)
+            {
+                var section = _sections[i];
+                var index = i;
+                <MudPaper Class="pa-3 mb-2" Elevation="1">
+                    <MudStack Row AlignItems="AlignItems.Center" Style="flex-wrap: wrap; gap: 8px;">
+                        <MudStack Spacing="0" Row>
+                            <MudIconButton Icon="@Icons.Material.Filled.KeyboardArrowUp" Size="Size.Small"
+                                           Disabled="@(index == 0)" OnClick="@(() => MoveUp(index))" />
+                            <MudIconButton Icon="@Icons.Material.Filled.KeyboardArrowDown" Size="Size.Small"
+                                           Disabled="@(index == _sections.Count - 1)" OnClick="@(() => MoveDown(index))" />
+                        </MudStack>
+                        <MudText Typo="Typo.body1" Style="flex: 1; min-width: 120px;">@section.Name</MudText>
+                        <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                                       OnClick="@(() => EditSection(section))" />
+                        <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error"
+                                       OnClick="@(() => DeleteSection(section))" />
+                    </MudStack>
+                </MudPaper>
+            }
+
+            @if (_sections.Count == 0)
+            {
+                <MudText Typo="Typo.body2" Color="Color.Secondary" Class="pa-4 text-center">
+                    No sections yet. Add one to start organizing your grocery list.
+                </MudText>
+            }
+        </MudPaper>
+    }
+</MudContainer>
+
+@code {
+    private List<GrocerySection> _sections = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        UserContext.OnGroupChanged += OnGroupChanged;
+        if (UserContext.ActiveGroupId is not null)
+            await LoadData();
+    }
+
+    private async void OnGroupChanged()
+    {
+        await InvokeAsync(async () =>
+        {
+            await LoadData();
+            StateHasChanged();
+        });
+    }
+
+    private async Task LoadData()
+    {
+        if (UserContext.ActiveGroupId is not int groupId) return;
+        _sections = await SectionSvc.GetSectionsAsync(groupId);
+    }
+
+    private async Task AddSection()
+    {
+        var parameters = new DialogParameters<GrocerySectionDialog> { { x => x.Section, new GrocerySection() } };
+        var dialog = await DialogService.ShowAsync<GrocerySectionDialog>("Add Section", parameters);
+        var result = await dialog.Result;
+
+        if (result is not null && !result.Canceled && result.Data is GrocerySection section && UserContext.ActiveGroupId is int groupId)
+        {
+            await SectionSvc.CreateAsync(groupId, section.Name);
+            Snackbar.Add($"Section '{section.Name}' added.", Severity.Success);
+            await LoadData();
+        }
+    }
+
+    private async Task EditSection(GrocerySection section)
+    {
+        var parameters = new DialogParameters<GrocerySectionDialog>
+        {
+            { x => x.Section, new GrocerySection { Id = section.Id, Name = section.Name } }
+        };
+        var dialog = await DialogService.ShowAsync<GrocerySectionDialog>("Edit Section", parameters);
+        var result = await dialog.Result;
+
+        if (result is not null && !result.Canceled && result.Data is GrocerySection updated)
+        {
+            await SectionSvc.UpdateAsync(section.Id, updated.Name);
+            await LoadData();
+        }
+    }
+
+    private async Task DeleteSection(GrocerySection section)
+    {
+        var parameters = new DialogParameters<MessageBoxDialog>
+        {
+            { x => x.ContentText, $"Delete section '{section.Name}'? Ingredients in this section will become unsectioned." },
+            { x => x.ButtonText, "Delete" },
+            { x => x.Color, Color.Error }
+        };
+        var dialog = await DialogService.ShowAsync<MessageBoxDialog>("Delete Section", parameters);
+        var result = await dialog.Result;
+
+        if (result is not null && !result.Canceled)
+        {
+            await SectionSvc.DeleteAsync(section.Id);
+            await LoadData();
+        }
+    }
+
+    private async Task MoveUp(int index)
+    {
+        (_sections[index - 1], _sections[index]) = (_sections[index], _sections[index - 1]);
+        await Persist();
+    }
+
+    private async Task MoveDown(int index)
+    {
+        (_sections[index + 1], _sections[index]) = (_sections[index], _sections[index + 1]);
+        await Persist();
+    }
+
+    private async Task Persist()
+    {
+        if (UserContext.ActiveGroupId is not int groupId) return;
+        await SectionSvc.ReorderAsync(groupId, _sections.Select(s => s.Id).ToList());
+    }
+
+    public void Dispose()
+    {
+        UserContext.OnGroupChanged -= OnGroupChanged;
+    }
+}

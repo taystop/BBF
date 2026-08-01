@@ -1,0 +1,183 @@
+@page "/grocery-list"
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@using BBF.Data.Entities
+@using BBF.Services
+@using GroceryListEntity = BBF.Data.Entities.GroceryList
+@inject GroceryListService GroceryListSvc
+@inject MealPlanService MealPlanSvc
+@inject GrocerySectionService SectionSvc
+@inject UserContextService UserContext
+@inject ISnackbar Snackbar
+@implements IDisposable
+
+<PageTitle>Grocery List - BBF</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Medium" Class="py-4">
+    @if (!UserContext.IsInitialized || UserContext.ActiveGroupId is null)
+    {
+        <MudPaper Class="pa-6 text-center" Elevation="2">
+            <MudText Typo="Typo.h5" Class="mb-2">No Group</MudText>
+            <MudText Typo="Typo.body1" Color="Color.Secondary">Join or create a group first.</MudText>
+        </MudPaper>
+    }
+    else if (_week is not null)
+    {
+        <MudStack Row AlignItems="AlignItems.Center" Style="flex-wrap: wrap; gap: 8px;" Class="mb-4">
+            <MudIcon Icon="@Icons.Material.Filled.ShoppingCart" Size="Size.Large" Color="Color.Primary" />
+            <MudText Typo="Typo.h4">Grocery List</MudText>
+            <MudSpacer />
+            <MudIconButton Icon="@Icons.Material.Filled.ChevronLeft" OnClick="@(() => GoToWeek(-7))" />
+            <MudText Typo="Typo.subtitle1">
+                @_weekStart.ToString("MMM d") - @_weekStart.AddDays(6).ToString("MMM d, yyyy")
+            </MudText>
+            <MudIconButton Icon="@Icons.Material.Filled.ChevronRight" OnClick="@(() => GoToWeek(7))" />
+        </MudStack>
+
+        <MudStack Row Style="flex-wrap: wrap; gap: 8px;" Class="mb-4">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Refresh"
+                       OnClick="Regenerate">
+                @(_list is null ? "Generate List" : "Regenerate")
+            </MudButton>
+            <MudText Typo="Typo.caption" Color="Color.Secondary" Class="align-self-center">
+                Regenerating recomputes ingredient lines from your meal plan; items you added manually are kept.
+            </MudText>
+        </MudStack>
+
+        @if (_list is null)
+        {
+            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="pa-4 text-center">
+                No list generated yet for this week. Plan some meals on the <MudLink Href="/meal-plan">Meal Plan</MudLink> page, then generate the list.
+            </MudText>
+        }
+        else
+        {
+            @foreach (var group in GroupedItems)
+            {
+                <MudPaper Class="pa-3 mb-3" Elevation="2">
+                    <MudText Typo="Typo.subtitle1" Class="mb-2">@group.SectionName</MudText>
+                    @foreach (var item in group.Items)
+                    {
+                        <MudStack Row AlignItems="AlignItems.Center" Style="flex-wrap: wrap; gap: 8px;" Class="mb-1">
+                            <MudCheckBox T="bool" Value="item.IsChecked" ValueChanged="@(v => ToggleChecked(item, v))" Color="Color.Primary" />
+                            <MudText Typo="Typo.body1" Style="@(item.IsChecked ? "text-decoration: line-through; opacity: 0.6; flex: 1;" : "flex: 1;")">
+                                @item.Description
+                                @if (item.RequiredQuantity is not null)
+                                {
+                                    @($" — {item.RequiredQuantity:0.##} {item.RequiredUnit}")
+                                }
+                                @if (item.PackagesToBuy is not null)
+                                {
+                                    <MudChip T="string" Size="Size.Small" Color="Color.Info" Class="ml-2">Buy @item.PackagesToBuy</MudChip>
+                                }
+                            </MudText>
+                            <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small"
+                                           OnClick="@(() => RemoveItem(item))" />
+                        </MudStack>
+                    }
+                </MudPaper>
+            }
+
+            <MudPaper Class="pa-3" Elevation="1">
+                <MudStack Row AlignItems="AlignItems.Center" Style="flex-wrap: wrap; gap: 8px;">
+                    <MudTextField T="string" @bind-Value="_newItemDescription" Placeholder="Add an item (e.g. paper towels)"
+                                  Variant="Variant.Outlined" Style="min-width: 160px; flex: 2;" />
+                    <MudSelect T="int?" @bind-Value="_newItemSectionId" Label="Section" Clearable
+                               Variant="Variant.Outlined" Style="min-width: 140px; flex: 1;">
+                        @foreach (var section in _sections)
+                        {
+                            <MudSelectItem T="int?" Value="@section.Id">@section.Name</MudSelectItem>
+                        }
+                    </MudSelect>
+                    <MudButton Variant="Variant.Filled" Color="Color.Secondary" StartIcon="@Icons.Material.Filled.Add"
+                               OnClick="AddManualItem" Disabled="@(string.IsNullOrWhiteSpace(_newItemDescription))">
+                        Add
+                    </MudButton>
+                </MudStack>
+            </MudPaper>
+        }
+    }
+</MudContainer>
+
+@code {
+    private DateTime _weekStart;
+    private MealPlanWeek? _week;
+    private GroceryListEntity? _list;
+    private List<GrocerySection> _sections = [];
+    private string _newItemDescription = "";
+    private int? _newItemSectionId;
+
+    private record SectionGroup(string SectionName, int SortOrder, List<GroceryListItem> Items);
+
+    private IEnumerable<SectionGroup> GroupedItems =>
+        (_list?.Items ?? [])
+            .GroupBy(i => i.SectionId)
+            .Select(g => new SectionGroup(
+                g.First().Section?.Name ?? "Other",
+                g.First().Section?.SortOrder ?? int.MaxValue,
+                g.OrderBy(i => i.Description).ToList()))
+            .OrderBy(g => g.SortOrder);
+
+    protected override async Task OnInitializedAsync()
+    {
+        UserContext.OnGroupChanged += OnGroupChanged;
+        _weekStart = MealPlanService.GetWeekStart(DateTime.Now);
+        if (UserContext.ActiveGroupId is not null)
+            await LoadWeek(_weekStart);
+    }
+
+    private async void OnGroupChanged()
+    {
+        await InvokeAsync(async () =>
+        {
+            await LoadWeek(_weekStart);
+            StateHasChanged();
+        });
+    }
+
+    private async Task LoadWeek(DateTime weekStart)
+    {
+        if (UserContext.ActiveGroupId is not int groupId) return;
+
+        _weekStart = weekStart;
+        _week = await MealPlanSvc.GetOrCreateWeekAsync(groupId, weekStart);
+        _list = await GroceryListSvc.GetAsync(_week.Id);
+        _sections = await SectionSvc.GetSectionsAsync(groupId);
+    }
+
+    private async Task GoToWeek(int dayOffset) => await LoadWeek(_weekStart.AddDays(dayOffset));
+
+    private async Task Regenerate()
+    {
+        if (_week is null) return;
+        _list = await GroceryListSvc.GenerateAsync(_week.Id);
+        Snackbar.Add("Grocery list updated.", Severity.Success);
+    }
+
+    private async Task ToggleChecked(GroceryListItem item, bool isChecked)
+    {
+        item.IsChecked = isChecked;
+        await GroceryListSvc.SetCheckedAsync(item.Id, isChecked);
+    }
+
+    private async Task RemoveItem(GroceryListItem item)
+    {
+        await GroceryListSvc.RemoveItemAsync(item.Id);
+        _list?.Items.Remove(item);
+    }
+
+    private async Task AddManualItem()
+    {
+        if (_list is null || string.IsNullOrWhiteSpace(_newItemDescription)) return;
+
+        await GroceryListSvc.AddManualItemAsync(_list.Id, _newItemDescription, _newItemSectionId);
+        _newItemDescription = "";
+        _newItemSectionId = null;
+        _list = await GroceryListSvc.GetAsync(_list.MealPlanWeekId);
+    }
+
+    public void Dispose()
+    {
+        UserContext.OnGroupChanged -= OnGroupChanged;
+    }
+}

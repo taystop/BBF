@@ -1,0 +1,73 @@
+@using BBF.Data.Entities
+@using BBF.Services
+
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">@(Ingredient.Id == 0 ? "Add Ingredient" : "Edit Ingredient")</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudTextField @bind-Value="Ingredient.Name" Label="Name" Required
+                      Placeholder="e.g. All-Purpose Flour"
+                      Variant="Variant.Outlined" Class="mb-3" />
+
+        <MudSelect T="string" Label="Measurement Type"
+                   Variant="Variant.Outlined" Class="mb-3" AnchorOrigin="Origin.BottomCenter"
+                   ValueChanged="OnMeasurementTypeChanged" Value="Ingredient.MeasurementType">
+            <MudSelectItem T="string" Value="@("Volume")">Volume (cups, tbsp, tsp...)</MudSelectItem>
+            <MudSelectItem T="string" Value="@("Weight")">Weight (lb, oz, g...)</MudSelectItem>
+            <MudSelectItem T="string" Value="@("Count")">Count (each)</MudSelectItem>
+        </MudSelect>
+
+        <MudSelect T="int?" @bind-Value="Ingredient.SectionId" Label="Grocery Section" Clearable
+                   Variant="Variant.Outlined" Class="mb-3" AnchorOrigin="Origin.BottomCenter">
+            @foreach (var section in Sections)
+            {
+                <MudSelectItem T="int?" Value="@section.Id">@section.Name</MudSelectItem>
+            }
+        </MudSelect>
+
+        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-2">
+            Optional: purchasable package size, used to compute "buy N" on the grocery list.
+        </MudText>
+        <MudStack Row Style="flex-wrap: wrap; gap: 8px;">
+            <MudNumericField T="decimal?" @bind-Value="Ingredient.PackageQuantity" Label="Package Size"
+                              Variant="Variant.Outlined" Style="min-width: 140px; flex: 1;" Min="0" />
+            <MudSelect T="string?" @bind-Value="Ingredient.PackageUnit" Label="Package Unit" Clearable
+                       Variant="Variant.Outlined" Style="min-width: 140px; flex: 1;" AnchorOrigin="Origin.BottomCenter">
+                @foreach (var unit in UnitConversion.UnitsFor(Ingredient.MeasurementType))
+                {
+                    <MudSelectItem T="string?" Value="@unit">@unit</MudSelectItem>
+                }
+            </MudSelect>
+        </MudStack>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Submit"
+                   Disabled="@(string.IsNullOrWhiteSpace(Ingredient.Name))">
+            Save
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance MudDialog { get; set; } = null!;
+
+    [Parameter]
+    public Ingredient Ingredient { get; set; } = new();
+
+    [Parameter]
+    public List<GrocerySection> Sections { get; set; } = [];
+
+    private void OnMeasurementTypeChanged(string value)
+    {
+        Ingredient.MeasurementType = value;
+        // Package unit must stay compatible with the (possibly new) measurement type.
+        if (Ingredient.PackageUnit is not null && !UnitConversion.UnitsFor(value).Contains(Ingredient.PackageUnit))
+            Ingredient.PackageUnit = null;
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+    private void Submit() => MudDialog.Close(DialogResult.Ok(Ingredient));
+}

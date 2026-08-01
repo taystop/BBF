@@ -1,0 +1,102 @@
+@using BBF.Data.Entities
+
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">@MealSlot &middot; @Date.ToString("dddd, MMM d")</MudText>
+    </TitleContent>
+    <DialogContent>
+        @if (RecentRecipes.Count > 0)
+        {
+            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-1">Recently Used</MudText>
+            <MudStack Row Style="flex-wrap: wrap; gap: 4px;" Class="mb-3">
+                @foreach (var recipe in RecentRecipes)
+                {
+                    <MudChip T="string" Color="@(_selected?.Id == recipe.Id ? Color.Primary : Color.Default)"
+                             OnClick="@(() => Select(recipe))">
+                        @recipe.Name
+                    </MudChip>
+                }
+            </MudStack>
+        }
+
+        <MudAutocomplete T="Recipe" Label="Recipe" @bind-Value="_selected"
+                          SearchFunc="Search" ToStringFunc="@(r => r?.Name ?? "")"
+                          Variant="Variant.Outlined" Class="mb-3" ResetValueOnEmptyText Clearable />
+
+        @if (_selected is not null)
+        {
+            <MudNumericField @bind-Value="_servings" Label="Servings" Min="1"
+                              Variant="Variant.Outlined" Class="mb-3" />
+        }
+    </DialogContent>
+    <DialogActions>
+        @if (IsExisting)
+        {
+            <MudButton Color="Color.Error" OnClick="Remove" Class="mr-auto">Remove</MudButton>
+        }
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Submit" Disabled="@(_selected is null)">
+            Save
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance MudDialog { get; set; } = null!;
+
+    [Parameter]
+    public DateTime Date { get; set; }
+
+    [Parameter]
+    public string MealSlot { get; set; } = "";
+
+    [Parameter]
+    public List<Recipe> AllRecipes { get; set; } = [];
+
+    [Parameter]
+    public List<Recipe> RecentRecipes { get; set; } = [];
+
+    [Parameter]
+    public Recipe? ExistingRecipe { get; set; }
+
+    [Parameter]
+    public int ExistingServings { get; set; }
+
+    private bool IsExisting => ExistingRecipe is not null;
+
+    private Recipe? _selected;
+    private int _servings;
+
+    protected override void OnInitialized()
+    {
+        _selected = ExistingRecipe;
+        _servings = ExistingServings > 0 ? ExistingServings : (ExistingRecipe?.BaseServings ?? 1);
+    }
+
+    private void Select(Recipe recipe)
+    {
+        _selected = recipe;
+        _servings = recipe.BaseServings;
+    }
+
+    private Task<IEnumerable<Recipe>> Search(string value, CancellationToken token)
+    {
+        var results = string.IsNullOrWhiteSpace(value)
+            ? AllRecipes
+            : AllRecipes.Where(r => r.Name.Contains(value, StringComparison.OrdinalIgnoreCase));
+        return Task.FromResult(results);
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+
+    private void Remove() => MudDialog.Close(DialogResult.Ok(new EntryResult(null, 0, true)));
+
+    private void Submit()
+    {
+        if (_selected is null) return;
+        MudDialog.Close(DialogResult.Ok(new EntryResult(_selected.Id, _servings, false)));
+    }
+
+    public record EntryResult(int? RecipeId, int PlannedServings, bool Remove);
+}
