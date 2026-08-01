@@ -6,11 +6,10 @@
 @using BBF.Services
 @using Microsoft.EntityFrameworkCore
 @inject IDbContextFactory<ApplicationDbContext> DbFactory
-@inject PlaidService Plaid
+@inject BudgetPeriodService BudgetPeriodSvc
 @inject UserContextService UserContext
 @inject IDialogService DialogService
 @inject ISnackbar Snackbar
-@inject IJSRuntime JS
 @implements IDisposable
 
 <PageTitle>Budget - BBF</PageTitle>
@@ -40,302 +39,102 @@
             <MudText Typo="Typo.h6">@_selectedMonth.ToString("MMMM yyyy")</MudText>
             <MudIconButton Icon="@Icons.Material.Filled.ChevronRight" OnClick="NextMonth"
                            Disabled="@(_selectedMonth >= new DateTime(DateTime.Now.Year, DateTime.Now.Month, 1))" />
+            @if (_period is not null && _period.Status == "Open")
+            {
+                <MudButton Variant="Variant.Outlined" Color="Color.Secondary" Size="Size.Small"
+                           StartIcon="@Icons.Material.Filled.EventAvailable" OnClick="ClosePeriod">
+                    Close Period
+                </MudButton>
+            }
+            @if (_period is not null && _period.Status == "Closed")
+            {
+                <MudChip T="string" Size="Size.Small" Color="Color.Default">Closed</MudChip>
+            }
         </MudStack>
 
-        @* Summary cards *@
-        <MudGrid Class="mb-4">
-            <MudItem xs="12" sm="4">
-                <MudPaper Class="pa-4" Elevation="2">
-                    <MudText Typo="Typo.subtitle2" Color="Color.Secondary">Total Budget</MudText>
-                    <MudText Typo="Typo.h5">@_totalBudget.ToString("C")</MudText>
-                </MudPaper>
-            </MudItem>
-            <MudItem xs="12" sm="4">
-                <MudPaper Class="pa-4" Elevation="2">
-                    <MudText Typo="Typo.subtitle2" Color="Color.Secondary">Total Spent</MudText>
-                    <MudText Typo="Typo.h5" Color="@(_totalSpent > _totalBudget ? Color.Error : Color.Default)">
-                        @_totalSpent.ToString("C")
-                    </MudText>
-                </MudPaper>
-            </MudItem>
-            <MudItem xs="12" sm="4">
-                <MudPaper Class="pa-4" Elevation="2">
-                    <MudText Typo="Typo.subtitle2" Color="Color.Secondary">Remaining</MudText>
-                    <MudText Typo="Typo.h5" Color="@(_totalBudget - _totalSpent >= 0 ? Color.Success : Color.Error)">
-                        @((_totalBudget - _totalSpent).ToString("C"))
-                    </MudText>
-                </MudPaper>
-            </MudItem>
-        </MudGrid>
-
-        @* Tabs *@
-        <MudTabs Elevation="2" Rounded ApplyEffectsToContainer Class="mb-4">
-            <MudTabPanel Text="Categories" Icon="@Icons.Material.Filled.Category">
-                <MudPaper Class="pa-4" Elevation="0">
-                    <MudStack Row AlignItems="AlignItems.Center" Style="flex-wrap: wrap; gap: 8px;" Class="mb-3">
-                        <MudText Typo="Typo.h6">Budget Categories</MudText>
-                        <MudSpacer />
-                        <MudButton Variant="Variant.Filled" Color="Color.Primary"
-                                   StartIcon="@Icons.Material.Filled.Add" OnClick="AddCategory">
-                            Add Category
-                        </MudButton>
-                    </MudStack>
-
-                    @foreach (var item in _categorySpending)
-                    {
-                        var pct = item.Category.MonthlyLimit > 0
-                            ? (double)(item.Spent / item.Category.MonthlyLimit) * 100
-                            : 0;
-                        var remaining = item.Category.MonthlyLimit - item.Spent;
-                        var color = pct >= 100 ? Color.Error : pct >= 80 ? Color.Warning : Color.Success;
-
-                        <MudPaper Class="pa-3 mb-2" Elevation="1">
-                            @* Desktop layout: single row *@
-                            <div class="d-none d-sm-flex align-center" style="gap: 12px;">
-                                <div style="width: 8px; height: 40px; border-radius: 4px; background-color: @item.Category.Color;"></div>
-                                <MudStack Spacing="0" Style="min-width: 150px;">
-                                    <MudText Typo="Typo.subtitle2">@item.Category.Name</MudText>
-                                    <MudText Typo="Typo.caption" Color="Color.Secondary">
-                                        @item.Spent.ToString("C") / @item.Category.MonthlyLimit.ToString("C")
-                                    </MudText>
-                                </MudStack>
-                                <MudProgressLinear Value="@Math.Min(pct, 100)" Color="@color"
-                                                  Style="flex: 1;" Size="Size.Large" Rounded />
-                                <MudText Typo="Typo.body2" Color="@(remaining >= 0 ? Color.Success : Color.Error)"
-                                         Style="min-width: 80px; text-align: right;">
-                                    @remaining.ToString("C")
-                                </MudText>
-                                <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
-                                               OnClick="@(() => EditCategory(item.Category))" />
-                                <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small"
-                                               Color="Color.Error"
-                                               OnClick="@(() => DeleteCategory(item.Category))" />
-                            </div>
-
-                            @* Mobile layout: stacked *@
-                            <div class="d-flex d-sm-none flex-column" style="gap: 8px;">
-                                <div class="d-flex align-center" style="gap: 8px;">
-                                    <div style="width: 6px; height: 32px; border-radius: 3px; background-color: @item.Category.Color;"></div>
-                                    <MudStack Spacing="0" Style="flex: 1; min-width: 0;">
-                                        <MudText Typo="Typo.subtitle2">@item.Category.Name</MudText>
-                                        <MudText Typo="Typo.caption" Color="Color.Secondary">
-                                            @item.Spent.ToString("C") / @item.Category.MonthlyLimit.ToString("C")
-                                        </MudText>
-                                    </MudStack>
-                                    <MudText Typo="Typo.body2" Color="@(remaining >= 0 ? Color.Success : Color.Error)"
-                                             Style="white-space: nowrap;">
-                                        @remaining.ToString("C")
-                                    </MudText>
-                                    <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
-                                                   OnClick="@(() => EditCategory(item.Category))" />
-                                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small"
-                                                   Color="Color.Error"
-                                                   OnClick="@(() => DeleteCategory(item.Category))" />
-                                </div>
-                                <MudProgressLinear Value="@Math.Min(pct, 100)" Color="@color"
-                                                  Size="Size.Medium" Rounded />
-                            </div>
-                        </MudPaper>
-                    }
-
-                    @if (!_categorySpending.Any())
-                    {
-                        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="pa-4 text-center">
-                            No budget categories yet. Add one to start tracking spending.
+        @if (_period is null)
+        {
+            <MudPaper Class="pa-6 text-center" Elevation="2">
+                <MudIcon Icon="@Icons.Material.Filled.EventBusy" Size="Size.Large" Color="Color.Secondary" Class="mb-3" />
+                <MudText Typo="Typo.h6" Class="mb-2">No budget data for this period</MudText>
+                <MudText Typo="Typo.body2" Color="Color.Secondary">
+                    This month predates budget period tracking, so there's nothing recorded here.
+                </MudText>
+            </MudPaper>
+        }
+        else
+        {
+            @* Summary cards *@
+            <MudGrid Class="mb-4">
+                <MudItem xs="12" sm="4">
+                    <MudPaper Class="pa-4" Elevation="2">
+                        <MudText Typo="Typo.subtitle2" Color="Color.Secondary">Total Budget</MudText>
+                        <MudText Typo="Typo.h5">@_totalBudget.ToString("C")</MudText>
+                    </MudPaper>
+                </MudItem>
+                <MudItem xs="12" sm="4">
+                    <MudPaper Class="pa-4" Elevation="2">
+                        <MudText Typo="Typo.subtitle2" Color="Color.Secondary">Total Spent</MudText>
+                        <MudText Typo="Typo.h5" Color="@(_totalSpent > _totalBudget ? Color.Error : Color.Default)">
+                            @_totalSpent.ToString("C")
                         </MudText>
-                    }
-                </MudPaper>
-            </MudTabPanel>
+                    </MudPaper>
+                </MudItem>
+                <MudItem xs="12" sm="4">
+                    <MudPaper Class="pa-4" Elevation="2">
+                        <MudText Typo="Typo.subtitle2" Color="Color.Secondary">Remaining</MudText>
+                        <MudText Typo="Typo.h5" Color="@(_totalBudget - _totalSpent >= 0 ? Color.Success : Color.Error)">
+                            @((_totalBudget - _totalSpent).ToString("C"))
+                        </MudText>
+                    </MudPaper>
+                </MudItem>
+            </MudGrid>
 
-            <MudTabPanel Text="Transactions" Icon="@Icons.Material.Filled.Receipt">
-                <MudPaper Class="pa-4" Elevation="0">
-                    <MudStack Row AlignItems="AlignItems.Center" Style="flex-wrap: wrap; gap: 8px;" Class="mb-3">
-                        <MudText Typo="Typo.h6">Transactions</MudText>
-                        <MudSpacer />
-                        <MudButton Variant="Variant.Outlined" Color="Color.Primary"
-                                   StartIcon="@Icons.Material.Filled.Sync" OnClick="SyncTransactions"
-                                   Disabled="_syncing">
-                            @(_syncing ? "Syncing..." : "Sync from Bank")
-                        </MudButton>
-                        <MudButton Variant="Variant.Filled" Color="Color.Primary"
-                                   StartIcon="@Icons.Material.Filled.Add" OnClick="AddTransaction">
-                            Add Manual
-                        </MudButton>
-                        <MudFileUpload T="IBrowserFile" FilesChanged="OnCsvSelected" Accept=".csv">
-                            <CustomContent>
-                                <MudButton Variant="Variant.Outlined" Color="Color.Secondary"
-                                           StartIcon="@Icons.Material.Filled.UploadFile"
-                                           OnClick="@context.OpenFilePickerAsync"
-                                           Disabled="_importing">
-                                    @(_importing ? "Importing..." : "Import CSV")
-                                </MudButton>
-                            </CustomContent>
-                        </MudFileUpload>
-                    </MudStack>
+            <MudPaper Class="pa-4" Elevation="2">
+                <MudStack Row AlignItems="AlignItems.Center" Style="flex-wrap: wrap; gap: 8px;" Class="mb-3">
+                    <MudText Typo="Typo.h6">Budget Categories</MudText>
+                    <MudSpacer />
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                               StartIcon="@Icons.Material.Filled.Add" OnClick="AddCategory">
+                        Add Category
+                    </MudButton>
+                </MudStack>
 
-                    <div class="budget-table-container">
-                        <MudTable Items="_transactions" Hover Dense Breakpoint="Breakpoint.Sm">
-                            <HeaderContent>
-                                <MudTh>Date</MudTh>
-                                <MudTh>Description</MudTh>
-                                <MudTh>Category</MudTh>
-                                <MudTh Style="text-align: right;">Amount</MudTh>
-                                <MudTh>Source</MudTh>
-                                <MudTh Style="width: 100px;">Actions</MudTh>
-                            </HeaderContent>
-                            <RowTemplate>
-                                <MudTd DataLabel="Date">
-                                    <MudText Typo="Typo.body2">@context.Date.ToString("MMM d")</MudText>
-                                </MudTd>
-                                <MudTd DataLabel="Description">
-                                    <MudText Typo="Typo.body2">@context.Description</MudText>
-                                    @if (!string.IsNullOrEmpty(context.MerchantName) && context.MerchantName != context.Description)
-                                    {
-                                        <MudText Typo="Typo.caption" Color="Color.Secondary">@context.MerchantName</MudText>
-                                    }
-                                </MudTd>
-                                <MudTd DataLabel="Category">
-                                    @if (context.Category is not null)
-                                    {
-                                        <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined"
-                                                 Style="@($"border-color: {context.Category.Color}; color: {context.Category.Color};")">
-                                            @context.Category.Name
-                                        </MudChip>
-                                    }
-                                    else
-                                    {
-                                        <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Secondary"
-                                                   OnClick="@(() => CategorizeTransaction(context))">
-                                            Categorize
-                                        </MudButton>
-                                    }
-                                </MudTd>
-                                <MudTd DataLabel="Amount" Style="text-align: right;">
-                                    <MudText Typo="Typo.body2"
-                                             Color="@(context.Amount >= 0 ? Color.Error : Color.Success)">
-                                        @context.Amount.ToString("C")
-                                    </MudText>
-                                </MudTd>
-                                <MudTd DataLabel="Source">
-                                    <MudChip T="string" Size="Size.Small" Variant="Variant.Filled"
-                                             Color="@(context.Source == "Plaid" ? Color.Info : Color.Default)">
-                                        @context.Source
-                                    </MudChip>
-                                </MudTd>
-                                <MudTd DataLabel="Actions">
-                                    <MudStack Row Spacing="0">
-                                        <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
-                                                       OnClick="@(() => EditTransaction(context))" />
-                                        <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small"
-                                                       Color="Color.Error"
-                                                       OnClick="@(() => DeleteTransaction(context))" />
-                                    </MudStack>
-                                </MudTd>
-                            </RowTemplate>
-                            <NoRecordsContent>
-                                <MudText Typo="Typo.body2" Color="Color.Secondary" Class="pa-4">
-                                    No transactions for @_selectedMonth.ToString("MMMM yyyy").
-                                </MudText>
-                            </NoRecordsContent>
-                        </MudTable>
-                    </div>
-                </MudPaper>
-            </MudTabPanel>
-
-            <MudTabPanel Text="Linked Accounts" Icon="@Icons.Material.Filled.AccountBalance">
-                <MudPaper Class="pa-4" Elevation="0">
-                    <MudStack Row AlignItems="AlignItems.Center" Style="flex-wrap: wrap; gap: 8px;" Class="mb-3">
-                        <MudText Typo="Typo.h6">Linked Accounts</MudText>
-                        <MudSpacer />
-                        <MudButton Variant="Variant.Filled" Color="Color.Primary"
-                                   StartIcon="@Icons.Material.Filled.AddLink" OnClick="ConnectBank">
-                            Connect Bank
-                        </MudButton>
-                    </MudStack>
-
-                    @if (_connections.Any())
+                @foreach (var topCategory in _categories.Where(c => c.ParentCategoryId is null).OrderBy(c => c.SortOrder))
+                {
+                    var topItem = _lineItems.FirstOrDefault(li => li.Category.Id == topCategory.Id);
+                    if (topItem is not null)
                     {
-                        @foreach (var conn in _connections)
+                        @RenderCategoryRow(topItem, false)
+                    }
+                    @foreach (var child in _categories.Where(c => c.ParentCategoryId == topCategory.Id).OrderBy(c => c.SortOrder))
+                    {
+                        var childItem = _lineItems.FirstOrDefault(li => li.Category.Id == child.Id);
+                        if (childItem is not null)
                         {
-                            <MudPaper Class="pa-4 mb-3" Elevation="1">
-                                <MudStack Row AlignItems="AlignItems.Center" Style="flex-wrap: wrap; gap: 8px;" Class="mb-2">
-                                    <MudIcon Icon="@Icons.Material.Filled.AccountBalance" Color="Color.Primary" />
-                                    <MudStack Spacing="0" Style="min-width: 0; flex: 1;">
-                                        <MudText Typo="Typo.subtitle1" Style="font-weight: 600;">@conn.InstitutionName</MudText>
-                                        <MudText Typo="Typo.caption" Color="Color.Secondary">
-                                            Last synced: @(conn.LastSynced?.ToLocalTime().ToString("g") ?? "Never")
-                                            &middot; @conn.Accounts.Count(a => a.IsActive) account@(conn.Accounts.Count(a => a.IsActive) != 1 ? "s" : "")
-                                        </MudText>
-                                    </MudStack>
-                                    <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Error"
-                                               OnClick="@(() => DisconnectBank(conn))">
-                                        Disconnect
-                                    </MudButton>
-                                </MudStack>
-
-                                @foreach (var acct in conn.Accounts.Where(a => a.IsActive).OrderBy(a => a.Type))
-                                {
-                                    <MudPaper Class="pa-3 mb-1 ml-3 ml-sm-6" Elevation="0" Style="border: 1px solid var(--mud-palette-lines-default); border-radius: 4px;">
-                                        <MudStack Row AlignItems="AlignItems.Center" Spacing="3" Class="flex-wrap" Style="gap: 8px;">
-                                            <MudIcon Icon="@GetAccountIcon(acct.Type)" Size="Size.Small" Color="Color.Secondary" />
-                                            <MudStack Spacing="0" Style="min-width: 120px; flex: 1;">
-                                                <MudText Typo="Typo.body2" Style="font-weight: 600;">
-                                                    @acct.DisplayName
-                                                </MudText>
-                                                <MudText Typo="Typo.caption" Color="Color.Secondary">
-                                                    @(acct.Subtype ?? acct.Type)@(acct.Mask is not null ? $" ····{acct.Mask}" : "")
-                                                </MudText>
-                                            </MudStack>
-                                            <MudTextField @bind-Value="acct.CustomName"
-                                                          Placeholder="@(acct.OfficialName ?? acct.Name)"
-                                                          Variant="Variant.Outlined" Dense Margin="Margin.Dense"
-                                                          Label="Custom Name"
-                                                          Style="max-width: 220px; min-width: 140px; flex: 1;"
-                                                          Adornment="Adornment.End"
-                                                          AdornmentIcon="@Icons.Material.Filled.Save"
-                                                          OnAdornmentClick="@(() => SaveAccountName(acct))" />
-                                        </MudStack>
-                                    </MudPaper>
-                                }
-
-                                @if (!conn.Accounts.Any(a => a.IsActive))
-                                {
-                                    <MudText Typo="Typo.caption" Color="Color.Secondary" Class="ml-3 ml-sm-6 mt-1">
-                                        No accounts found. Sync to fetch account details.
-                                    </MudText>
-                                }
-                            </MudPaper>
+                            @RenderCategoryRow(childItem, true)
                         }
                     }
-                    else
-                    {
-                        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="pa-4 text-center">
-                            No bank accounts connected. Click "Connect Bank" to link your account via Plaid.
-                        </MudText>
-                    }
-                </MudPaper>
-            </MudTabPanel>
-        </MudTabs>
+                }
+
+                @if (!_lineItems.Any())
+                {
+                    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="pa-4 text-center">
+                        No budget categories yet. Add one to start tracking spending.
+                    </MudText>
+                }
+            </MudPaper>
+        }
     }
 </MudContainer>
 
-<style>
-    .budget-table-container {
-        overflow-x: auto;
-        -webkit-overflow-scrolling: touch;
-    }
-</style>
-
 @code {
     private DateTime _selectedMonth = new(DateTime.Now.Year, DateTime.Now.Month, 1);
-    private List<CategorySpending> _categorySpending = [];
-    private List<Transaction> _transactions = [];
+    private BudgetPeriod? _period;
     private List<BudgetCategory> _categories = [];
-    private List<PlaidConnection> _connections = [];
+    private List<LineItemSpending> _lineItems = [];
     private decimal _totalBudget;
     private decimal _totalSpent;
-    private bool _syncing;
-    private bool _importing;
 
     protected override async Task OnInitializedAsync()
     {
@@ -360,32 +159,40 @@
 
         await using var db = await DbFactory.CreateDbContextAsync();
 
-        var monthEnd = _selectedMonth.AddMonths(1);
-
         _categories = await db.BudgetCategories
             .Where(c => c.IsActive && c.GroupId == groupId)
             .OrderBy(c => c.SortOrder)
             .ToListAsync();
 
-        _transactions = await db.Transactions
-            .Include(t => t.Category)
-            .Where(t => t.GroupId == groupId && t.Date >= _selectedMonth && t.Date < monthEnd)
-            .OrderByDescending(t => t.Date)
+        var isCurrentMonth = _selectedMonth == new DateTime(DateTime.Now.Year, DateTime.Now.Month, 1);
+        _period = isCurrentMonth
+            ? await BudgetPeriodSvc.GetOrCreateCurrentPeriodAsync(groupId.Value)
+            : await BudgetPeriodSvc.GetPeriodAsync(groupId.Value, _selectedMonth);
+
+        if (_period is null)
+        {
+            _lineItems = [];
+            _totalBudget = 0;
+            _totalSpent = 0;
+            StateHasChanged();
+            return;
+        }
+
+        var spentByCategory = await db.Transactions
+            .Where(t => t.GroupId == groupId && t.Date >= _period.StartDate && t.Date < _period.EndDate && t.Amount > 0)
+            .GroupBy(t => t.CategoryId)
+            .Select(g => new { CategoryId = g.Key, Spent = g.Sum(t => t.Amount) })
             .ToListAsync();
 
-        _connections = await Plaid.GetConnectionsAsync(groupId.Value);
-
-        // Calculate spending per category
-        _categorySpending = _categories.Select(c => new CategorySpending
+        _lineItems = _period.LineItems.Select(li => new LineItemSpending
         {
-            Category = c,
-            Spent = _transactions
-                .Where(t => t.CategoryId == c.Id && t.Amount > 0)
-                .Sum(t => t.Amount)
+            LineItem = li,
+            EditAmount = li.BudgetedAmount,
+            Spent = spentByCategory.FirstOrDefault(s => s.CategoryId == li.CategoryId)?.Spent ?? 0
         }).ToList();
 
-        _totalBudget = _categories.Sum(c => c.MonthlyLimit);
-        _totalSpent = _transactions.Where(t => t.Amount > 0).Sum(t => t.Amount);
+        _totalBudget = _lineItems.Sum(li => li.EffectiveBudget);
+        _totalSpent = _lineItems.Sum(li => li.Spent);
 
         StateHasChanged();
     }
@@ -393,13 +200,43 @@
     private void PreviousMonth() { _selectedMonth = _selectedMonth.AddMonths(-1); _ = LoadData(); }
     private void NextMonth() { _selectedMonth = _selectedMonth.AddMonths(1); _ = LoadData(); }
 
+    private async Task ClosePeriod()
+    {
+        if (_period is null) return;
+
+        var parameters = new DialogParameters<MessageBoxDialog>
+        {
+            { x => x.ContentText, $"Close the budget period for {_selectedMonth:MMMM yyyy}? This locks it and opens next month, applying rollover for any category flagged to roll over." },
+            { x => x.ButtonText, "Close Period" },
+            { x => x.Color, Color.Warning }
+        };
+        var dialog = await DialogService.ShowAsync<MessageBoxDialog>("Close Period", parameters);
+        var result = await dialog.Result;
+
+        if (result is not null && !result.Canceled)
+        {
+            await BudgetPeriodSvc.ClosePeriodAsync(_period.Id);
+            Snackbar.Add("Period closed.", Severity.Success);
+            await LoadData();
+        }
+    }
+
+    private async Task SaveLineItemAmount(LineItemSpending item)
+    {
+        if (_period is null) return;
+        await BudgetPeriodSvc.UpsertLineItemAsync(_period.Id, item.Category.Id, item.EditAmount);
+        Snackbar.Add($"Updated budget for '{item.Category.Name}'.", Severity.Success);
+        await LoadData();
+    }
+
     // --- Category CRUD ---
 
     private async Task AddCategory()
     {
         var parameters = new DialogParameters<BudgetCategoryDialog>
         {
-            { x => x.Category, new BudgetCategory() }
+            { x => x.Category, new BudgetCategory() },
+            { x => x.AvailableParents, _categories.Where(c => c.ParentCategoryId is null).ToList() }
         };
         var dialog = await DialogService.ShowAsync<BudgetCategoryDialog>("Add Category", parameters);
         var result = await dialog.Result;
@@ -422,9 +259,11 @@
                 {
                     Id = category.Id, Name = category.Name, MonthlyLimit = category.MonthlyLimit,
                     Color = category.Color, Icon = category.Icon, SortOrder = category.SortOrder,
-                    IsActive = category.IsActive
+                    IsActive = category.IsActive, ParentCategoryId = category.ParentCategoryId,
+                    RolloverBehavior = category.RolloverBehavior
                 }
-            }
+            },
+            { x => x.AvailableParents, _categories.Where(c => c.ParentCategoryId is null && c.Id != category.Id).ToList() }
         };
         var dialog = await DialogService.ShowAsync<BudgetCategoryDialog>("Edit Category", parameters);
         var result = await dialog.Result;
@@ -441,6 +280,8 @@
                 entity.Icon = updated.Icon;
                 entity.SortOrder = updated.SortOrder;
                 entity.IsActive = updated.IsActive;
+                entity.ParentCategoryId = updated.ParentCategoryId;
+                entity.RolloverBehavior = updated.RolloverBehavior;
                 await db.SaveChangesAsync();
             }
             await LoadData();
@@ -449,6 +290,21 @@
 
     private async Task DeleteCategory(BudgetCategory category)
     {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var hasHistory = await db.BudgetLineItems.AnyAsync(li => li.CategoryId == category.Id);
+        if (hasHistory)
+        {
+            Snackbar.Add($"'{category.Name}' has budget history and can't be deleted. Toggle it inactive instead.", Severity.Warning);
+            return;
+        }
+
+        var hasSubcategories = await db.BudgetCategories.AnyAsync(c => c.ParentCategoryId == category.Id);
+        if (hasSubcategories)
+        {
+            Snackbar.Add($"'{category.Name}' has subcategories. Reassign or delete them first.", Severity.Warning);
+            return;
+        }
+
         var parameters = new DialogParameters<MessageBoxDialog>
         {
             { x => x.ContentText, $"Delete category '{category.Name}'? Transactions will become uncategorized." },
@@ -460,7 +316,6 @@
 
         if (result is not null && !result.Canceled)
         {
-            await using var db = await DbFactory.CreateDbContextAsync();
             var entity = await db.BudgetCategories.FindAsync(category.Id);
             if (entity is not null)
             {
@@ -471,361 +326,84 @@
         }
     }
 
-    // --- Transaction CRUD ---
-
-    private async Task AddTransaction()
-    {
-        var parameters = new DialogParameters<TransactionDialog>
-        {
-            { x => x.IsNew, true },
-            { x => x.Categories, _categories }
-        };
-        var dialog = await DialogService.ShowAsync<TransactionDialog>("Add Transaction", parameters);
-        var result = await dialog.Result;
-
-        if (result is not null && !result.Canceled && result.Data is TransactionDialog.TransactionResult data)
-        {
-            await using var db = await DbFactory.CreateDbContextAsync();
-            db.Transactions.Add(new Transaction
-            {
-                Amount = data.Amount,
-                Date = data.Date,
-                Description = data.Description,
-                MerchantName = data.MerchantName,
-                CategoryId = data.CategoryId,
-                GroupId = UserContext.ActiveGroupId,
-                Source = "Manual"
-            });
-            await db.SaveChangesAsync();
-            await LoadData();
-        }
-    }
-
-    private async Task EditTransaction(Transaction txn)
-    {
-        var parameters = new DialogParameters<TransactionDialog>
-        {
-            { x => x.IsNew, false },
-            { x => x.Amount, txn.Amount },
-            { x => x.SelectedDate, txn.Date },
-            { x => x.Description, txn.Description },
-            { x => x.MerchantName, txn.MerchantName },
-            { x => x.CategoryId, txn.CategoryId },
-            { x => x.Categories, _categories }
-        };
-        var dialog = await DialogService.ShowAsync<TransactionDialog>("Edit Transaction", parameters);
-        var result = await dialog.Result;
-
-        if (result is not null && !result.Canceled && result.Data is TransactionDialog.TransactionResult data)
-        {
-            await using var db = await DbFactory.CreateDbContextAsync();
-            var entity = await db.Transactions.FindAsync(txn.Id);
-            if (entity is not null)
-            {
-                entity.Amount = data.Amount;
-                entity.Date = data.Date;
-                entity.Description = data.Description;
-                entity.MerchantName = data.MerchantName;
-                entity.CategoryId = data.CategoryId;
-                await db.SaveChangesAsync();
+    private RenderFragment RenderCategoryRow(LineItemSpending item, bool indented) => @<text>
+        <MudPaper Class="@($"pa-3 mb-2{(indented ? " ml-4 ml-sm-8" : "")}")" Elevation="1">
+            @{
+                var pct = item.EffectiveBudget > 0 ? (double)(item.Spent / item.EffectiveBudget) * 100 : 0;
+                var color = pct >= 100 ? Color.Error : pct >= 80 ? Color.Warning : Color.Success;
             }
-            await LoadData();
-        }
-    }
+            @* Desktop layout: single row *@
+            <div class="d-none d-sm-flex align-center" style="gap: 12px;">
+                <div style="width: 8px; height: 40px; border-radius: 4px; background-color: @item.Category.Color;"></div>
+                <MudStack Spacing="0" Style="min-width: 150px;">
+                    <MudText Typo="Typo.subtitle2">
+                        @item.Category.Name
+                        @if (item.Category.RolloverBehavior == "RollOver")
+                        {
+                            <MudTooltip Text="Rolls over unspent balance">
+                                <MudIcon Icon="@Icons.Material.Filled.Autorenew" Size="Size.Small" Class="ml-1" />
+                            </MudTooltip>
+                        }
+                    </MudText>
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">
+                        @item.Spent.ToString("C") spent
+                    </MudText>
+                </MudStack>
+                <MudNumericField T="decimal" @bind-Value="item.EditAmount" Format="N2" Dense
+                                 Variant="Variant.Outlined" Style="max-width: 140px;"
+                                 Adornment="Adornment.End" AdornmentIcon="@Icons.Material.Filled.Save"
+                                 OnAdornmentClick="@(() => SaveLineItemAmount(item))" />
+                <MudProgressLinear Value="@Math.Min(pct, 100)" Color="@color"
+                                  Style="flex: 1;" Size="Size.Large" Rounded />
+                <MudText Typo="Typo.body2" Color="@(item.Remaining >= 0 ? Color.Success : Color.Error)"
+                         Style="min-width: 80px; text-align: right;">
+                    @item.Remaining.ToString("C")
+                </MudText>
+                <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                               OnClick="@(() => EditCategory(item.Category))" />
+                <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small"
+                               Color="Color.Error"
+                               OnClick="@(() => DeleteCategory(item.Category))" />
+            </div>
 
-    private async Task CategorizeTransaction(Transaction txn)
-    {
-        var parameters = new DialogParameters<TransactionDialog>
-        {
-            { x => x.IsNew, false },
-            { x => x.Amount, txn.Amount },
-            { x => x.SelectedDate, txn.Date },
-            { x => x.Description, txn.Description },
-            { x => x.MerchantName, txn.MerchantName },
-            { x => x.CategoryId, txn.CategoryId },
-            { x => x.Categories, _categories }
-        };
-        var dialog = await DialogService.ShowAsync<TransactionDialog>("Categorize Transaction", parameters);
-        var result = await dialog.Result;
-
-        if (result is not null && !result.Canceled && result.Data is TransactionDialog.TransactionResult data)
-        {
-            await using var db = await DbFactory.CreateDbContextAsync();
-            var entity = await db.Transactions.FindAsync(txn.Id);
-            if (entity is not null)
-            {
-                entity.CategoryId = data.CategoryId;
-                await db.SaveChangesAsync();
-            }
-            await LoadData();
-        }
-    }
-
-    private async Task DeleteTransaction(Transaction txn)
-    {
-        var parameters = new DialogParameters<MessageBoxDialog>
-        {
-            { x => x.ContentText, $"Delete transaction '{txn.Description}' for {txn.Amount:C}?" },
-            { x => x.ButtonText, "Delete" },
-            { x => x.Color, Color.Error }
-        };
-        var dialog = await DialogService.ShowAsync<MessageBoxDialog>("Delete Transaction", parameters);
-        var result = await dialog.Result;
-
-        if (result is not null && !result.Canceled)
-        {
-            await using var db = await DbFactory.CreateDbContextAsync();
-            var entity = await db.Transactions.FindAsync(txn.Id);
-            if (entity is not null)
-            {
-                db.Transactions.Remove(entity);
-                await db.SaveChangesAsync();
-            }
-            await LoadData();
-        }
-    }
-
-    // --- Plaid ---
-
-    private DotNetObjectReference<Budget>? _dotNetRef;
-
-    private async Task ConnectBank()
-    {
-        try
-        {
-            _dotNetRef ??= DotNetObjectReference.Create(this);
-            await JS.InvokeVoidAsync("plaidLink.open", _dotNetRef, UserContext.ActiveGroupId);
-        }
-        catch (Exception ex)
-        {
-            Snackbar.Add($"Error: {ex.Message}", Severity.Error);
-        }
-    }
-
-    [JSInvokable]
-    public async Task OnPlaidSuccess()
-    {
-        Snackbar.Add("Bank account connected! Syncing transactions...", Severity.Success);
-        await LoadData();
-        await SyncTransactions();
-        StateHasChanged();
-    }
-
-    [JSInvokable]
-    public void OnPlaidError(string message)
-    {
-        Snackbar.Add($"Plaid: {message}", Severity.Warning);
-    }
-
-    private async Task SyncTransactions()
-    {
-        if (!_connections.Any())
-        {
-            Snackbar.Add("No bank accounts connected.", Severity.Warning);
-            return;
-        }
-
-        _syncing = true;
-        StateHasChanged();
-
-        var totalAdded = 0;
-        foreach (var conn in _connections)
-        {
-            try
-            {
-                totalAdded += await Plaid.SyncTransactionsAsync(conn);
-            }
-            catch (Exception ex)
-            {
-                Snackbar.Add($"Error syncing {conn.InstitutionName}: {ex.Message}", Severity.Error);
-            }
-        }
-
-        _syncing = false;
-        Snackbar.Add($"Synced {totalAdded} new transactions.", Severity.Success);
-        await LoadData();
-    }
-
-    private async Task SaveAccountName(PlaidAccount acct)
-    {
-        await Plaid.UpdateAccountNameAsync(acct.Id, acct.CustomName ?? "");
-        Snackbar.Add($"Account name updated to '{acct.DisplayName}'.", Severity.Success);
-    }
-
-    private static string GetAccountIcon(string? type) => type?.ToLowerInvariant() switch
-    {
-        "depository" => Icons.Material.Filled.Savings,
-        "credit" => Icons.Material.Filled.CreditCard,
-        "loan" => Icons.Material.Filled.RequestPage,
-        "investment" => Icons.Material.Filled.TrendingUp,
-        _ => Icons.Material.Filled.AccountBalance,
-    };
-
-    private async Task DisconnectBank(PlaidConnection conn)
-    {
-        var parameters = new DialogParameters<MessageBoxDialog>
-        {
-            { x => x.ContentText, $"Disconnect '{conn.InstitutionName}'? Existing transactions will remain." },
-            { x => x.ButtonText, "Disconnect" },
-            { x => x.Color, Color.Error }
-        };
-        var dialog = await DialogService.ShowAsync<MessageBoxDialog>("Disconnect Bank", parameters);
-        var result = await dialog.Result;
-
-        if (result is not null && !result.Canceled)
-        {
-            await Plaid.RemoveConnectionAsync(conn.Id);
-            await LoadData();
-        }
-    }
-
-    // --- CSV Import ---
-
-    private async Task OnCsvSelected(IBrowserFile file)
-    {
-        if (file is null) return;
-
-        _importing = true;
-        StateHasChanged();
-
-        try
-        {
-            await using var db = await DbFactory.CreateDbContextAsync();
-            using var reader = new System.IO.StreamReader(file.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024));
-            var headerLine = await reader.ReadLineAsync();
-            if (headerLine is null)
-            {
-                Snackbar.Add("CSV file is empty.", Severity.Warning);
-                return;
-            }
-
-            // Detect column layout from header
-            var headers = headerLine.Split(',')
-                .Select(h => h.Trim().Trim('"').ToLowerInvariant())
-                .ToList();
-
-            var dateIdx = headers.FindIndex(h => h.Contains("date") || h.Contains("posted"));
-            var descIdx = headers.FindIndex(h => h.Contains("description") || h.Contains("memo") || h.Contains("payee"));
-            var amountIdx = headers.FindIndex(h => h.Contains("amount"));
-            var debitIdx = headers.FindIndex(h => h.Contains("debit"));
-            var creditIdx = headers.FindIndex(h => h.Contains("credit"));
-
-            if (dateIdx < 0 || (amountIdx < 0 && debitIdx < 0))
-            {
-                Snackbar.Add("Could not detect Date and Amount columns in CSV. Expected headers like 'Date', 'Description', 'Amount' or 'Debit'/'Credit'.", Severity.Error);
-                return;
-            }
-
-            if (descIdx < 0) descIdx = dateIdx + 1; // fallback: assume description is next column
-
-            var imported = 0;
-            var skipped = 0;
-            string? line;
-
-            while ((line = await reader.ReadLineAsync()) is not null)
-            {
-                if (string.IsNullOrWhiteSpace(line)) continue;
-
-                var cols = ParseCsvLine(line);
-                if (cols.Count <= Math.Max(dateIdx, Math.Max(descIdx, amountIdx >= 0 ? amountIdx : debitIdx)))
-                {
-                    skipped++;
-                    continue;
-                }
-
-                if (!DateTime.TryParse(cols[dateIdx], out var date))
-                {
-                    skipped++;
-                    continue;
-                }
-
-                decimal amount;
-                if (amountIdx >= 0)
-                {
-                    if (!decimal.TryParse(cols[amountIdx], System.Globalization.NumberStyles.Any,
-                        System.Globalization.CultureInfo.InvariantCulture, out amount))
-                    {
-                        skipped++;
-                        continue;
-                    }
-                }
-                else
-                {
-                    // Debit/Credit columns
-                    decimal.TryParse(debitIdx >= 0 && debitIdx < cols.Count ? cols[debitIdx] : "",
-                        System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var debit);
-                    decimal.TryParse(creditIdx >= 0 && creditIdx < cols.Count ? cols[creditIdx] : "",
-                        System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var credit);
-                    amount = debit > 0 ? debit : -credit;
-                }
-
-                var desc = descIdx < cols.Count ? cols[descIdx] : "Unknown";
-
-                db.Transactions.Add(new Transaction
-                {
-                    Amount = amount,
-                    Date = date,
-                    Description = desc,
-                    GroupId = UserContext.ActiveGroupId,
-                    Source = "CSV",
-                    CreatedAt = DateTime.UtcNow
-                });
-                imported++;
-            }
-
-            if (imported > 0)
-                await db.SaveChangesAsync();
-
-            Snackbar.Add($"Imported {imported} transactions" + (skipped > 0 ? $", skipped {skipped} rows" : ""), Severity.Success);
-            await LoadData();
-        }
-        catch (Exception ex)
-        {
-            Snackbar.Add($"Import failed: {ex.Message}", Severity.Error);
-        }
-        finally
-        {
-            _importing = false;
-            StateHasChanged();
-        }
-    }
-
-    private static List<string> ParseCsvLine(string line)
-    {
-        var result = new List<string>();
-        var inQuotes = false;
-        var field = new System.Text.StringBuilder();
-
-        for (var i = 0; i < line.Length; i++)
-        {
-            var c = line[i];
-            if (c == '"')
-            {
-                inQuotes = !inQuotes;
-            }
-            else if (c == ',' && !inQuotes)
-            {
-                result.Add(field.ToString().Trim().Trim('"'));
-                field.Clear();
-            }
-            else
-            {
-                field.Append(c);
-            }
-        }
-        result.Add(field.ToString().Trim().Trim('"'));
-        return result;
-    }
+            @* Mobile layout: stacked *@
+            <div class="d-flex d-sm-none flex-column" style="gap: 8px;">
+                <div class="d-flex align-center" style="gap: 8px;">
+                    <div style="width: 6px; height: 32px; border-radius: 3px; background-color: @item.Category.Color;"></div>
+                    <MudStack Spacing="0" Style="flex: 1; min-width: 0;">
+                        <MudText Typo="Typo.subtitle2">@item.Category.Name</MudText>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">
+                            @item.Spent.ToString("C") / @item.EffectiveBudget.ToString("C")
+                        </MudText>
+                    </MudStack>
+                    <MudText Typo="Typo.body2" Color="@(item.Remaining >= 0 ? Color.Success : Color.Error)"
+                             Style="white-space: nowrap;">
+                        @item.Remaining.ToString("C")
+                    </MudText>
+                    <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                                   OnClick="@(() => EditCategory(item.Category))" />
+                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small"
+                                   Color="Color.Error"
+                                   OnClick="@(() => DeleteCategory(item.Category))" />
+                </div>
+                <MudProgressLinear Value="@Math.Min(pct, 100)" Color="@color"
+                                  Size="Size.Medium" Rounded />
+            </div>
+        </MudPaper>
+    </text>;
 
     public void Dispose()
     {
         UserContext.OnGroupChanged -= OnGroupChanged;
-        _dotNetRef?.Dispose();
     }
 
-    private record CategorySpending
+    private class LineItemSpending
     {
-        public BudgetCategory Category { get; init; } = null!;
+        public BudgetLineItem LineItem { get; init; } = null!;
+        public BudgetCategory Category => LineItem.Category;
         public decimal Spent { get; init; }
+        public decimal EditAmount { get; set; }
+        public decimal EffectiveBudget => LineItem.BudgetedAmount + LineItem.RolledOverAmount;
+        public decimal Remaining => EffectiveBudget - Spent;
     }
 }

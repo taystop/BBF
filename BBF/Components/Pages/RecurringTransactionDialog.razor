@@ -1,0 +1,88 @@
+@using BBF.Data.Entities
+
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">@(IsNew ? "Add Recurring Transaction" : "Edit Recurring Transaction")</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudTextField @bind-Value="Payee" Label="Payee" Required
+                      Variant="Variant.Outlined" Class="mb-3" />
+        <MudNumericField @bind-Value="Amount" Label="Amount ($)" Required
+                         Variant="Variant.Outlined" Class="mb-3" Format="N2" />
+        <MudSelect T="int?" @bind-Value="CategoryId" Label="Category"
+                   Variant="Variant.Outlined" Class="mb-3" Clearable>
+            @foreach (var cat in Categories)
+            {
+                <MudSelectItem T="int?" Value="@cat.Id">@cat.Name</MudSelectItem>
+            }
+        </MudSelect>
+        <MudSelect T="int" @bind-Value="AccountId" Label="Account" Required
+                   Variant="Variant.Outlined" Class="mb-3">
+            @foreach (var acct in Accounts)
+            {
+                <MudSelectItem T="int" Value="@acct.Id">@acct.Name</MudSelectItem>
+            }
+        </MudSelect>
+        <MudSelect @bind-Value="Frequency" Label="Frequency"
+                   Variant="Variant.Outlined" Class="mb-3">
+            <MudSelectItem Value="@("Weekly")">Weekly</MudSelectItem>
+            <MudSelectItem Value="@("BiWeekly")">Bi-Weekly</MudSelectItem>
+            <MudSelectItem Value="@("Monthly")">Monthly</MudSelectItem>
+            <MudSelectItem Value="@("Yearly")">Yearly</MudSelectItem>
+        </MudSelect>
+        <MudDatePicker @bind-Date="NextOccurrence" Label="Next Occurrence" Required
+                       Variant="Variant.Outlined" Class="mb-3" />
+        <MudDatePicker @bind-Date="EndDate" Label="End Date (optional)"
+                       Variant="Variant.Outlined" Class="mb-3" Clearable />
+        <MudSwitch @bind-Value="IsActive" Label="Active" Color="Color.Primary" />
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Submit"
+                   Disabled="@(Amount == 0 || NextOccurrence is null || string.IsNullOrWhiteSpace(Payee) || AccountId == 0)">
+            Save
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance MudDialog { get; set; } = null!;
+
+    [Parameter] public bool IsNew { get; set; } = true;
+    [Parameter] public string Payee { get; set; } = string.Empty;
+    [Parameter] public decimal Amount { get; set; }
+    [Parameter] public int? CategoryId { get; set; }
+    [Parameter] public List<BudgetCategory> Categories { get; set; } = [];
+    [Parameter] public int AccountId { get; set; }
+    [Parameter] public List<Account> Accounts { get; set; } = [];
+    [Parameter] public string Frequency { get; set; } = "Monthly";
+    [Parameter] public DateTime? NextOccurrence { get; set; } = DateTime.Today;
+    [Parameter] public DateTime? EndDate { get; set; }
+    [Parameter] public bool IsActive { get; set; } = true;
+
+    private void Cancel() => MudDialog.Cancel();
+    private void Submit() => MudDialog.Close(DialogResult.Ok(new RecurringTransactionResult
+    {
+        Payee = Payee,
+        Amount = Amount,
+        CategoryId = CategoryId,
+        AccountId = AccountId,
+        Frequency = Frequency,
+        NextOccurrence = NextOccurrence!.Value,
+        EndDate = EndDate,
+        IsActive = IsActive
+    }));
+
+    public class RecurringTransactionResult
+    {
+        public string Payee { get; set; } = string.Empty;
+        public decimal Amount { get; set; }
+        public int? CategoryId { get; set; }
+        public int AccountId { get; set; }
+        public string Frequency { get; set; } = "Monthly";
+        public DateTime NextOccurrence { get; set; }
+        public DateTime? EndDate { get; set; }
+        public bool IsActive { get; set; } = true;
+    }
+}

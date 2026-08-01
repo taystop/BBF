@@ -25,6 +25,14 @@
                         Icon="@Icons.Material.Filled.MonitorHeart">Status</MudNavLink>
             <MudNavLink Href="/budget"
                         Icon="@Icons.Material.Filled.AccountBalance">Budget</MudNavLink>
+            <MudNavLink Href="/transactions"
+                        Icon="@Icons.Material.Filled.Receipt">Transactions</MudNavLink>
+            <MudNavLink Href="/accounts"
+                        Icon="@Icons.Material.Filled.AccountBalanceWallet">Accounts</MudNavLink>
+            <MudNavLink Href="/recurring"
+                        Icon="@Icons.Material.Filled.Autorenew">Recurring</MudNavLink>
+            <MudNavLink Href="/goals"
+                        Icon="@Icons.Material.Filled.Flag">Goals</MudNavLink>
             <MudDivider Class="my-2" />
             <AuthorizeView Roles="Admin" Context="adminContext">
                 <MudNavLink Href="/users"

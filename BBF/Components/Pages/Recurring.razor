@@ -1,0 +1,229 @@
+@page "/recurring"
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@using BBF.Data
+@using BBF.Data.Entities
+@using BBF.Services
+@using Microsoft.EntityFrameworkCore
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
+@inject RecurringTransactionService RecurringSvc
+@inject AccountService AccountSvc
+@inject UserContextService UserContext
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@implements IDisposable
+
+<PageTitle>Recurring - BBF</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="py-4">
+    @if (!UserContext.IsInitialized || UserContext.ActiveGroupId is null)
+    {
+        <MudPaper Class="pa-6 text-center" Elevation="2">
+            <MudIcon Icon="@Icons.Material.Filled.Group" Size="Size.Large" Color="Color.Secondary" Class="mb-3" />
+            <MudText Typo="Typo.h5" Class="mb-2">No Budget Group</MudText>
+            <MudText Typo="Typo.body1" Color="Color.Secondary" Class="mb-4">
+                Create or join a group to start tracking your budget. Groups let you share budget data with family members.
+            </MudText>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" Href="/groups"
+                       StartIcon="@Icons.Material.Filled.GroupAdd">
+                Manage Groups
+            </MudButton>
+        </MudPaper>
+    }
+    else
+    {
+        <MudStack Row AlignItems="AlignItems.Center" Style="flex-wrap: wrap; gap: 8px;" Class="mb-4">
+            <MudIcon Icon="@Icons.Material.Filled.Autorenew" Size="Size.Large" Color="Color.Primary" />
+            <MudText Typo="Typo.h4">Recurring Transactions</MudText>
+        </MudStack>
+
+        <MudPaper Class="pa-4" Elevation="2">
+            <MudStack Row AlignItems="AlignItems.Center" Style="flex-wrap: wrap; gap: 8px;" Class="mb-3">
+                <MudText Typo="Typo.h6">Rules</MudText>
+                <MudSpacer />
+                @if (_accounts.Count == 0)
+                {
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">Add an account first to create a rule.</MudText>
+                }
+                <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.Add" OnClick="AddRule"
+                           Disabled="@(_accounts.Count == 0)">
+                    Add Rule
+                </MudButton>
+            </MudStack>
+
+            <div class="budget-table-container">
+                <MudTable Items="_rules" Hover Dense Breakpoint="Breakpoint.Sm">
+                    <HeaderContent>
+                        <MudTh>Payee</MudTh>
+                        <MudTh Style="text-align: right;">Amount</MudTh>
+                        <MudTh>Category</MudTh>
+                        <MudTh>Account</MudTh>
+                        <MudTh>Frequency</MudTh>
+                        <MudTh>Next</MudTh>
+                        <MudTh>Status</MudTh>
+                        <MudTh Style="width: 100px;">Actions</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="Payee">@context.Payee</MudTd>
+                        <MudTd DataLabel="Amount" Style="text-align: right;">
+                            <MudText Typo="Typo.body2" Color="@(context.Amount >= 0 ? Color.Error : Color.Success)">
+                                @context.Amount.ToString("C")
+                            </MudText>
+                        </MudTd>
+                        <MudTd DataLabel="Category">@(context.Category?.Name ?? "—")</MudTd>
+                        <MudTd DataLabel="Account">@context.Account.Name</MudTd>
+                        <MudTd DataLabel="Frequency">@context.Frequency</MudTd>
+                        <MudTd DataLabel="Next">@context.NextOccurrence.ToString("MMM d, yyyy")</MudTd>
+                        <MudTd DataLabel="Status">
+                            <MudChip T="string" Size="Size.Small" Color="@(context.IsActive ? Color.Success : Color.Default)">
+                                @(context.IsActive ? "Active" : "Inactive")
+                            </MudChip>
+                        </MudTd>
+                        <MudTd DataLabel="Actions">
+                            <MudStack Row Spacing="0">
+                                <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                                               OnClick="@(() => EditRule(context))" />
+                                <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small"
+                                               Color="Color.Error"
+                                               OnClick="@(() => DeleteRule(context))" />
+                            </MudStack>
+                        </MudTd>
+                    </RowTemplate>
+                    <NoRecordsContent>
+                        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="pa-4">
+                            No recurring transactions yet.
+                        </MudText>
+                    </NoRecordsContent>
+                </MudTable>
+            </div>
+        </MudPaper>
+    }
+</MudContainer>
+
+<style>
+    .budget-table-container {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+</style>
+
+@code {
+    private List<RecurringTransaction> _rules = [];
+    private List<BudgetCategory> _categories = [];
+    private List<Account> _accounts = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        UserContext.OnGroupChanged += OnGroupChanged;
+        if (UserContext.ActiveGroupId is not null)
+            await LoadData();
+    }
+
+    private async void OnGroupChanged()
+    {
+        await InvokeAsync(async () =>
+        {
+            await LoadData();
+            StateHasChanged();
+        });
+    }
+
+    private async Task LoadData()
+    {
+        var groupId = UserContext.ActiveGroupId;
+        if (groupId is null) return;
+
+        _rules = await RecurringSvc.GetActiveAsync(groupId.Value);
+        _accounts = await AccountSvc.GetAccountsAsync(groupId.Value);
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+        _categories = await db.BudgetCategories
+            .Where(c => c.IsActive && c.GroupId == groupId)
+            .OrderBy(c => c.SortOrder)
+            .ToListAsync();
+
+        StateHasChanged();
+    }
+
+    private async Task AddRule()
+    {
+        var parameters = new DialogParameters<RecurringTransactionDialog>
+        {
+            { x => x.IsNew, true },
+            { x => x.Categories, _categories },
+            { x => x.Accounts, _accounts },
+            { x => x.AccountId, _accounts[0].Id }
+        };
+        var dialog = await DialogService.ShowAsync<RecurringTransactionDialog>("Add Recurring Transaction", parameters);
+        var result = await dialog.Result;
+
+        if (result is not null && !result.Canceled && result.Data is RecurringTransactionDialog.RecurringTransactionResult data)
+        {
+            await RecurringSvc.CreateAsync(new RecurringTransaction
+            {
+                GroupId = UserContext.ActiveGroupId,
+                Payee = data.Payee,
+                Amount = data.Amount,
+                CategoryId = data.CategoryId,
+                AccountId = data.AccountId,
+                Frequency = data.Frequency,
+                NextOccurrence = data.NextOccurrence,
+                EndDate = data.EndDate,
+                IsActive = data.IsActive
+            });
+            Snackbar.Add("Recurring rule created.", Severity.Success);
+            await LoadData();
+        }
+    }
+
+    private async Task EditRule(RecurringTransaction rule)
+    {
+        var parameters = new DialogParameters<RecurringTransactionDialog>
+        {
+            { x => x.IsNew, false },
+            { x => x.Payee, rule.Payee },
+            { x => x.Amount, rule.Amount },
+            { x => x.CategoryId, rule.CategoryId },
+            { x => x.Categories, _categories },
+            { x => x.AccountId, rule.AccountId },
+            { x => x.Accounts, _accounts },
+            { x => x.Frequency, rule.Frequency },
+            { x => x.NextOccurrence, rule.NextOccurrence },
+            { x => x.EndDate, rule.EndDate },
+            { x => x.IsActive, rule.IsActive }
+        };
+        var dialog = await DialogService.ShowAsync<RecurringTransactionDialog>("Edit Recurring Transaction", parameters);
+        var result = await dialog.Result;
+
+        if (result is not null && !result.Canceled && result.Data is RecurringTransactionDialog.RecurringTransactionResult data)
+        {
+            await RecurringSvc.UpdateAsync(rule.Id, data.Payee, data.Amount, data.CategoryId, data.AccountId,
+                data.Frequency, data.NextOccurrence, data.EndDate, data.IsActive);
+            await LoadData();
+        }
+    }
+
+    private async Task DeleteRule(RecurringTransaction rule)
+    {
+        var parameters = new DialogParameters<MessageBoxDialog>
+        {
+            { x => x.ContentText, $"Delete recurring rule for '{rule.Payee}'? Already-created transactions are kept." },
+            { x => x.ButtonText, "Delete" },
+            { x => x.Color, Color.Error }
+        };
+        var dialog = await DialogService.ShowAsync<MessageBoxDialog>("Delete Recurring Transaction", parameters);
+        var result = await dialog.Result;
+
+        if (result is not null && !result.Canceled)
+        {
+            await RecurringSvc.DeleteAsync(rule.Id);
+            await LoadData();
+        }
+    }
+
+    public void Dispose()
+    {
+        UserContext.OnGroupChanged -= OnGroupChanged;
+    }
+}

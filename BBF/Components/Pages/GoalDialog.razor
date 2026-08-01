@@ -1,0 +1,47 @@
+@using BBF.Data.Entities
+
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">@(Goal.Id == 0 ? "Add Goal" : "Edit Goal")</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudTextField @bind-Value="Goal.Name" Label="Name" Required
+                      Variant="Variant.Outlined" Class="mb-3" />
+        <MudNumericField @bind-Value="Goal.TargetAmount" Label="Target Amount ($)" Required
+                         Variant="Variant.Outlined" Class="mb-3" Min="0" Format="N2" />
+        <MudDatePicker @bind-Date="Goal.TargetDate" Label="Target Date (optional)"
+                       Variant="Variant.Outlined" Class="mb-3" Clearable />
+        @if (Accounts.Count > 0)
+        {
+            <MudSelect T="int?" @bind-Value="Goal.AccountId" Label="Account (optional)"
+                       Variant="Variant.Outlined" Class="mb-3" Clearable>
+                @foreach (var acct in Accounts)
+                {
+                    <MudSelectItem T="int?" Value="@acct.Id">@acct.Name</MudSelectItem>
+                }
+            </MudSelect>
+        }
+        <MudSwitch @bind-Value="Goal.IsActive" Label="Active" Color="Color.Primary" />
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Submit"
+                   Disabled="@(string.IsNullOrWhiteSpace(Goal.Name) || Goal.TargetAmount <= 0)">
+            Save
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance MudDialog { get; set; } = null!;
+
+    [Parameter]
+    public Goal Goal { get; set; } = new();
+
+    [Parameter]
+    public List<Account> Accounts { get; set; } = [];
+
+    private void Cancel() => MudDialog.Cancel();
+    private void Submit() => MudDialog.Close(DialogResult.Ok(Goal));
+}

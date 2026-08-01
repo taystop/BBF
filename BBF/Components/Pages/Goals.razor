@@ -1,0 +1,198 @@
+@page "/goals"
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@using BBF.Data.Entities
+@using BBF.Services
+@inject GoalService GoalSvc
+@inject AccountService AccountSvc
+@inject UserContextService UserContext
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@implements IDisposable
+
+<PageTitle>Goals - BBF</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="py-4">
+    @if (!UserContext.IsInitialized || UserContext.ActiveGroupId is null)
+    {
+        <MudPaper Class="pa-6 text-center" Elevation="2">
+            <MudIcon Icon="@Icons.Material.Filled.Group" Size="Size.Large" Color="Color.Secondary" Class="mb-3" />
+            <MudText Typo="Typo.h5" Class="mb-2">No Budget Group</MudText>
+            <MudText Typo="Typo.body1" Color="Color.Secondary" Class="mb-4">
+                Create or join a group to start tracking your budget. Groups let you share budget data with family members.
+            </MudText>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" Href="/groups"
+                       StartIcon="@Icons.Material.Filled.GroupAdd">
+                Manage Groups
+            </MudButton>
+        </MudPaper>
+    }
+    else
+    {
+        <MudStack Row AlignItems="AlignItems.Center" Style="flex-wrap: wrap; gap: 8px;" Class="mb-4">
+            <MudIcon Icon="@Icons.Material.Filled.Flag" Size="Size.Large" Color="Color.Primary" />
+            <MudText Typo="Typo.h4">Goals</MudText>
+            <MudSpacer />
+            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Add" OnClick="AddGoal">
+                Add Goal
+            </MudButton>
+        </MudStack>
+
+        <MudGrid>
+            @foreach (var goal in _goals)
+            {
+                var progress = goal.Contributions.Sum(c => c.Amount);
+                var pct = goal.TargetAmount > 0 ? (double)(progress / goal.TargetAmount) * 100 : 0;
+
+                <MudItem xs="12" sm="6" md="4">
+                    <MudPaper Class="pa-4" Elevation="2">
+                        <MudStack Row AlignItems="AlignItems.Center" Class="mb-2">
+                            <MudText Typo="Typo.h6" Style="flex: 1;">
+                                @goal.Name
+                                @if (!goal.IsActive)
+                                {
+                                    <MudChip T="string" Size="Size.Small" Class="ml-2">Inactive</MudChip>
+                                }
+                            </MudText>
+                            <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                                           OnClick="@(() => EditGoal(goal))" />
+                            <MudIconButton Icon="@(goal.IsActive ? Icons.Material.Filled.VisibilityOff : Icons.Material.Filled.Visibility)"
+                                           Size="Size.Small"
+                                           OnClick="@(() => ToggleActive(goal))" />
+                        </MudStack>
+                        @if (goal.Account is not null)
+                        {
+                            <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-2">@goal.Account.Name</MudText>
+                        }
+                        <MudProgressLinear Value="@Math.Min(pct, 100)" Color="@(pct >= 100 ? Color.Success : Color.Primary)"
+                                          Size="Size.Large" Rounded Class="mb-2" />
+                        <MudStack Row Justify="Justify.SpaceBetween" Class="mb-3">
+                            <MudText Typo="Typo.body2">@progress.ToString("C") of @goal.TargetAmount.ToString("C")</MudText>
+                            <MudText Typo="Typo.body2" Color="Color.Secondary">@pct.ToString("N0")%</MudText>
+                        </MudStack>
+                        @if (goal.TargetDate is not null)
+                        {
+                            <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-2">
+                                Target: @goal.TargetDate.Value.ToString("MMM d, yyyy")
+                            </MudText>
+                        }
+                        <MudButton Variant="Variant.Outlined" Color="Color.Primary" FullWidth
+                                   StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => AddContribution(goal))">
+                            Add Contribution
+                        </MudButton>
+                    </MudPaper>
+                </MudItem>
+            }
+        </MudGrid>
+
+        @if (!_goals.Any())
+        {
+            <MudPaper Class="pa-6 text-center" Elevation="2">
+                <MudText Typo="Typo.body2" Color="Color.Secondary">
+                    No goals yet. Add one to start tracking savings progress.
+                </MudText>
+            </MudPaper>
+        }
+    }
+</MudContainer>
+
+@code {
+    private List<Goal> _goals = [];
+    private List<Account> _accounts = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        UserContext.OnGroupChanged += OnGroupChanged;
+        if (UserContext.ActiveGroupId is not null)
+            await LoadData();
+    }
+
+    private async void OnGroupChanged()
+    {
+        await InvokeAsync(async () =>
+        {
+            await LoadData();
+            StateHasChanged();
+        });
+    }
+
+    private async Task LoadData()
+    {
+        var groupId = UserContext.ActiveGroupId;
+        if (groupId is null) return;
+
+        _goals = await GoalSvc.GetGoalsAsync(groupId.Value);
+        _accounts = await AccountSvc.GetAccountsAsync(groupId.Value);
+
+        StateHasChanged();
+    }
+
+    private async Task AddGoal()
+    {
+        var parameters = new DialogParameters<GoalDialog>
+        {
+            { x => x.Goal, new Goal() },
+            { x => x.Accounts, _accounts }
+        };
+        var dialog = await DialogService.ShowAsync<GoalDialog>("Add Goal", parameters);
+        var result = await dialog.Result;
+
+        if (result is not null && !result.Canceled && result.Data is Goal goal)
+        {
+            goal.GroupId = UserContext.ActiveGroupId;
+            await GoalSvc.CreateAsync(goal);
+            Snackbar.Add($"Goal '{goal.Name}' created.", Severity.Success);
+            await LoadData();
+        }
+    }
+
+    private async Task EditGoal(Goal goal)
+    {
+        var parameters = new DialogParameters<GoalDialog>
+        {
+            { x => x.Goal, new Goal
+                {
+                    Id = goal.Id, Name = goal.Name, TargetAmount = goal.TargetAmount,
+                    TargetDate = goal.TargetDate, AccountId = goal.AccountId, IsActive = goal.IsActive
+                }
+            },
+            { x => x.Accounts, _accounts }
+        };
+        var dialog = await DialogService.ShowAsync<GoalDialog>("Edit Goal", parameters);
+        var result = await dialog.Result;
+
+        if (result is not null && !result.Canceled && result.Data is Goal updated)
+        {
+            await GoalSvc.UpdateAsync(goal.Id, updated.Name, updated.TargetAmount, updated.TargetDate, updated.AccountId);
+            if (updated.IsActive != goal.IsActive)
+                await GoalSvc.SetActiveAsync(goal.Id, updated.IsActive);
+            await LoadData();
+        }
+    }
+
+    private async Task ToggleActive(Goal goal)
+    {
+        await GoalSvc.SetActiveAsync(goal.Id, !goal.IsActive);
+        await LoadData();
+    }
+
+    private async Task AddContribution(Goal goal)
+    {
+        var parameters = new DialogParameters<GoalContributionDialog>();
+        var dialog = await DialogService.ShowAsync<GoalContributionDialog>($"Contribute to '{goal.Name}'", parameters);
+        var result = await dialog.Result;
+
+        if (result is not null && !result.Canceled && result.Data is GoalContributionDialog.GoalContributionResult data)
+        {
+            await GoalSvc.AddContributionAsync(goal.Id, data.Amount, data.ContributedAt, null);
+            Snackbar.Add("Contribution added.", Severity.Success);
+            await LoadData();
+        }
+    }
+
+    public void Dispose()
+    {
+        UserContext.OnGroupChanged -= OnGroupChanged;
+    }
+}

@@ -1,0 +1,41 @@
+@using BBF.Data.Entities
+
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">Add Contribution</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudNumericField @bind-Value="Amount" Label="Amount ($)" Required
+                         Variant="Variant.Outlined" Class="mb-3" Min="0" Format="N2" />
+        <MudDatePicker @bind-Date="ContributedAt" Label="Date" Required
+                       Variant="Variant.Outlined" Class="mb-3" />
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Submit"
+                   Disabled="@(Amount <= 0 || ContributedAt is null)">
+            Save
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance MudDialog { get; set; } = null!;
+
+    [Parameter] public decimal Amount { get; set; }
+    [Parameter] public DateTime? ContributedAt { get; set; } = DateTime.Today;
+
+    private void Cancel() => MudDialog.Cancel();
+    private void Submit() => MudDialog.Close(DialogResult.Ok(new GoalContributionResult
+    {
+        Amount = Amount,
+        ContributedAt = ContributedAt!.Value
+    }));
+
+    public class GoalContributionResult
+    {
+        public decimal Amount { get; set; }
+        public DateTime ContributedAt { get; set; }
+    }
+}

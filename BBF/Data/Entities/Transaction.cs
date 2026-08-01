@@ -8,7 +8,7 @@ public class Transaction
     public DateTime Date { get; set; }
     public string Description { get; set; } = string.Empty;
     public string? MerchantName { get; set; }
-    public string Source { get; set; } = "Manual"; // "Plaid" or "Manual"
+    public string Source { get; set; } = "Manual"; // "Plaid", "Manual", "CSV", or "Recurring"
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     public int? CategoryId { get; set; }
@@ -16,4 +16,10 @@ public class Transaction
 
     public int? GroupId { get; set; }
     public UserGroup? Group { get; set; }
+
+    public int? AccountId { get; set; }
+    public Account? Account { get; set; }
+
+    public int? RecurringTransactionId { get; set; }
+    public RecurringTransaction? RecurringTransaction { get; set; }
 }

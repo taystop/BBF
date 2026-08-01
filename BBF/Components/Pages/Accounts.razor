@@ -1,0 +1,330 @@
+@page "/accounts"
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@using BBF.Data
+@using BBF.Data.Entities
+@using BBF.Services
+@using Microsoft.EntityFrameworkCore
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
+@inject PlaidService Plaid
+@inject AccountService AccountSvc
+@inject UserContextService UserContext
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+@implements IDisposable
+
+<PageTitle>Accounts - BBF</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="py-4">
+    @if (!UserContext.IsInitialized || UserContext.ActiveGroupId is null)
+    {
+        <MudPaper Class="pa-6 text-center" Elevation="2">
+            <MudIcon Icon="@Icons.Material.Filled.Group" Size="Size.Large" Color="Color.Secondary" Class="mb-3" />
+            <MudText Typo="Typo.h5" Class="mb-2">No Budget Group</MudText>
+            <MudText Typo="Typo.body1" Color="Color.Secondary" Class="mb-4">
+                Create or join a group to start tracking your budget. Groups let you share budget data with family members.
+            </MudText>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" Href="/groups"
+                       StartIcon="@Icons.Material.Filled.GroupAdd">
+                Manage Groups
+            </MudButton>
+        </MudPaper>
+    }
+    else
+    {
+        <MudStack Row AlignItems="AlignItems.Center" Style="flex-wrap: wrap; gap: 8px;" Class="mb-4">
+            <MudIcon Icon="@Icons.Material.Filled.AccountBalanceWallet" Size="Size.Large" Color="Color.Primary" />
+            <MudText Typo="Typo.h4">Accounts</MudText>
+        </MudStack>
+
+        <MudTabs Elevation="2" Rounded ApplyEffectsToContainer Class="mb-4">
+            <MudTabPanel Text="Accounts" Icon="@Icons.Material.Filled.AccountBalanceWallet">
+                <MudPaper Class="pa-4" Elevation="0">
+                    <MudStack Row AlignItems="AlignItems.Center" Style="flex-wrap: wrap; gap: 8px;" Class="mb-3">
+                        <MudText Typo="Typo.h6">Your Accounts</MudText>
+                        <MudSpacer />
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                                   StartIcon="@Icons.Material.Filled.Add" OnClick="AddAccount">
+                            Add Account
+                        </MudButton>
+                    </MudStack>
+
+                    @foreach (var acct in _accounts)
+                    {
+                        <MudPaper Class="pa-3 mb-2" Elevation="1">
+                            <MudStack Row AlignItems="AlignItems.Center" Style="flex-wrap: wrap; gap: 12px;">
+                                <MudIcon Icon="@GetAccountIcon(acct.AccountType)" Color="Color.Secondary" />
+                                <MudStack Spacing="0" Style="min-width: 150px; flex: 1;">
+                                    <MudText Typo="Typo.subtitle2">
+                                        @acct.Name
+                                        @if (!acct.IsActive)
+                                        {
+                                            <MudChip T="string" Size="Size.Small" Class="ml-2">Inactive</MudChip>
+                                        }
+                                    </MudText>
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary">@acct.AccountType</MudText>
+                                </MudStack>
+                                <MudText Typo="Typo.body1" Color="@(acct.CurrentBalance >= 0 ? Color.Success : Color.Error)"
+                                         Style="min-width: 100px; text-align: right;">
+                                    @acct.CurrentBalance.ToString("C")
+                                </MudText>
+                                <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                                               OnClick="@(() => EditAccount(acct))" />
+                                <MudIconButton Icon="@(acct.IsActive ? Icons.Material.Filled.VisibilityOff : Icons.Material.Filled.Visibility)"
+                                               Size="Size.Small"
+                                               OnClick="@(() => ToggleActive(acct))" />
+                            </MudStack>
+                        </MudPaper>
+                    }
+
+                    @if (!_accounts.Any())
+                    {
+                        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="pa-4 text-center">
+                            No accounts yet. Add one to start tracking balances.
+                        </MudText>
+                    }
+                </MudPaper>
+            </MudTabPanel>
+
+            <MudTabPanel Text="Linked Banks" Icon="@Icons.Material.Filled.AccountBalance">
+                <MudPaper Class="pa-4" Elevation="0">
+                    <MudStack Row AlignItems="AlignItems.Center" Style="flex-wrap: wrap; gap: 8px;" Class="mb-3">
+                        <MudText Typo="Typo.h6">Linked Accounts</MudText>
+                        <MudSpacer />
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                                   StartIcon="@Icons.Material.Filled.AddLink" OnClick="ConnectBank">
+                            Connect Bank
+                        </MudButton>
+                    </MudStack>
+
+                    @if (_connections.Any())
+                    {
+                        @foreach (var conn in _connections)
+                        {
+                            <MudPaper Class="pa-4 mb-3" Elevation="1">
+                                <MudStack Row AlignItems="AlignItems.Center" Style="flex-wrap: wrap; gap: 8px;" Class="mb-2">
+                                    <MudIcon Icon="@Icons.Material.Filled.AccountBalance" Color="Color.Primary" />
+                                    <MudStack Spacing="0" Style="min-width: 0; flex: 1;">
+                                        <MudText Typo="Typo.subtitle1" Style="font-weight: 600;">@conn.InstitutionName</MudText>
+                                        <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                            Last synced: @(conn.LastSynced?.ToLocalTime().ToString("g") ?? "Never")
+                                            &middot; @conn.Accounts.Count(a => a.IsActive) account@(conn.Accounts.Count(a => a.IsActive) != 1 ? "s" : "")
+                                        </MudText>
+                                    </MudStack>
+                                    <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Error"
+                                               OnClick="@(() => DisconnectBank(conn))">
+                                        Disconnect
+                                    </MudButton>
+                                </MudStack>
+
+                                @foreach (var acct in conn.Accounts.Where(a => a.IsActive).OrderBy(a => a.Type))
+                                {
+                                    <MudPaper Class="pa-3 mb-1 ml-3 ml-sm-6" Elevation="0" Style="border: 1px solid var(--mud-palette-lines-default); border-radius: 4px;">
+                                        <MudStack Row AlignItems="AlignItems.Center" Spacing="3" Class="flex-wrap" Style="gap: 8px;">
+                                            <MudIcon Icon="@GetPlaidAccountIcon(acct.Type)" Size="Size.Small" Color="Color.Secondary" />
+                                            <MudStack Spacing="0" Style="min-width: 120px; flex: 1;">
+                                                <MudText Typo="Typo.body2" Style="font-weight: 600;">
+                                                    @acct.DisplayName
+                                                </MudText>
+                                                <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                                    @(acct.Subtype ?? acct.Type)@(acct.Mask is not null ? $" ····{acct.Mask}" : "")
+                                                </MudText>
+                                            </MudStack>
+                                            <MudTextField @bind-Value="acct.CustomName"
+                                                          Placeholder="@(acct.OfficialName ?? acct.Name)"
+                                                          Variant="Variant.Outlined" Dense Margin="Margin.Dense"
+                                                          Label="Custom Name"
+                                                          Style="max-width: 220px; min-width: 140px; flex: 1;"
+                                                          Adornment="Adornment.End"
+                                                          AdornmentIcon="@Icons.Material.Filled.Save"
+                                                          OnAdornmentClick="@(() => SaveAccountName(acct))" />
+                                        </MudStack>
+                                    </MudPaper>
+                                }
+
+                                @if (!conn.Accounts.Any(a => a.IsActive))
+                                {
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary" Class="ml-3 ml-sm-6 mt-1">
+                                        No accounts found. Sync to fetch account details.
+                                    </MudText>
+                                }
+                            </MudPaper>
+                        }
+                    }
+                    else
+                    {
+                        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="pa-4 text-center">
+                            No bank accounts connected. Click "Connect Bank" to link your account via Plaid.
+                        </MudText>
+                    }
+                </MudPaper>
+            </MudTabPanel>
+        </MudTabs>
+    }
+</MudContainer>
+
+@code {
+    private List<Account> _accounts = [];
+    private List<PlaidConnection> _connections = [];
+    private List<PlaidAccount> _plaidAccounts = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        UserContext.OnGroupChanged += OnGroupChanged;
+        if (UserContext.ActiveGroupId is not null)
+            await LoadData();
+    }
+
+    private async void OnGroupChanged()
+    {
+        await InvokeAsync(async () =>
+        {
+            await LoadData();
+            StateHasChanged();
+        });
+    }
+
+    private async Task LoadData()
+    {
+        var groupId = UserContext.ActiveGroupId;
+        if (groupId is null) return;
+
+        _accounts = await AccountSvc.GetAccountsAsync(groupId.Value);
+        _connections = await Plaid.GetConnectionsAsync(groupId.Value);
+        _plaidAccounts = _connections.SelectMany(c => c.Accounts.Where(a => a.IsActive)).ToList();
+
+        StateHasChanged();
+    }
+
+    // --- Account CRUD ---
+
+    private async Task AddAccount()
+    {
+        var parameters = new DialogParameters<AccountDialog>
+        {
+            { x => x.Account, new Account() },
+            { x => x.PlaidAccounts, _plaidAccounts }
+        };
+        var dialog = await DialogService.ShowAsync<AccountDialog>("Add Account", parameters);
+        var result = await dialog.Result;
+
+        if (result is not null && !result.Canceled && result.Data is Account acct)
+        {
+            acct.GroupId = UserContext.ActiveGroupId;
+            await AccountSvc.CreateAsync(acct);
+            await LoadData();
+            Snackbar.Add($"Account '{acct.Name}' created.", Severity.Success);
+        }
+    }
+
+    private async Task EditAccount(Account account)
+    {
+        var parameters = new DialogParameters<AccountDialog>
+        {
+            { x => x.Account, new Account
+                {
+                    Id = account.Id, Name = account.Name, AccountType = account.AccountType,
+                    StartingBalance = account.StartingBalance, CurrentBalance = account.CurrentBalance,
+                    PlaidAccountId = account.PlaidAccountId, IsActive = account.IsActive
+                }
+            },
+            { x => x.PlaidAccounts, _plaidAccounts }
+        };
+        var dialog = await DialogService.ShowAsync<AccountDialog>("Edit Account", parameters);
+        var result = await dialog.Result;
+
+        if (result is not null && !result.Canceled && result.Data is Account updated)
+        {
+            await AccountSvc.UpdateAsync(account.Id, updated.Name, updated.AccountType, updated.PlaidAccountId);
+            if (updated.IsActive != account.IsActive)
+                await AccountSvc.SetActiveAsync(account.Id, updated.IsActive);
+            await LoadData();
+        }
+    }
+
+    private async Task ToggleActive(Account account)
+    {
+        await AccountSvc.SetActiveAsync(account.Id, !account.IsActive);
+        await LoadData();
+    }
+
+    private static string GetAccountIcon(string? type) => type?.ToLowerInvariant() switch
+    {
+        "savings" => Icons.Material.Filled.Savings,
+        "creditcard" => Icons.Material.Filled.CreditCard,
+        "cash" => Icons.Material.Filled.Payments,
+        "investment" => Icons.Material.Filled.TrendingUp,
+        _ => Icons.Material.Filled.AccountBalance,
+    };
+
+    private static string GetPlaidAccountIcon(string? type) => type?.ToLowerInvariant() switch
+    {
+        "depository" => Icons.Material.Filled.Savings,
+        "credit" => Icons.Material.Filled.CreditCard,
+        "loan" => Icons.Material.Filled.RequestPage,
+        "investment" => Icons.Material.Filled.TrendingUp,
+        _ => Icons.Material.Filled.AccountBalance,
+    };
+
+    // --- Plaid ---
+
+    private DotNetObjectReference<Accounts>? _dotNetRef;
+
+    private async Task ConnectBank()
+    {
+        try
+        {
+            _dotNetRef ??= DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("plaidLink.open", _dotNetRef, UserContext.ActiveGroupId);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error: {ex.Message}", Severity.Error);
+        }
+    }
+
+    [JSInvokable]
+    public async Task OnPlaidSuccess()
+    {
+        Snackbar.Add("Bank account connected!", Severity.Success);
+        await LoadData();
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public void OnPlaidError(string message)
+    {
+        Snackbar.Add($"Plaid: {message}", Severity.Warning);
+    }
+
+    private async Task SaveAccountName(PlaidAccount acct)
+    {
+        await Plaid.UpdateAccountNameAsync(acct.Id, acct.CustomName ?? "");
+        Snackbar.Add($"Account name updated to '{acct.DisplayName}'.", Severity.Success);
+    }
+
+    private async Task DisconnectBank(PlaidConnection conn)
+    {
+        var parameters = new DialogParameters<MessageBoxDialog>
+        {
+            { x => x.ContentText, $"Disconnect '{conn.InstitutionName}'? Existing transactions will remain." },
+            { x => x.ButtonText, "Disconnect" },
+            { x => x.Color, Color.Error }
+        };
+        var dialog = await DialogService.ShowAsync<MessageBoxDialog>("Disconnect Bank", parameters);
+        var result = await dialog.Result;
+
+        if (result is not null && !result.Canceled)
+        {
+            await Plaid.RemoveConnectionAsync(conn.Id);
+            await LoadData();
+        }
+    }
+
+    public void Dispose()
+    {
+        UserContext.OnGroupChanged -= OnGroupChanged;
+        _dotNetRef?.Dispose();
+    }
+}

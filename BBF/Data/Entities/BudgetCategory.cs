@@ -9,9 +9,15 @@ public class BudgetCategory
     public string? Icon { get; set; }
     public int SortOrder { get; set; }
     public bool IsActive { get; set; } = true;
+    public string RolloverBehavior { get; set; } = "Reset"; // "Reset" or "RollOver"
 
     public int? GroupId { get; set; }
     public UserGroup? Group { get; set; }
 
+    public int? ParentCategoryId { get; set; }
+    public BudgetCategory? ParentCategory { get; set; }
+    public List<BudgetCategory> Subcategories { get; set; } = [];
+
     public List<Transaction> Transactions { get; set; } = [];
+    public List<BudgetLineItem> LineItems { get; set; } = [];
 }

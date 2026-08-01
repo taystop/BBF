@@ -1,0 +1,55 @@
+@using BBF.Data.Entities
+
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">@(Account.Id == 0 ? "Add Account" : "Edit Account")</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudTextField @bind-Value="Account.Name" Label="Name" Required
+                      Variant="Variant.Outlined" Class="mb-3" />
+        <MudSelect @bind-Value="Account.AccountType" Label="Account Type"
+                   Variant="Variant.Outlined" Class="mb-3">
+            <MudSelectItem Value="@("Checking")">Checking</MudSelectItem>
+            <MudSelectItem Value="@("Savings")">Savings</MudSelectItem>
+            <MudSelectItem Value="@("CreditCard")">Credit Card</MudSelectItem>
+            <MudSelectItem Value="@("Cash")">Cash</MudSelectItem>
+            <MudSelectItem Value="@("Investment")">Investment</MudSelectItem>
+        </MudSelect>
+        <MudNumericField @bind-Value="Account.StartingBalance" Label="Starting Balance ($)"
+                         Variant="Variant.Outlined" Class="mb-3" Format="N2"
+                         Disabled="@(Account.Id != 0)"
+                         HelperText="@(Account.Id != 0 ? "Starting balance can't be changed after creation." : null)" />
+        @if (PlaidAccounts.Count > 0)
+        {
+            <MudSelect T="int?" @bind-Value="Account.PlaidAccountId" Label="Linked Plaid Account (optional)"
+                       Variant="Variant.Outlined" Class="mb-3" Clearable>
+                @foreach (var pa in PlaidAccounts)
+                {
+                    <MudSelectItem T="int?" Value="@pa.Id">@pa.DisplayName</MudSelectItem>
+                }
+            </MudSelect>
+        }
+        <MudSwitch @bind-Value="Account.IsActive" Label="Active" Color="Color.Primary" />
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Submit"
+                   Disabled="@(string.IsNullOrWhiteSpace(Account.Name))">
+            Save
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance MudDialog { get; set; } = null!;
+
+    [Parameter]
+    public Account Account { get; set; } = new();
+
+    [Parameter]
+    public List<PlaidAccount> PlaidAccounts { get; set; } = [];
+
+    private void Cancel() => MudDialog.Cancel();
+    private void Submit() => MudDialog.Close(DialogResult.Ok(Account));
+}

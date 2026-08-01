@@ -4,6 +4,7 @@ using BBF.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace BBF.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260715204732_AddAccounts")]
+    partial class AddAccounts
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -178,13 +181,6 @@ namespace BBF.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
-                    b.Property<int?>("ParentCategoryId")
-                        .HasColumnType("int");
-
-                    b.Property<string>("RolloverBehavior")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
                     b.Property<int>("SortOrder")
                         .HasColumnType("int");
 
@@ -192,75 +188,7 @@ namespace BBF.Migrations
 
                     b.HasIndex("GroupId");
 
-                    b.HasIndex("ParentCategoryId");
-
                     b.ToTable("BudgetCategories");
-                });
-
-            modelBuilder.Entity("BBF.Data.Entities.BudgetLineItem", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<int>("BudgetPeriodId")
-                        .HasColumnType("int");
-
-                    b.Property<decimal>("BudgetedAmount")
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<int>("CategoryId")
-                        .HasColumnType("int");
-
-                    b.Property<decimal>("RolledOverAmount")
-                        .HasColumnType("decimal(18,2)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CategoryId");
-
-                    b.HasIndex("BudgetPeriodId", "CategoryId")
-                        .IsUnique();
-
-                    b.ToTable("BudgetLineItems");
-                });
-
-            modelBuilder.Entity("BBF.Data.Entities.BudgetPeriod", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<DateTime?>("ClosedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<DateTime>("EndDate")
-                        .HasColumnType("datetime2");
-
-                    b.Property<int?>("GroupId")
-                        .HasColumnType("int");
-
-                    b.Property<DateTime>("StartDate")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("GroupId", "StartDate")
-                        .IsUnique()
-                        .HasFilter("[GroupId] IS NOT NULL");
-
-                    b.ToTable("BudgetPeriods");
                 });
 
             modelBuilder.Entity("BBF.Data.Entities.ChatConversation", b =>
@@ -394,74 +322,6 @@ namespace BBF.Migrations
                     b.ToTable("Documents");
                 });
 
-            modelBuilder.Entity("BBF.Data.Entities.Goal", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<int?>("AccountId")
-                        .HasColumnType("int");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<int?>("GroupId")
-                        .HasColumnType("int");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("bit");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<decimal>("TargetAmount")
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<DateTime?>("TargetDate")
-                        .HasColumnType("datetime2");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("AccountId");
-
-                    b.HasIndex("GroupId");
-
-                    b.ToTable("Goals");
-                });
-
-            modelBuilder.Entity("BBF.Data.Entities.GoalContribution", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<decimal>("Amount")
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<DateTime>("ContributedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<int>("GoalId")
-                        .HasColumnType("int");
-
-                    b.Property<int?>("TransactionId")
-                        .HasColumnType("int");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("GoalId");
-
-                    b.HasIndex("TransactionId");
-
-                    b.ToTable("GoalContributions");
-                });
-
             modelBuilder.Entity("BBF.Data.Entities.PlaidAccount", b =>
                 {
                     b.Property<int>("Id")
@@ -556,57 +416,6 @@ namespace BBF.Migrations
                         .IsUnique();
 
                     b.ToTable("PlaidConnections");
-                });
-
-            modelBuilder.Entity("BBF.Data.Entities.RecurringTransaction", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<int>("AccountId")
-                        .HasColumnType("int");
-
-                    b.Property<decimal>("Amount")
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<int?>("CategoryId")
-                        .HasColumnType("int");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<DateTime?>("EndDate")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("Frequency")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<int?>("GroupId")
-                        .HasColumnType("int");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("bit");
-
-                    b.Property<DateTime>("NextOccurrence")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("Payee")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("AccountId");
-
-                    b.HasIndex("CategoryId");
-
-                    b.HasIndex("GroupId");
-
-                    b.ToTable("RecurringTransactions");
                 });
 
             modelBuilder.Entity("BBF.Data.Entities.ServiceHealthLog", b =>
@@ -711,9 +520,6 @@ namespace BBF.Migrations
                     b.Property<string>("PlaidTransactionId")
                         .HasColumnType("nvarchar(450)");
 
-                    b.Property<int?>("RecurringTransactionId")
-                        .HasColumnType("int");
-
                     b.Property<string>("Source")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
@@ -731,8 +537,6 @@ namespace BBF.Migrations
                     b.HasIndex("PlaidTransactionId")
                         .IsUnique()
                         .HasFilter("[PlaidTransactionId] IS NOT NULL");
-
-                    b.HasIndex("RecurringTransactionId");
 
                     b.ToTable("Transactions");
                 });
@@ -1000,42 +804,6 @@ namespace BBF.Migrations
                         .HasForeignKey("GroupId")
                         .OnDelete(DeleteBehavior.SetNull);
 
-                    b.HasOne("BBF.Data.Entities.BudgetCategory", "ParentCategory")
-                        .WithMany("Subcategories")
-                        .HasForeignKey("ParentCategoryId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.Navigation("Group");
-
-                    b.Navigation("ParentCategory");
-                });
-
-            modelBuilder.Entity("BBF.Data.Entities.BudgetLineItem", b =>
-                {
-                    b.HasOne("BBF.Data.Entities.BudgetPeriod", "BudgetPeriod")
-                        .WithMany("LineItems")
-                        .HasForeignKey("BudgetPeriodId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("BBF.Data.Entities.BudgetCategory", "Category")
-                        .WithMany("LineItems")
-                        .HasForeignKey("CategoryId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("BudgetPeriod");
-
-                    b.Navigation("Category");
-                });
-
-            modelBuilder.Entity("BBF.Data.Entities.BudgetPeriod", b =>
-                {
-                    b.HasOne("BBF.Data.Entities.UserGroup", "Group")
-                        .WithMany()
-                        .HasForeignKey("GroupId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
                     b.Navigation("Group");
                 });
 
@@ -1085,41 +853,6 @@ namespace BBF.Migrations
                     b.Navigation("Conversation");
                 });
 
-            modelBuilder.Entity("BBF.Data.Entities.Goal", b =>
-                {
-                    b.HasOne("BBF.Data.Entities.Account", "Account")
-                        .WithMany()
-                        .HasForeignKey("AccountId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("BBF.Data.Entities.UserGroup", "Group")
-                        .WithMany()
-                        .HasForeignKey("GroupId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.Navigation("Account");
-
-                    b.Navigation("Group");
-                });
-
-            modelBuilder.Entity("BBF.Data.Entities.GoalContribution", b =>
-                {
-                    b.HasOne("BBF.Data.Entities.Goal", "Goal")
-                        .WithMany("Contributions")
-                        .HasForeignKey("GoalId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("BBF.Data.Entities.Transaction", "Transaction")
-                        .WithMany()
-                        .HasForeignKey("TransactionId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.Navigation("Goal");
-
-                    b.Navigation("Transaction");
-                });
-
             modelBuilder.Entity("BBF.Data.Entities.PlaidAccount", b =>
                 {
                     b.HasOne("BBF.Data.Entities.PlaidConnection", "Connection")
@@ -1137,31 +870,6 @@ namespace BBF.Migrations
                         .WithMany()
                         .HasForeignKey("GroupId")
                         .OnDelete(DeleteBehavior.SetNull);
-
-                    b.Navigation("Group");
-                });
-
-            modelBuilder.Entity("BBF.Data.Entities.RecurringTransaction", b =>
-                {
-                    b.HasOne("BBF.Data.Entities.Account", "Account")
-                        .WithMany()
-                        .HasForeignKey("AccountId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("BBF.Data.Entities.BudgetCategory", "Category")
-                        .WithMany()
-                        .HasForeignKey("CategoryId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("BBF.Data.Entities.UserGroup", "Group")
-                        .WithMany()
-                        .HasForeignKey("GroupId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.Navigation("Account");
-
-                    b.Navigation("Category");
 
                     b.Navigation("Group");
                 });
@@ -1194,18 +902,11 @@ namespace BBF.Migrations
                         .HasForeignKey("GroupId")
                         .OnDelete(DeleteBehavior.SetNull);
 
-                    b.HasOne("BBF.Data.Entities.RecurringTransaction", "RecurringTransaction")
-                        .WithMany()
-                        .HasForeignKey("RecurringTransactionId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
                     b.Navigation("Account");
 
                     b.Navigation("Category");
 
                     b.Navigation("Group");
-
-                    b.Navigation("RecurringTransaction");
                 });
 
             modelBuilder.Entity("BBF.Data.Entities.UserGroupMember", b =>
@@ -1343,16 +1044,7 @@ namespace BBF.Migrations
 
             modelBuilder.Entity("BBF.Data.Entities.BudgetCategory", b =>
                 {
-                    b.Navigation("LineItems");
-
-                    b.Navigation("Subcategories");
-
                     b.Navigation("Transactions");
-                });
-
-            modelBuilder.Entity("BBF.Data.Entities.BudgetPeriod", b =>
-                {
-                    b.Navigation("LineItems");
                 });
 
             modelBuilder.Entity("BBF.Data.Entities.ChatConversation", b =>
@@ -1360,11 +1052,6 @@ namespace BBF.Migrations
                     b.Navigation("Messages");
 
                     b.Navigation("Shares");
-                });
-
-            modelBuilder.Entity("BBF.Data.Entities.Goal", b =>
-                {
-                    b.Navigation("Contributions");
                 });
 
             modelBuilder.Entity("BBF.Data.Entities.PlaidConnection", b =>

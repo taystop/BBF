@@ -7,9 +7,10 @@
     <DialogContent>
         <MudTextField @bind-Value="Category.Name" Label="Name" Required
                       Variant="Variant.Outlined" Class="mb-3" />
-        <MudNumericField @bind-Value="Category.MonthlyLimit" Label="Monthly Limit ($)"
+        <MudNumericField @bind-Value="Category.MonthlyLimit" Label="Default Monthly Amount ($)"
                          Variant="Variant.Outlined" Class="mb-3" Min="0"
-                         Format="N2" />
+                         Format="N2"
+                         HelperText="Seeds the budgeted amount the first time this category appears in a period." />
         <MudColorPicker @bind-Value="_color" Label="Color"
                         Variant="Variant.Outlined" Class="mb-3"
                         disableAlpha />
@@ -18,6 +19,21 @@
                       HelperText="e.g. ShoppingCart, Restaurant, Home" />
         <MudNumericField @bind-Value="Category.SortOrder" Label="Sort Order"
                          Variant="Variant.Outlined" Class="mb-3" />
+        @if (AvailableParents.Count > 0)
+        {
+            <MudSelect T="int?" @bind-Value="Category.ParentCategoryId" Label="Parent Category (optional)"
+                       Variant="Variant.Outlined" Class="mb-3" Clearable>
+                @foreach (var parent in AvailableParents)
+                {
+                    <MudSelectItem T="int?" Value="@parent.Id">@parent.Name</MudSelectItem>
+                }
+            </MudSelect>
+        }
+        <MudSelect @bind-Value="Category.RolloverBehavior" Label="Rollover Behavior"
+                   Variant="Variant.Outlined" Class="mb-3">
+            <MudSelectItem Value="@("Reset")">Reset each month</MudSelectItem>
+            <MudSelectItem Value="@("RollOver")">Roll over unspent balance</MudSelectItem>
+        </MudSelect>
         <MudSwitch @bind-Value="Category.IsActive" Label="Active" Color="Color.Primary" />
     </DialogContent>
     <DialogActions>
@@ -35,6 +51,9 @@
 
     [Parameter]
     public BudgetCategory Category { get; set; } = new();
+
+    [Parameter]
+    public List<BudgetCategory> AvailableParents { get; set; } = [];
 
     private MudBlazor.Utilities.MudColor _color = new("#42a5f5");
 

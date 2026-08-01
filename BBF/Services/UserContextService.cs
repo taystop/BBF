@@ -7,10 +7,12 @@ namespace BBF.Services;
 public class UserContextService
 {
     private readonly IDbContextFactory<ApplicationDbContext> _dbFactory;
+    private readonly RecurringTransactionService _recurringTransactionService;
 
-    public UserContextService(IDbContextFactory<ApplicationDbContext> dbFactory)
+    public UserContextService(IDbContextFactory<ApplicationDbContext> dbFactory, RecurringTransactionService recurringTransactionService)
     {
         _dbFactory = dbFactory;
+        _recurringTransactionService = recurringTransactionService;
     }
 
     public string? UserId { get; private set; }
@@ -65,6 +67,11 @@ public class UserContextService
         // Set active group to first group
         ActiveGroupId = Groups.FirstOrDefault()?.Id;
         IsInitialized = true;
+
+        // Materialize any due recurring transactions (this app has no background job infrastructure,
+        // so a rule only fires once its group is visited — not on a fixed schedule).
+        if (ActiveGroupId is not null)
+            await _recurringTransactionService.MaterializeDueAsync(ActiveGroupId.Value);
     }
 
     public void SetActiveGroup(int groupId)

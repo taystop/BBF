@@ -70,6 +70,21 @@ builder.Services.AddScoped<DocumentService>();
 // Plaid banking integration
 builder.Services.AddScoped<PlaidService>();
 
+// Manual account ledger + balance maintenance
+builder.Services.AddScoped<AccountService>();
+
+// Transaction CRUD + CSV import (keeps account balance recalculation in one place)
+builder.Services.AddScoped<TransactionService>();
+
+// Zero-based budget periods, line items, and rollover
+builder.Services.AddScoped<BudgetPeriodService>();
+
+// Recurring transaction rules + login-triggered materialization
+builder.Services.AddScoped<RecurringTransactionService>();
+
+// Savings goals + contributions
+builder.Services.AddScoped<GoalService>();
+
 // User context (multi-tenancy)
 builder.Services.AddScoped<UserContextService>();
 
