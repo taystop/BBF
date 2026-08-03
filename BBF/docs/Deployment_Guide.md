@@ -43,50 +43,40 @@ mkdir C:\BBFData\Documents
 mkdir C:\inetpub\BBF\logs
 ```
 
-Copy everything from `F:\Coding\BBF\publish\` to `C:\inetpub\BBF\` on the server.
+Copy everything from `F:\Coding\BBF\publish\` to `D:\Website\BBF\` on the server, **excluding
+`web.config` and `appsettings.Production.json`** — see Step 3 before running this for the first time.
 
-If the server has access to the F: drive:
 ```powershell
-robocopy "F:\Coding\BBF\publish" "C:\inetpub\BBF" /MIR /XF appsettings.Development.json
+robocopy "F:\Coding\BBF\publish" "D:\Website\BBF" /MIR /XF web.config appsettings.Development.json appsettings.Production.json
 ```
 
 ---
 
 ## Step 3: Configure Production Secrets
 
-Set environment variables for the IIS app pool (avoids secrets in files):
+**The real mechanism (confirmed 2026-08-03 after the first CI/CD deploy wiped production secrets):**
+every secret — DB connection string, Home Assistant token, Plaid credentials, AMP username/password,
+Emby API key, and the document storage path — lives in a single file, **`appsettings.Production.json`,
+edited directly on the server and never overwritten by a deploy.** ASP.NET Core loads it automatically
+after `appsettings.json` when `ASPNETCORE_ENVIRONMENT=Production` (set in `web.config`), so its values
+override the blank placeholders committed to git.
+
+The version committed to git (`BBF/appsettings.Production.json`) only has placeholder/blank values —
+that's intentional, real secrets must never be committed. On the server, edit the real one directly:
 
 ```powershell
-# Open IIS Manager → Application Pools → BBF pool → Advanced Settings
-# Or set via command line:
-
-# Option A: Use environment variables in the web.config
-# Edit C:\inetpub\BBF\web.config and add environmentVariables:
+notepad D:\Website\BBF\appsettings.Production.json
 ```
 
-Edit `C:\inetpub\BBF\web.config` to include secrets:
+and fill in the real values for each key (see the placeholder file in the repo for the exact shape:
+`ConnectionStrings.DefaultConnection`, `HomeAssistant.Token`, `Plaid.ClientId`/`Plaid.Secret`,
+`AMP.Username`/`AMP.Password`, `Emby.ApiKey`, `Documents.StoragePath`).
 
-```xml
-<?xml version="1.0" encoding="utf-8"?>
-<configuration>
-  <location path="." inheritInChildApplications="false">
-    <system.webServer>
-      <handlers>
-        <add name="aspNetCore" path="*" verb="*" modules="AspNetCoreModuleV2" resourceType="Unspecified" />
-      </handlers>
-      <aspNetCore processPath="dotnet" arguments=".\BBF.dll" stdoutLogEnabled="false" stdoutLogFile=".\logs\stdout" hostingModel="inprocess">
-        <environmentVariables>
-          <environmentVariable name="ASPNETCORE_ENVIRONMENT" value="Production" />
-          <environmentVariable name="ConnectionStrings__DefaultConnection" value="Server=localhost;Database=BBF;Trusted_Connection=True;TrustServerCertificate=True;MultipleActiveResultSets=true" />
-          <environmentVariable name="HomeAssistant__Token" value="YOUR_HA_TOKEN_HERE" />
-        </environmentVariables>
-      </aspNetCore>
-    </system.webServer>
-  </location>
-</configuration>
-```
-
-**Important:** Replace `YOUR_HA_TOKEN_HERE` with the actual Home Assistant token.
+**Both automated (`deploy.yml`) and manual (`robocopy` above) deploys must exclude
+`appsettings.Production.json`** from the sync, exactly like `web.config` — this is not optional, it's
+the only thing standing between a routine deploy and wiping every credential the app has, as happened
+on 2026-08-03. Keep a backup of the real file somewhere outside `D:\Website\BBF` (e.g. a password
+manager or an offline copy) in case it's ever lost.
 
 ---
 
@@ -206,19 +196,22 @@ cd F:\Coding\BBF
 dotnet publish BBF/BBF.csproj -c Release -o ./publish
 
 # Copy to server (stop the site first)
-# In IIS Manager: stop the BBF site
-robocopy "F:\Coding\BBF\publish" "C:\inetpub\BBF" /MIR /XF web.config appsettings.Development.json
-# In IIS Manager: start the BBF site
+# In IIS Manager: stop the "bigboisfederation" site
+robocopy "F:\Coding\BBF\publish" "D:\Website\BBF" /MIR /XF web.config appsettings.Development.json appsettings.Production.json
+# In IIS Manager: start the "bigboisfederation" site
 ```
 
-**Note:** Exclude `web.config` from robocopy so you don't overwrite production secrets.
+**Note:** Exclude `web.config` AND `appsettings.Production.json` from robocopy — the latter holds every
+production secret (see Step 3) and forgetting it wipes them, as happened on 2026-08-03.
 
 ---
 
 ## Troubleshooting
 
 **App won't start in IIS:**
-- Check `C:\inetpub\BBF\logs\stdout*` for errors
+- Check `D:\Website\BBF\logs\stdout*` for errors (note: the CI/CD pipeline's `/MIR` also deletes this
+  `logs` folder on every deploy since it isn't part of the publish output — recreate it if you need
+  stdout logging: `mkdir D:\Website\BBF\logs`)
 - Enable stdout logging: set `stdoutLogEnabled="true"` in web.config
 - Verify .NET 10 Hosting Bundle is installed: `dotnet --info` on server
 

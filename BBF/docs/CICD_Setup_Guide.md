@@ -60,19 +60,23 @@ run will take longer while it downloads.
 ## Step 2: Add the production connection string as a GitHub secret
 
 The workflow needs the production database connection string to run `dotnet ef database update`
-against the real database (production secrets currently live in `web.config` on the server, which
-`appsettings.json` intentionally leaves blank — the pipeline needs its own copy to pass to the EF
-CLI).
+against the real database. This is separate from the app's own runtime secrets (see below) — the CI
+job needs its own copy to pass to the EF CLI, since it runs before the new build's `appsettings.Production.json`
+(untouched on the server) even comes into play.
 
 In the repo: **Settings → Secrets and variables → Actions → New repository secret**
 
 - Name: `PROD_DB_CONNECTION`
-- Value: the same connection string currently in `web.config`'s `ConnectionStrings__DefaultConnection`
-  environment variable (e.g. `Server=RackServer;Database=BBF;Trusted_Connection=True;TrustServerCertificate=True;MultipleActiveResultSets=true`)
+- Value: the same connection string that's in `D:\Website\BBF\appsettings.Production.json` on the
+  server (e.g. `Server=RackServer;Database=BBF;Trusted_Connection=True;TrustServerCertificate=True;MultipleActiveResultSets=true`)
 
-This is the only secret the pipeline needs — everything else (Home Assistant token, Plaid secrets,
-etc.) stays in `web.config` on the server exactly as it is today, since the pipeline never touches
-`web.config` (it's excluded from the robocopy, same as the manual process).
+**Where the app's own runtime secrets actually live:** all of them — DB connection string, Home
+Assistant token, Plaid credentials, AMP/Emby credentials, document storage path — live in a single
+file, `appsettings.Production.json`, edited directly on the server and never touched by a deploy (see
+`Deployment_Guide.md` Step 3). **This was discovered the hard way**: the first live pipeline run didn't
+exclude that file from its `robocopy /MIR`, wiped every production secret, and took the site down. The
+workflow now excludes it explicitly — if you ever add a new settings file that holds secrets, add it
+to the `/XF` list in `.github/workflows/deploy.yml` too, or the same thing happens again.
 
 ---
 
@@ -99,7 +103,7 @@ and update the workflow (and this doc) to match.
 - Replaces the manual "Updating the Deployment" steps in `Deployment_Guide.md` (publish → robocopy →
   restart IIS) — those still work as a fallback if the runner is ever down.
 - Keeps everything else in `Deployment_Guide.md` as-is: initial IIS site setup, Cloudflare Tunnel
-  config, and `web.config` secrets are untouched by this pipeline.
+  config, and `appsettings.Production.json` secrets are untouched by this pipeline.
 - Migrations now apply automatically on every push to `main` (per your call) — there's no separate
   manual migration step anymore. If a migration ever needs to be reverted, that's still a manual
   `dotnet ef database update <PreviousMigration>` run by hand.

@@ -55,10 +55,10 @@ jobs:
             Write-Warning "Could not stop site 'bigboisfederation' (may already be stopped): $_"
           }
 
-      - name: Copy published files (preserving web.config and dev settings)
+      - name: Copy published files (preserving web.config and production/dev settings)
         shell: powershell
         run: |
-          robocopy ".\publish" "D:\Website\BBF" /MIR /XF web.config appsettings.Development.json
+          robocopy ".\publish" "D:\Website\BBF" /MIR /XF web.config appsettings.Development.json appsettings.Production.json /XD logs
           # Robocopy exit codes 0-7 are success; 8+ indicates a real failure.
           if ($LASTEXITCODE -ge 8) { exit 1 } else { exit 0 }
 
