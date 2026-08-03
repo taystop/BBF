@@ -28,7 +28,11 @@ choose **Windows**, and follow the generated commands — they'll look like this
 mkdir C:\actions-runner ; cd C:\actions-runner
 
 Invoke-WebRequest -Uri https://github.com/actions/runner/releases/download/v<version>/actions-runner-win-x64-<version>.zip -OutFile actions-runner.zip
-Expand-Archive -Path actions-runner.zip -DestinationPath .
+
+# Extract with tar, not Expand-Archive — on this server Expand-Archive silently dropped several files
+# (svc.cmd, config.sh, run.sh, svc.sh) with no error. tar (built into Windows Server 2022) doesn't have
+# that problem. Confirm afterward with: Test-Path .\svc.cmd
+tar -xf actions-runner.zip
 
 ./config.cmd --url https://github.com/taystop/BBF --token <TOKEN_FROM_GITHUB_PAGE>
 ```
@@ -36,17 +40,16 @@ Expand-Archive -Path actions-runner.zip -DestinationPath .
 When prompted for runner labels, add `bbf-server` (the workflow targets this label specifically, in
 addition to the default `self-hosted` and `Windows` labels).
 
-Install it as a Windows service so it survives reboots and doesn't need a logged-in session:
+When `config.cmd` asks whether to run as a service, say yes — this installs and starts the Windows
+service for you, so there's no separate `svc.cmd install` step needed.
 
-```powershell
-./svc install
-./svc start
-```
-
-**Service account:** the runner service needs local rights to stop/start the IIS site and write to
-`C:\inetpub\BBF`. Running it as `NT AUTHORITY\SYSTEM` (the default for `svc install` when run as
-Administrator) covers this. If you use a dedicated service account instead, grant it IIS management
-rights and the same `icacls` grants documented in `Deployment_Guide.md` Step 4.
+**Service account:** when prompted for the service account, do not accept the `NT AUTHORITY\NETWORK
+SERVICE` default — it lacks the rights to manage IIS and write to the site's physical path. On a
+plain member server, `NT AUTHORITY\SYSTEM` works. **If the server is a domain controller** (ours is),
+built-in machine accounts can't be added to local groups and `SYSTEM` will fail with "member has the
+wrong account type" — use a domain account instead (`DOMAIN\Administrator` or a dedicated domain
+service account with local admin rights on that box). Find your domain name with `whoami` or
+`Get-ADDomain`.
 
 **.NET SDK:** the workflow uses `actions/setup-dotnet` to install the .NET 10 SDK automatically on
 the runner if it isn't already present, so you don't need to pre-install it — just note the first
@@ -78,11 +81,16 @@ etc.) stays in `web.config` on the server exactly as it is today, since the pipe
 Push a small, low-risk change to `main` and watch **Actions** tab on GitHub:
 
 1. `build` job runs on GitHub's hosted runner — confirms the app compiles.
-2. `deploy` job runs on the self-hosted runner — publishes, applies migrations, stops the IIS site,
-   copies files, restarts the site, then hits `http://localhost:5000` as a smoke test.
+2. `deploy` job runs on the self-hosted runner — publishes, applies migrations, stops the IIS site
+   (`bigboisfederation` — not "BBF", despite what Step 4 of `Deployment_Guide.md` originally planned),
+   copies files to `D:\Website\BBF` (not `C:\inetpub\BBF`), restarts the site, then hits
+   `http://localhost:5000` as a smoke test.
 
 If the `deploy` job never picks up, double check the runner is running (`Get-Service actions.runner.*`
-on the server) and that its labels include `bbf-server`.
+on the server) and that its labels include `bbf-server`. If the stop/start-site steps fail with
+"Cannot find path IIS:\Sites\...", the site name or path has drifted from what's in
+`.github/workflows/deploy.yml` — run `Get-Website | Select-Object Name, PhysicalPath` on the server
+and update the workflow (and this doc) to match.
 
 ---
 

@@ -2,6 +2,12 @@
 
 Deploy BBF to Windows Server 2022 (10.69.1.5) via IIS + Cloudflare Tunnel.
 
+**Actual production values (confirmed 2026-08-03 — this doc originally specified different ones,
+which broke the first CI/CD deploy run; if you change these on the server, update this doc too):**
+- IIS site name: `bigboisfederation` (not `BBF`)
+- Physical path: `D:\Website\BBF` (not `C:\inetpub\BBF`)
+- App pool name: unconfirmed — verify with `Get-IISAppPool` before trusting the "BBF" references below
+
 ## Prerequisites
 
 - Windows Server 2022 with IIS enabled

@@ -49,12 +49,16 @@ jobs:
         shell: powershell
         run: |
           Import-Module WebAdministration
-          Stop-Website -Name "BBF" -ErrorAction SilentlyContinue
+          try {
+            Stop-Website -Name "bigboisfederation" -ErrorAction Stop
+          } catch {
+            Write-Warning "Could not stop site 'bigboisfederation' (may already be stopped): $_"
+          }
 
       - name: Copy published files (preserving web.config and dev settings)
         shell: powershell
         run: |
-          robocopy ".\publish" "C:\inetpub\BBF" /MIR /XF web.config appsettings.Development.json
+          robocopy ".\publish" "D:\Website\BBF" /MIR /XF web.config appsettings.Development.json
           # Robocopy exit codes 0-7 are success; 8+ indicates a real failure.
           if ($LASTEXITCODE -ge 8) { exit 1 } else { exit 0 }
 
@@ -62,7 +66,7 @@ jobs:
         shell: powershell
         run: |
           Import-Module WebAdministration
-          Start-Website -Name "BBF"
+          Start-Website -Name "bigboisfederation"
 
       - name: Smoke test
         shell: powershell
