@@ -189,6 +189,9 @@ cloudflared service install
 
 ## Updating the Deployment
 
+**As of the CI/CD pipeline setup, pushes to `main` deploy automatically — see `CICD_Setup_Guide.md`.**
+The manual steps below still work as a fallback if the self-hosted runner is ever down.
+
 When you make changes:
 
 ```powershell

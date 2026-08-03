@@ -1,0 +1,72 @@
+name: Deploy BBF
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    name: Build
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore
+        run: dotnet restore BBF/BBF.csproj
+
+      - name: Build (Release)
+        run: dotnet build BBF/BBF.csproj -c Release --no-restore
+
+  deploy:
+    name: Deploy to production
+    needs: build
+    runs-on: [self-hosted, Windows, bbf-server]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore local tools (dotnet-ef)
+        working-directory: BBF
+        run: dotnet tool restore
+
+      - name: Publish
+        run: dotnet publish BBF/BBF.csproj -c Release -o ./publish
+
+      - name: Apply database migrations
+        working-directory: BBF
+        env:
+          DEPLOY_DB_CONNECTION: ${{ secrets.PROD_DB_CONNECTION }}
+        run: dotnet tool run dotnet-ef database update --connection "$env:DEPLOY_DB_CONNECTION"
+
+      - name: Stop IIS site
+        shell: powershell
+        run: |
+          Import-Module WebAdministration
+          Stop-Website -Name "BBF" -ErrorAction SilentlyContinue
+
+      - name: Copy published files (preserving web.config and dev settings)
+        shell: powershell
+        run: |
+          robocopy ".\publish" "C:\inetpub\BBF" /MIR /XF web.config appsettings.Development.json
+          # Robocopy exit codes 0-7 are success; 8+ indicates a real failure.
+          if ($LASTEXITCODE -ge 8) { exit 1 } else { exit 0 }
+
+      - name: Start IIS site
+        shell: powershell
+        run: |
+          Import-Module WebAdministration
+          Start-Website -Name "BBF"
+
+      - name: Smoke test
+        shell: powershell
+        run: |
+          Start-Sleep -Seconds 5
+          $response = Invoke-WebRequest -Uri "http://localhost:5000" -UseBasicParsing -TimeoutSec 30
+          if ($response.StatusCode -ne 200) { throw "Smoke test failed: HTTP $($response.StatusCode)" }
