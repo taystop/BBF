@@ -18,7 +18,7 @@ public class JwtTokenService(IConfiguration configuration)
 {
     private static readonly TimeSpan AccessTokenLifetime = TimeSpan.FromDays(14);
 
-    public IssuedToken IssueToken(ApplicationUser user)
+    public IssuedToken IssueToken(ApplicationUser user, IEnumerable<string>? roles = null)
     {
         var signingKey = configuration["Jwt:SigningKey"];
         if (string.IsNullOrEmpty(signingKey))
@@ -26,11 +26,12 @@ public class JwtTokenService(IConfiguration configuration)
 
         var expiresAtUtc = DateTime.UtcNow.Add(AccessTokenLifetime);
 
-        var claims = new[]
+        var claims = new List<Claim>
         {
-            new Claim(ClaimTypes.NameIdentifier, user.Id),
-            new Claim(ClaimTypes.Name, user.UserName ?? user.Id),
+            new(ClaimTypes.NameIdentifier, user.Id),
+            new(ClaimTypes.Name, user.UserName ?? user.Id),
         };
+        claims.AddRange((roles ?? []).Select(r => new Claim(ClaimTypes.Role, r)));
 
         var credentials = new SigningCredentials(
             new SymmetricSecurityKey(Encoding.UTF8.GetBytes(signingKey)),

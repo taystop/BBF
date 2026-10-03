@@ -45,7 +45,10 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSigningKey ?? string.Empty)),
         };
     });
-builder.Services.AddAuthorization();
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy("AdminOnly", policy => policy.RequireRole("Admin"));
+});
 
 builder.Services.AddScoped<ICurrentUserContext, CurrentUserContext>();
 builder.Services.AddScoped<ITenantDbContextFactory, TenantDbContextFactory>();
@@ -64,8 +67,13 @@ builder.Services.AddScoped<DocumentsService>();
 builder.Services.AddScoped<WikiArticlesService>();
 builder.Services.AddScoped<WikiSearchService>();
 builder.Services.AddScoped<ChatService>();
+builder.Services.AddScoped<GroupManagementService>();
+builder.Services.AddScoped<ServiceLinksService>();
 builder.Services.AddHttpClient<OllamaService>();
 builder.Services.AddHttpClient<WebSearchService>();
+builder.Services.AddHttpClient<HomeAssistantService>();
+builder.Services.AddHttpClient<EmbyService>();
+builder.Services.AddHttpClient<AmpService>();
 builder.Services.AddHostedService<RecurringMaterializationBackgroundService>();
 
 var app = builder.Build();
@@ -80,9 +88,13 @@ app.UseExceptionHandler(errorApp =>
     errorApp.Run(async context =>
     {
         var exception = context.Features.Get<Microsoft.AspNetCore.Diagnostics.IExceptionHandlerFeature>()?.Error;
-        context.Response.StatusCode = exception is ForbiddenAccessException
-            ? StatusCodes.Status403Forbidden
-            : StatusCodes.Status500InternalServerError;
+        context.Response.StatusCode = exception switch
+        {
+            ForbiddenAccessException => StatusCodes.Status403Forbidden,
+            KeyNotFoundException => StatusCodes.Status404NotFound,
+            InvalidOperationException => StatusCodes.Status409Conflict,
+            _ => StatusCodes.Status500InternalServerError,
+        };
         await context.Response.WriteAsJsonAsync(new { error = exception?.Message });
     });
 });
@@ -107,5 +119,10 @@ app.MapGroceryListsEndpoints();
 app.MapDocumentsEndpoints();
 app.MapWikiArticlesEndpoints();
 app.MapChatEndpoints();
+app.MapServiceLinksEndpoints();
+app.MapHomeAssistantEndpoints();
+app.MapEmbyEndpoints();
+app.MapAmpEndpoints();
+app.MapIntegrationsStatusEndpoints();
 
 app.Run();

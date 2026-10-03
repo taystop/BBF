@@ -1,8 +1,7 @@
 using BBF.Api.Auth;
-using BBF.Data;
-using BBF.Data.Entities;
+using BBF.Api.Services;
 using BBF.Shared.Contracts.Auth;
-using Microsoft.EntityFrameworkCore;
+using BBF.Shared.Contracts.Groups;
 
 namespace BBF.Api.Endpoints;
 
@@ -12,46 +11,47 @@ public static class GroupsEndpoints
     {
         var group = app.MapGroup("/api/groups").RequireAuthorization();
 
-        group.MapGet("/", async (
-            ICurrentUserContext currentUser,
-            IDbContextFactory<ApplicationDbContext> dbFactory,
-            CancellationToken ct) =>
+        // Auto-creates a personal group on first login — ported from the old UserContextService,
+        // minus the recurring-transaction materialization side effect (that's now a proper
+        // BackgroundService, not a client-triggered call — see Phase 1b).
+        group.MapGet("/", async (ICurrentUserContext currentUser, GroupManagementService groups, CancellationToken ct) =>
+            Results.Ok(await groups.GetMyGroupsAsync(currentUser.UserId, ct)));
+
+        // Admin-only group management — matches the original Groups.razor page's
+        // [Authorize(Roles = "Admin")] gate. Per-group Owner checks happen inside the service itself.
+        var admin = app.MapGroup("/api/admin/groups").RequireAuthorization("AdminOnly");
+
+        admin.MapGet("/", async (GroupManagementService groups, CancellationToken ct) =>
+            Results.Ok(await groups.GetAllGroupsDetailedAsync(ct)));
+
+        admin.MapPost("/", async (ICurrentUserContext currentUser, CreateGroupRequest request, GroupManagementService groups, CancellationToken ct) =>
+            Results.Ok(await groups.CreateGroupAsync(currentUser.UserId, request, ct)));
+
+        admin.MapPut("/{groupId:int}", async (ICurrentUserContext currentUser, int groupId, UpdateGroupRequest request, GroupManagementService groups, CancellationToken ct) =>
         {
-            var userId = currentUser.UserId;
-            await using var db = await dbFactory.CreateDbContextAsync(ct);
+            await groups.UpdateGroupAsync(currentUser.UserId, groupId, request, ct);
+            return Results.NoContent();
+        });
 
-            var groups = await db.UserGroupMembers
-                .Where(m => m.UserId == userId)
-                .Include(m => m.Group)
-                .Select(m => m.Group)
-                .OrderBy(g => g.Name)
-                .ToListAsync(ct);
+        admin.MapDelete("/{groupId:int}", async (ICurrentUserContext currentUser, int groupId, GroupManagementService groups, CancellationToken ct) =>
+        {
+            await groups.DeleteGroupAsync(currentUser.UserId, groupId, ct);
+            return Results.NoContent();
+        });
 
-            // Auto-create a personal group on first login — ported from the old UserContextService,
-            // minus the recurring-transaction materialization side effect (that moves to a proper
-            // BackgroundService alongside the rest of the budget domain, not a client-triggered call).
-            if (groups.Count == 0)
-            {
-                var user = await db.Users.FindAsync([userId], ct);
-                var displayName = user?.UserName ?? "User";
+        admin.MapPost("/{groupId:int}/members", async (ICurrentUserContext currentUser, int groupId, AddGroupMemberRequest request, GroupManagementService groups, CancellationToken ct) =>
+            Results.Ok(await groups.AddMemberAsync(currentUser.UserId, groupId, request, ct)));
 
-                var personalGroup = new UserGroup { Name = $"{displayName}'s Budget", CreatedAt = DateTime.UtcNow };
-                db.UserGroups.Add(personalGroup);
-                await db.SaveChangesAsync(ct);
+        admin.MapDelete("/{groupId:int}/members/{memberId:int}", async (ICurrentUserContext currentUser, int groupId, int memberId, GroupManagementService groups, CancellationToken ct) =>
+        {
+            await groups.RemoveMemberAsync(currentUser.UserId, groupId, memberId, ct);
+            return Results.NoContent();
+        });
 
-                db.UserGroupMembers.Add(new UserGroupMember
-                {
-                    GroupId = personalGroup.Id,
-                    UserId = userId,
-                    Role = "Owner",
-                    JoinedAt = DateTime.UtcNow
-                });
-                await db.SaveChangesAsync(ct);
-
-                groups = [personalGroup];
-            }
-
-            return Results.Ok(groups.Select(g => new GroupDto(g.Id, g.Name)).ToList());
+        admin.MapPut("/{groupId:int}/members/{memberId:int}/role", async (ICurrentUserContext currentUser, int groupId, int memberId, ChangeGroupMemberRoleRequest request, GroupManagementService groups, CancellationToken ct) =>
+        {
+            await groups.ChangeMemberRoleAsync(currentUser.UserId, groupId, memberId, request, ct);
+            return Results.NoContent();
         });
     }
 }

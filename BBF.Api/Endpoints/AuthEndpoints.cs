@@ -25,7 +25,8 @@ public static class AuthEndpoints
             if (!result.Succeeded)
                 return Results.Unauthorized();
 
-            var issued = tokenService.IssueToken(user);
+            var roles = await userManager.GetRolesAsync(user);
+            var issued = tokenService.IssueToken(user, roles);
             return Results.Ok(new LoginResponse(issued.AccessToken, issued.ExpiresAtUtc, user.Id, user.UserName ?? user.Id));
         });
 
@@ -48,7 +49,8 @@ public static class AuthEndpoints
             if (user is null)
                 return Results.NotFound();
 
-            var issued = tokenService.IssueToken(user);
+            var roles = await userManager.GetRolesAsync(user);
+            var issued = tokenService.IssueToken(user, roles);
             return Results.Ok(new LoginResponse(issued.AccessToken, issued.ExpiresAtUtc, user.Id, user.UserName ?? user.Id));
         });
     }
