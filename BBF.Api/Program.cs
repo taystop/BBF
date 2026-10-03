@@ -60,6 +60,12 @@ builder.Services.AddScoped<IngredientsService>();
 builder.Services.AddScoped<RecipesService>();
 builder.Services.AddScoped<MealPlanWeeksService>();
 builder.Services.AddScoped<GroceryListsService>();
+builder.Services.AddScoped<DocumentsService>();
+builder.Services.AddScoped<WikiArticlesService>();
+builder.Services.AddScoped<WikiSearchService>();
+builder.Services.AddScoped<ChatService>();
+builder.Services.AddHttpClient<OllamaService>();
+builder.Services.AddHttpClient<WebSearchService>();
 builder.Services.AddHostedService<RecurringMaterializationBackgroundService>();
 
 var app = builder.Build();
@@ -98,5 +104,8 @@ app.MapIngredientsEndpoints();
 app.MapRecipesEndpoints();
 app.MapMealPlanEndpoints();
 app.MapGroceryListsEndpoints();
+app.MapDocumentsEndpoints();
+app.MapWikiArticlesEndpoints();
+app.MapChatEndpoints();
 
 app.Run();
