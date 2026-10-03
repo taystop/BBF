@@ -1,7 +1,11 @@
+using BBF.ApiClients;
 using BBF.Components;
 using BBF.Components.Account;
 using BBF.Data;
 using BBF.Services;
+using BBF.Shared.Contracts.Accounts;
+using BBF.Shared.Contracts.Auth;
+using BBF.Shared.Contracts.Transactions;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -94,6 +98,17 @@ builder.Services.AddScoped<IngredientService>();
 builder.Services.AddScoped<RecipeService>();
 builder.Services.AddScoped<MealPlanService>();
 builder.Services.AddScoped<GroceryListService>();
+
+// --- BBF.Api client infrastructure (Phase 2) ---
+// Additive for now: registers the HTTP-backed implementations pages will switch to as they move into
+// BBF.Shared, alongside (not instead of) the direct-EF services above, which still back every page
+// that hasn't moved yet. Nothing above this block changes behavior.
+var apiBaseUrl = builder.Configuration["Api:BaseUrl"] ?? "http://localhost:5001";
+builder.Services.AddApiClientInfrastructure(apiBaseUrl);
+builder.Services.AddApiHttpClient<IGroupService, HttpGroupService>(apiBaseUrl);
+builder.Services.AddApiHttpClient<ITransactionService, HttpTransactionService>(apiBaseUrl);
+builder.Services.AddApiHttpClient<IAccountService, HttpAccountService>(apiBaseUrl);
+builder.Services.AddScoped<ApiGroupContext>();
 
 var app = builder.Build();
 
