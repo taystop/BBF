@@ -1,14 +1,10 @@
 @page "/accounts"
-@using Microsoft.AspNetCore.Authorization
+@using BBF.Shared.Contracts.Accounts
+@using BBF.Shared.Contracts.Plaid
 @attribute [Authorize]
-@using BBF.Data
-@using BBF.Data.Entities
-@using BBF.Services
-@using Microsoft.EntityFrameworkCore
-@inject IDbContextFactory<ApplicationDbContext> DbFactory
-@inject PlaidService Plaid
-@inject AccountService AccountSvc
-@inject UserContextService UserContext
+@inject IAccountService AccountSvc
+@inject IPlaidService Plaid
+@inject ApiGroupContext GroupContext
 @inject IDialogService DialogService
 @inject ISnackbar Snackbar
 @inject IJSRuntime JS
@@ -17,7 +13,7 @@
 <PageTitle>Accounts - BBF</PageTitle>
 
 <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="py-4">
-    @if (!UserContext.IsInitialized || UserContext.ActiveGroupId is null)
+    @if (!GroupContext.IsInitialized || GroupContext.ActiveGroupId is null)
     {
         <MudPaper Class="pa-6 text-center" Elevation="2">
             <MudIcon Icon="@Icons.Material.Filled.Group" Size="Size.Large" Color="Color.Secondary" Class="mb-3" />
@@ -78,7 +74,7 @@
                         </MudPaper>
                     }
 
-                    @if (!_accounts.Any())
+                    @if (_accounts.Count == 0)
                     {
                         <MudText Typo="Typo.body2" Color="Color.Secondary" Class="pa-4 text-center">
                             No accounts yet. Add one to start tracking balances.
@@ -98,7 +94,7 @@
                         </MudButton>
                     </MudStack>
 
-                    @if (_connections.Any())
+                    @if (_connections.Count > 0)
                     {
                         @foreach (var conn in _connections)
                         {
@@ -131,7 +127,7 @@
                                                     @(acct.Subtype ?? acct.Type)@(acct.Mask is not null ? $" ····{acct.Mask}" : "")
                                                 </MudText>
                                             </MudStack>
-                                            <MudTextField @bind-Value="acct.CustomName"
+                                            <MudTextField @bind-Value="_customNameEdits[acct.Id]"
                                                           Placeholder="@(acct.OfficialName ?? acct.Name)"
                                                           Variant="Variant.Outlined" Dense Margin="Margin.Dense"
                                                           Label="Custom Name"
@@ -165,14 +161,15 @@
 </MudContainer>
 
 @code {
-    private List<Account> _accounts = [];
-    private List<PlaidConnection> _connections = [];
-    private List<PlaidAccount> _plaidAccounts = [];
+    private List<AccountDto> _accounts = [];
+    private List<PlaidConnectionDto> _connections = [];
+    private List<PlaidAccountDto> _plaidAccounts = [];
+    private readonly Dictionary<int, string> _customNameEdits = [];
 
     protected override async Task OnInitializedAsync()
     {
-        UserContext.OnGroupChanged += OnGroupChanged;
-        if (UserContext.ActiveGroupId is not null)
+        GroupContext.OnGroupChanged += OnGroupChanged;
+        if (GroupContext.ActiveGroupId is not null)
             await LoadData();
     }
 
@@ -187,12 +184,16 @@
 
     private async Task LoadData()
     {
-        var groupId = UserContext.ActiveGroupId;
+        var groupId = GroupContext.ActiveGroupId;
         if (groupId is null) return;
 
         _accounts = await AccountSvc.GetAccountsAsync(groupId.Value);
         _connections = await Plaid.GetConnectionsAsync(groupId.Value);
         _plaidAccounts = _connections.SelectMany(c => c.Accounts.Where(a => a.IsActive)).ToList();
+
+        _customNameEdits.Clear();
+        foreach (var acct in _plaidAccounts)
+            _customNameEdits[acct.Id] = acct.CustomName ?? "";
 
         StateHasChanged();
     }
@@ -203,49 +204,49 @@
     {
         var parameters = new DialogParameters<AccountDialog>
         {
-            { x => x.Account, new Account() },
+            { x => x.IsNew, true },
             { x => x.PlaidAccounts, _plaidAccounts }
         };
         var dialog = await DialogService.ShowAsync<AccountDialog>("Add Account", parameters);
         var result = await dialog.Result;
 
-        if (result is not null && !result.Canceled && result.Data is Account acct)
+        if (result is not null && !result.Canceled && result.Data is AccountDialog.AccountResult data)
         {
-            acct.GroupId = UserContext.ActiveGroupId;
-            await AccountSvc.CreateAsync(acct);
+            await AccountSvc.CreateAsync(GroupContext.ActiveGroupId!.Value, new CreateAccountRequest(
+                data.Name, data.AccountType, data.StartingBalance));
             await LoadData();
-            Snackbar.Add($"Account '{acct.Name}' created.", Severity.Success);
+            Snackbar.Add($"Account '{data.Name}' created.", Severity.Success);
         }
     }
 
-    private async Task EditAccount(Account account)
+    private async Task EditAccount(AccountDto account)
     {
         var parameters = new DialogParameters<AccountDialog>
         {
-            { x => x.Account, new Account
-                {
-                    Id = account.Id, Name = account.Name, AccountType = account.AccountType,
-                    StartingBalance = account.StartingBalance, CurrentBalance = account.CurrentBalance,
-                    PlaidAccountId = account.PlaidAccountId, IsActive = account.IsActive
-                }
-            },
+            { x => x.IsNew, false },
+            { x => x.Name, account.Name },
+            { x => x.AccountType, account.AccountType },
+            { x => x.StartingBalance, account.StartingBalance },
+            { x => x.PlaidAccountId, account.PlaidAccountId },
+            { x => x.IsActive, account.IsActive },
             { x => x.PlaidAccounts, _plaidAccounts }
         };
         var dialog = await DialogService.ShowAsync<AccountDialog>("Edit Account", parameters);
         var result = await dialog.Result;
 
-        if (result is not null && !result.Canceled && result.Data is Account updated)
+        if (result is not null && !result.Canceled && result.Data is AccountDialog.AccountResult data)
         {
-            await AccountSvc.UpdateAsync(account.Id, updated.Name, updated.AccountType, updated.PlaidAccountId);
-            if (updated.IsActive != account.IsActive)
-                await AccountSvc.SetActiveAsync(account.Id, updated.IsActive);
+            var groupId = GroupContext.ActiveGroupId!.Value;
+            await AccountSvc.UpdateAsync(groupId, account.Id, new UpdateAccountRequest(data.Name, data.AccountType, data.PlaidAccountId));
+            if (data.IsActive != account.IsActive)
+                await AccountSvc.SetActiveAsync(groupId, account.Id, data.IsActive);
             await LoadData();
         }
     }
 
-    private async Task ToggleActive(Account account)
+    private async Task ToggleActive(AccountDto account)
     {
-        await AccountSvc.SetActiveAsync(account.Id, !account.IsActive);
+        await AccountSvc.SetActiveAsync(GroupContext.ActiveGroupId!.Value, account.Id, !account.IsActive);
         await LoadData();
     }
 
@@ -268,6 +269,10 @@
     };
 
     // --- Plaid ---
+    // ConnectBank still talks to BBF.Web's own /api/plaid/* endpoints via plaid-link.js (unchanged) —
+    // those endpoints now proxy to BBF.Api's IPlaidService server-side instead of calling EF directly.
+    // Plaid's JS SDK needs a same-origin browser context Mobile can't provide the same way; the native
+    // Android Link SDK is the documented follow-up for that platform.
 
     private DotNetObjectReference<Accounts>? _dotNetRef;
 
@@ -276,7 +281,7 @@
         try
         {
             _dotNetRef ??= DotNetObjectReference.Create(this);
-            await JS.InvokeVoidAsync("plaidLink.open", _dotNetRef, UserContext.ActiveGroupId);
+            await JS.InvokeVoidAsync("plaidLink.open", _dotNetRef, GroupContext.ActiveGroupId);
         }
         catch (Exception ex)
         {
@@ -298,13 +303,14 @@
         Snackbar.Add($"Plaid: {message}", Severity.Warning);
     }
 
-    private async Task SaveAccountName(PlaidAccount acct)
+    private async Task SaveAccountName(PlaidAccountDto acct)
     {
-        await Plaid.UpdateAccountNameAsync(acct.Id, acct.CustomName ?? "");
-        Snackbar.Add($"Account name updated to '{acct.DisplayName}'.", Severity.Success);
+        var customName = _customNameEdits.GetValueOrDefault(acct.Id, "");
+        await Plaid.UpdateAccountNameAsync(GroupContext.ActiveGroupId!.Value, acct.Id, new UpdatePlaidAccountNameRequest(customName));
+        Snackbar.Add($"Account name updated.", Severity.Success);
     }
 
-    private async Task DisconnectBank(PlaidConnection conn)
+    private async Task DisconnectBank(PlaidConnectionDto conn)
     {
         var parameters = new DialogParameters<MessageBoxDialog>
         {
@@ -317,14 +323,14 @@
 
         if (result is not null && !result.Canceled)
         {
-            await Plaid.RemoveConnectionAsync(conn.Id);
+            await Plaid.RemoveConnectionAsync(GroupContext.ActiveGroupId!.Value, conn.Id);
             await LoadData();
         }
     }
 
     public void Dispose()
     {
-        UserContext.OnGroupChanged -= OnGroupChanged;
+        GroupContext.OnGroupChanged -= OnGroupChanged;
         _dotNetRef?.Dispose();
     }
 }

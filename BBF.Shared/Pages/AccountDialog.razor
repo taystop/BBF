@@ -1,0 +1,73 @@
+@using BBF.Shared.Contracts.Plaid
+
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">@(IsNew ? "Add Account" : "Edit Account")</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudTextField @bind-Value="Name" Label="Name" Required
+                      Variant="Variant.Outlined" Class="mb-3" />
+        <MudSelect @bind-Value="AccountType" Label="Account Type"
+                   Variant="Variant.Outlined" Class="mb-3">
+            <MudSelectItem Value="@("Checking")">Checking</MudSelectItem>
+            <MudSelectItem Value="@("Savings")">Savings</MudSelectItem>
+            <MudSelectItem Value="@("CreditCard")">Credit Card</MudSelectItem>
+            <MudSelectItem Value="@("Cash")">Cash</MudSelectItem>
+            <MudSelectItem Value="@("Investment")">Investment</MudSelectItem>
+        </MudSelect>
+        <MudNumericField @bind-Value="StartingBalance" Label="Starting Balance ($)"
+                         Variant="Variant.Outlined" Class="mb-3" Format="N2"
+                         Disabled="@(!IsNew)"
+                         HelperText="@(!IsNew ? "Starting balance can't be changed after creation." : null)" />
+        @if (PlaidAccounts.Count > 0)
+        {
+            <MudSelect T="int?" @bind-Value="PlaidAccountId" Label="Linked Plaid Account (optional)"
+                       Variant="Variant.Outlined" Class="mb-3" Clearable>
+                @foreach (var pa in PlaidAccounts)
+                {
+                    <MudSelectItem T="int?" Value="@pa.Id">@pa.DisplayName</MudSelectItem>
+                }
+            </MudSelect>
+        }
+        <MudSwitch @bind-Value="IsActive" Label="Active" Color="Color.Primary" />
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Submit"
+                   Disabled="@(string.IsNullOrWhiteSpace(Name))">
+            Save
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance MudDialog { get; set; } = null!;
+
+    [Parameter] public bool IsNew { get; set; } = true;
+    [Parameter] public string Name { get; set; } = string.Empty;
+    [Parameter] public string AccountType { get; set; } = "Checking";
+    [Parameter] public decimal StartingBalance { get; set; }
+    [Parameter] public int? PlaidAccountId { get; set; }
+    [Parameter] public bool IsActive { get; set; } = true;
+    [Parameter] public List<PlaidAccountDto> PlaidAccounts { get; set; } = [];
+
+    private void Cancel() => MudDialog.Cancel();
+    private void Submit() => MudDialog.Close(DialogResult.Ok(new AccountResult
+    {
+        Name = Name,
+        AccountType = AccountType,
+        StartingBalance = StartingBalance,
+        PlaidAccountId = PlaidAccountId,
+        IsActive = IsActive
+    }));
+
+    public class AccountResult
+    {
+        public string Name { get; set; } = string.Empty;
+        public string AccountType { get; set; } = string.Empty;
+        public decimal StartingBalance { get; set; }
+        public int? PlaidAccountId { get; set; }
+        public bool IsActive { get; set; }
+    }
+}

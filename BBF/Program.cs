@@ -149,13 +149,14 @@ app.MapGet("/api/documents/{id:int}/download", async (int id, DocumentService do
     return Results.File(path, doc.ContentType, doc.FileName);
 }).RequireAuthorization();
 
-// Plaid Link endpoints (behind auth)
-app.MapPost("/api/plaid/create-link-token", async (PlaidService plaid, System.Security.Claims.ClaimsPrincipal user, ILogger<Program> logger) =>
+// Plaid Link endpoints (behind auth) — kept at these exact paths because wwwroot/js/plaid-link.js
+// fetches them directly (same-origin, no bearer token needed from the browser's point of view); they
+// now proxy to BBF.Api's IPlaidService instead of calling EF directly.
+app.MapPost("/api/plaid/create-link-token", async (IPlaidService plaid, ILogger<Program> logger) =>
 {
     try
     {
-        var userId = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "default";
-        var token = await plaid.CreateLinkTokenAsync(userId);
+        var token = await plaid.CreateLinkTokenAsync();
         return Results.Ok(new { linkToken = token });
     }
     catch (Exception ex)
@@ -165,9 +166,13 @@ app.MapPost("/api/plaid/create-link-token", async (PlaidService plaid, System.Se
     }
 }).RequireAuthorization().DisableAntiforgery();
 
-app.MapPost("/api/plaid/exchange-token", async (PlaidService plaid, PlaidExchangeRequest request) =>
+app.MapPost("/api/plaid/exchange-token", async (IPlaidService plaid, PlaidExchangeRequest request) =>
 {
-    var connection = await plaid.ExchangePublicTokenAsync(request.PublicToken, request.InstitutionName, request.InstitutionId, request.GroupId);
+    if (request.GroupId is null) return Results.BadRequest("groupId is required.");
+
+    var connection = await plaid.ExchangePublicTokenAsync(
+        request.GroupId.Value,
+        new ExchangePublicTokenRequest(request.PublicToken, request.InstitutionName, request.InstitutionId));
     return Results.Ok(new { connectionId = connection.Id });
 }).RequireAuthorization().DisableAntiforgery();
 
