@@ -13,6 +13,10 @@
     <PackageReference Include="Going.Plaid" Version="6.59.0" />
     <PackageReference Include="Markdig" Version="1.1.1" />
     <PackageReference Include="Microsoft.AspNetCore.Diagnostics.EntityFrameworkCore" Version="10.0.4" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.4">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
     <PackageReference Include="MudBlazor" Version="9.1.0" />
     <PackageReference Include="UglyToad.PdfPig" Version="1.7.0-custom-5" />
   </ItemGroup>

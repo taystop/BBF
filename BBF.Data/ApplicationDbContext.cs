@@ -6,6 +6,15 @@ namespace BBF.Data;
 
 public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options) : IdentityDbContext<ApplicationUser>(options)
 {
+    /// <summary>
+    /// Set by the caller (via the tenant-scoped context factory) immediately after construction, before
+    /// any query runs. When set, every GroupId-bearing entity's query filter restricts results to this
+    /// group — defense-in-depth on top of each service's own explicit GroupId filtering, since there is
+    /// no other mechanism forcing every call site to remember to scope by tenant. Left null only for
+    /// trusted, cross-tenant admin operations (e.g. the tenancy-migration endpoint).
+    /// </summary>
+    public int? CurrentGroupId { get; set; }
+
     public DbSet<ChatConversation> ChatConversations => Set<ChatConversation>();
     public DbSet<ChatMessage> ChatMessages => Set<ChatMessage>();
     public DbSet<ChatConversationShare> ChatConversationShares => Set<ChatConversationShare>();
@@ -69,6 +78,16 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
             e.ToTable("ServiceHealthLog");
         });
 
+        builder.Entity<Document>(e =>
+        {
+            e.HasQueryFilter(d => CurrentGroupId == null || d.GroupId == CurrentGroupId);
+
+            e.HasOne(d => d.Group)
+             .WithMany()
+             .HasForeignKey(d => d.GroupId)
+             .OnDelete(DeleteBehavior.SetNull);
+        });
+
         builder.Entity<ServiceLink>(e =>
         {
             e.HasMany(s => s.HealthLogs)
@@ -80,6 +99,7 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
         // BudgetCategory -> Transaction (set null on delete)
         builder.Entity<BudgetCategory>(e =>
         {
+            e.HasQueryFilter(b => CurrentGroupId == null || b.GroupId == CurrentGroupId);
             e.Property(b => b.MonthlyLimit).HasColumnType("decimal(18,2)");
             e.HasMany(b => b.Transactions)
              .WithOne(t => t.Category)
@@ -102,6 +122,7 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
 
         builder.Entity<Transaction>(e =>
         {
+            e.HasQueryFilter(t => CurrentGroupId == null || t.GroupId == CurrentGroupId);
             e.Property(t => t.Amount).HasColumnType("decimal(18,2)");
             e.HasIndex(t => t.PlaidTransactionId).IsUnique().HasFilter("[PlaidTransactionId] IS NOT NULL");
             e.HasIndex(t => t.Date);
@@ -121,6 +142,7 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
         // Account -> Transaction (set null on delete), Account -> PlaidAccount (optional reconciliation link)
         builder.Entity<Account>(e =>
         {
+            e.HasQueryFilter(a => CurrentGroupId == null || a.GroupId == CurrentGroupId);
             e.Property(a => a.StartingBalance).HasColumnType("decimal(18,2)");
             e.Property(a => a.CurrentBalance).HasColumnType("decimal(18,2)");
 
@@ -144,6 +166,7 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
         // BudgetPeriod -> BudgetLineItem (cascade delete)
         builder.Entity<BudgetPeriod>(e =>
         {
+            e.HasQueryFilter(p => CurrentGroupId == null || p.GroupId == CurrentGroupId);
             e.HasIndex(p => new { p.GroupId, p.StartDate }).IsUnique();
 
             e.HasOne(p => p.Group)
@@ -175,6 +198,7 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
         // RecurringTransaction -> Account (restrict — can't delete an account a rule still targets)
         builder.Entity<RecurringTransaction>(e =>
         {
+            e.HasQueryFilter(r => CurrentGroupId == null || r.GroupId == CurrentGroupId);
             e.Property(r => r.Amount).HasColumnType("decimal(18,2)");
 
             e.HasOne(r => r.Group)
@@ -196,6 +220,7 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
         // Goal -> GoalContribution (cascade delete)
         builder.Entity<Goal>(e =>
         {
+            e.HasQueryFilter(g => CurrentGroupId == null || g.GroupId == CurrentGroupId);
             e.Property(g => g.TargetAmount).HasColumnType("decimal(18,2)");
 
             e.HasOne(g => g.Group)
@@ -226,6 +251,7 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
 
         builder.Entity<PlaidConnection>(e =>
         {
+            e.HasQueryFilter(p => CurrentGroupId == null || p.GroupId == CurrentGroupId);
             e.HasIndex(p => p.ItemId).IsUnique();
 
             e.HasOne(p => p.Group)
@@ -280,6 +306,7 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
         // GrocerySection -> Ingredient (set null on delete)
         builder.Entity<GrocerySection>(e =>
         {
+            e.HasQueryFilter(s => CurrentGroupId == null || s.GroupId == CurrentGroupId);
             e.HasOne(s => s.Group)
              .WithMany()
              .HasForeignKey(s => s.GroupId)
@@ -293,6 +320,7 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
 
         builder.Entity<Ingredient>(e =>
         {
+            e.HasQueryFilter(i => CurrentGroupId == null || i.GroupId == CurrentGroupId);
             e.Property(i => i.PackageQuantity).HasColumnType("decimal(10,3)");
 
             e.HasOne(i => i.Group)
@@ -304,6 +332,7 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
         // Recipe -> RecipeIngredient (cascade delete, owned by the recipe)
         builder.Entity<Recipe>(e =>
         {
+            e.HasQueryFilter(r => CurrentGroupId == null || r.GroupId == CurrentGroupId);
             e.HasOne(r => r.Group)
              .WithMany()
              .HasForeignKey(r => r.GroupId)
@@ -331,6 +360,7 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
         // MealPlanWeek -> MealPlanEntry (cascade delete), MealPlanWeek -> GroceryList (cascade delete)
         builder.Entity<MealPlanWeek>(e =>
         {
+            e.HasQueryFilter(w => CurrentGroupId == null || w.GroupId == CurrentGroupId);
             e.HasIndex(w => new { w.GroupId, w.WeekStartDate }).IsUnique();
 
             e.HasOne(w => w.Group)

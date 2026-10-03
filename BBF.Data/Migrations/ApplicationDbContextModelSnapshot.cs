@@ -379,6 +379,9 @@ namespace BBF.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<int?>("GroupId")
+                        .HasColumnType("int");
+
                     b.Property<long>("Size")
                         .HasColumnType("bigint");
 
@@ -390,6 +393,8 @@ namespace BBF.Migrations
                         .HasColumnType("datetime2");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("GroupId");
 
                     b.ToTable("Documents");
                 });
@@ -1338,6 +1343,16 @@ namespace BBF.Migrations
                         .IsRequired();
 
                     b.Navigation("Conversation");
+                });
+
+            modelBuilder.Entity("BBF.Data.Entities.Document", b =>
+                {
+                    b.HasOne("BBF.Data.Entities.UserGroup", "Group")
+                        .WithMany()
+                        .HasForeignKey("GroupId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Group");
                 });
 
             modelBuilder.Entity("BBF.Data.Entities.Goal", b =>

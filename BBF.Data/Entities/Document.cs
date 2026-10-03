@@ -11,4 +11,7 @@ public class Document
     public string? Description { get; set; }
     public string? ExtractedText { get; set; }
     public DateTime UploadedAt { get; set; } = DateTime.UtcNow;
+
+    public int? GroupId { get; set; }
+    public UserGroup? Group { get; set; }
 }
