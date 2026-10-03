@@ -1,5 +1,6 @@
 using System.Text;
 using BBF.Api.Auth;
+using BBF.Api.BackgroundServices;
 using BBF.Api.Endpoints;
 using BBF.Api.Services;
 using BBF.Data;
@@ -51,6 +52,10 @@ builder.Services.AddScoped<ITenantDbContextFactory, TenantDbContextFactory>();
 builder.Services.AddScoped<JwtTokenService>();
 builder.Services.AddScoped<TransactionsService>();
 builder.Services.AddScoped<AccountsService>();
+builder.Services.AddScoped<BudgetPeriodsService>();
+builder.Services.AddScoped<RecurringTransactionsService>();
+builder.Services.AddScoped<GoalsService>();
+builder.Services.AddHostedService<RecurringMaterializationBackgroundService>();
 
 var app = builder.Build();
 
@@ -80,5 +85,8 @@ app.MapAuthEndpoints();
 app.MapGroupsEndpoints();
 app.MapTransactionsEndpoints();
 app.MapAccountsEndpoints();
+app.MapBudgetEndpoints();
+app.MapRecurringTransactionsEndpoints();
+app.MapGoalsEndpoints();
 
 app.Run();
