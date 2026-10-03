@@ -7,6 +7,7 @@ using BBF.Shared;
 using BBF.Shared.Contracts.Accounts;
 using BBF.Shared.Contracts.Auth;
 using BBF.Shared.Contracts.Budget;
+using BBF.Shared.Contracts.Documents;
 using BBF.Shared.Contracts.MealPlanning;
 using BBF.Shared.Contracts.Plaid;
 using BBF.Shared.Contracts.Transactions;
@@ -119,6 +120,7 @@ builder.Services.AddApiHttpClient<IIngredientService, HttpIngredientService>(api
 builder.Services.AddApiHttpClient<IRecipeService, HttpRecipeService>(apiBaseUrl);
 builder.Services.AddApiHttpClient<IMealPlanService, HttpMealPlanService>(apiBaseUrl);
 builder.Services.AddApiHttpClient<IGroceryListService, HttpGroceryListService>(apiBaseUrl);
+builder.Services.AddApiHttpClient<IDocumentService, HttpDocumentService>(apiBaseUrl);
 builder.Services.AddScoped<ApiGroupContext>();
 
 var app = builder.Build();
@@ -143,16 +145,26 @@ app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode()
     .AddAdditionalAssemblies(typeof(BBF.Shared.ApiGroupContext).Assembly);
 
-// Document download endpoint (behind auth)
-app.MapGet("/api/documents/{id:int}/download", async (int id, DocumentService docs) =>
+// Document download endpoint (behind auth) — a plain browser <a> link can't carry a bearer token, so
+// this proxies the request to BBF.Api server-side using the circuit's bridged JWT, then streams the
+// response straight back. Kept at this exact path since existing hrefs point here.
+app.MapGet("/api/documents/{id:int}/download", async (
+    int id, int groupId, IHttpClientFactory httpClientFactory, IApiAuthTokenProvider tokenProvider, IConfiguration config) =>
 {
-    var doc = await docs.GetByIdAsync(id);
-    if (doc is null) return Results.NotFound();
+    var token = await tokenProvider.GetTokenAsync();
+    using var client = httpClientFactory.CreateClient("BBF.Api.Internal");
+    using var request = new HttpRequestMessage(HttpMethod.Get, $"/api/groups/{groupId}/documents/{id}/download");
+    request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
 
-    var path = docs.GetFilePath(doc);
-    if (path is null) return Results.NotFound();
+    var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+    if (!response.IsSuccessStatusCode) return Results.NotFound();
 
-    return Results.File(path, doc.ContentType, doc.FileName);
+    var stream = await response.Content.ReadAsStreamAsync();
+    var contentType = response.Content.Headers.ContentType?.ToString() ?? "application/octet-stream";
+    var fileName = response.Content.Headers.ContentDisposition?.FileNameStar
+        ?? response.Content.Headers.ContentDisposition?.FileName
+        ?? "download";
+    return Results.Stream(stream, contentType, fileName);
 }).RequireAuthorization();
 
 // Plaid Link endpoints (behind auth) — kept at these exact paths because wwwroot/js/plaid-link.js

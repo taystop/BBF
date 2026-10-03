@@ -62,6 +62,7 @@ public class DocumentsService(ITenantDbContextFactory tenantDb, IConfiguration c
         var entity = await db.Documents.FirstOrDefaultAsync(d => d.Id == documentId, ct);
         if (entity is null) return;
 
+        entity.FileName = request.FileName;
         entity.Category = request.Category;
         entity.Description = request.Description;
         await db.SaveChangesAsync(ct);

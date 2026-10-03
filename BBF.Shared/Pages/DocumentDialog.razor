@@ -1,0 +1,45 @@
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">Edit Document</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudTextField @bind-Value="FileName" Label="File Name" Required
+                      Variant="Variant.Outlined" Class="mb-3" />
+        <MudTextField @bind-Value="Category" Label="Category"
+                      Variant="Variant.Outlined" Class="mb-3"
+                      Placeholder="General, Network, Guides..." />
+        <MudTextField @bind-Value="Description" Label="Description"
+                      Variant="Variant.Outlined" Class="mb-3" autoGrow Lines="2" />
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Submit"
+                   Disabled="@(string.IsNullOrWhiteSpace(FileName))">
+            Save
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance MudDialog { get; set; } = null!;
+
+    [Parameter] public string FileName { get; set; } = string.Empty;
+    [Parameter] public string? Category { get; set; }
+    [Parameter] public string? Description { get; set; }
+
+    private void Cancel() => MudDialog.Cancel();
+    private void Submit() => MudDialog.Close(DialogResult.Ok(new DocumentResult
+    {
+        FileName = FileName,
+        Category = Category,
+        Description = Description
+    }));
+
+    public class DocumentResult
+    {
+        public string FileName { get; set; } = string.Empty;
+        public string? Category { get; set; }
+        public string? Description { get; set; }
+    }
+}
