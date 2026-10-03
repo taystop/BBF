@@ -69,6 +69,7 @@ builder.Services.AddScoped<WikiSearchService>();
 builder.Services.AddScoped<ChatService>();
 builder.Services.AddScoped<GroupManagementService>();
 builder.Services.AddScoped<ServiceLinksService>();
+builder.Services.AddScoped<PlaidService>();
 builder.Services.AddHttpClient<OllamaService>();
 builder.Services.AddHttpClient<WebSearchService>();
 builder.Services.AddHttpClient<HomeAssistantService>();
@@ -124,5 +125,6 @@ app.MapHomeAssistantEndpoints();
 app.MapEmbyEndpoints();
 app.MapAmpEndpoints();
 app.MapIntegrationsStatusEndpoints();
+app.MapPlaidEndpoints();
 
 app.Run();
