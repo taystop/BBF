@@ -1,3 +1,7 @@
 <Solution>
   <Project Path="BBF/BBF.csproj" />
+  <Project Path="BBF.Data/BBF.Data.csproj" />
+  <Project Path="BBF.Shared/BBF.Shared.csproj" />
+  <Project Path="BBF.Api/BBF.Api.csproj" />
+  <Project Path="BBF.Mobile/BBF.Mobile.csproj" />
 </Solution>

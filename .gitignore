@@ -10,6 +10,13 @@ obj/
 ## User secrets
 secrets.json
 
+## Mobile signing / push credentials (BBF.Mobile + BBF.Api)
+*.keystore
+*.jks
+google-services.json
+GoogleService-Info.plist
+firebase-service-account*.json
+
 ## NuGet
 *.nupkg
 packages/
