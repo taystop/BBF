@@ -1,0 +1,97 @@
+@using BBF.Shared.Contracts.Budget
+
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">@(IsNew ? "Add Category" : "Edit Category")</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudTextField @bind-Value="Name" Label="Name" Required
+                      Variant="Variant.Outlined" Class="mb-3" />
+        <MudNumericField @bind-Value="MonthlyLimit" Label="Default Monthly Amount ($)"
+                         Variant="Variant.Outlined" Class="mb-3" Min="0"
+                         Format="N2"
+                         HelperText="Seeds the budgeted amount the first time this category appears in a period." />
+        <MudColorPicker @bind-Value="_color" Label="Color"
+                        Variant="Variant.Outlined" Class="mb-3"
+                        disableAlpha />
+        <MudTextField @bind-Value="Icon" Label="Material Icon (optional)"
+                      Variant="Variant.Outlined" Class="mb-3"
+                      HelperText="e.g. ShoppingCart, Restaurant, Home" />
+        <MudNumericField @bind-Value="SortOrder" Label="Sort Order"
+                         Variant="Variant.Outlined" Class="mb-3" />
+        @if (AvailableParents.Count > 0)
+        {
+            <MudSelect T="int?" @bind-Value="ParentCategoryId" Label="Parent Category (optional)"
+                       Variant="Variant.Outlined" Class="mb-3" Clearable>
+                @foreach (var parent in AvailableParents)
+                {
+                    <MudSelectItem T="int?" Value="@parent.Id">@parent.Name</MudSelectItem>
+                }
+            </MudSelect>
+        }
+        <MudSelect @bind-Value="RolloverBehavior" Label="Rollover Behavior"
+                   Variant="Variant.Outlined" Class="mb-3">
+            <MudSelectItem Value="@("Reset")">Reset each month</MudSelectItem>
+            <MudSelectItem Value="@("RollOver")">Roll over unspent balance</MudSelectItem>
+        </MudSelect>
+        <MudSwitch @bind-Value="IsActive" Label="Active" Color="Color.Primary" />
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Submit"
+                   Disabled="@(string.IsNullOrWhiteSpace(Name) || MonthlyLimit <= 0)">
+            Save
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance MudDialog { get; set; } = null!;
+
+    [Parameter] public bool IsNew { get; set; } = true;
+    [Parameter] public string Name { get; set; } = string.Empty;
+    [Parameter] public decimal MonthlyLimit { get; set; }
+    [Parameter] public string ColorHex { get; set; } = "#42a5f5";
+    [Parameter] public string? Icon { get; set; }
+    [Parameter] public int SortOrder { get; set; }
+    [Parameter] public int? ParentCategoryId { get; set; }
+    [Parameter] public string RolloverBehavior { get; set; } = "Reset";
+    [Parameter] public bool IsActive { get; set; } = true;
+    [Parameter] public List<BudgetCategoryDto> AvailableParents { get; set; } = [];
+
+    private MudBlazor.Utilities.MudColor _color = new("#42a5f5");
+
+    protected override void OnInitialized()
+    {
+        _color = new MudBlazor.Utilities.MudColor(ColorHex);
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+    private void Submit() => MudDialog.Close(DialogResult.Ok(new CategoryResult
+    {
+        Name = Name,
+        MonthlyLimit = MonthlyLimit,
+        Color = _color.Value,
+        Icon = Icon,
+        SortOrder = SortOrder,
+        ParentCategoryId = ParentCategoryId,
+        RolloverBehavior = RolloverBehavior,
+        IsActive = IsActive
+    }));
+
+    public class CategoryResult
+    {
+        public string Name { get; set; } = string.Empty;
+        public decimal MonthlyLimit { get; set; }
+        public string Color { get; set; } = "#42a5f5";
+        public string? Icon { get; set; }
+        public int SortOrder { get; set; }
+        public int? ParentCategoryId { get; set; }
+        public string RolloverBehavior { get; set; } = "Reset";
+        public bool IsActive { get; set; } = true;
+
+        public UpsertBudgetCategoryRequest ToRequest(int id) =>
+            new(id, Name, MonthlyLimit, Color, Icon, SortOrder, IsActive, RolloverBehavior, ParentCategoryId);
+    }
+}

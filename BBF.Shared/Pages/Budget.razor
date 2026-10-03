@@ -1,13 +1,11 @@
 @page "/budget"
-@using Microsoft.AspNetCore.Authorization
+@using BBF.Shared.Contracts.Budget
+@using BBF.Shared.Contracts.Transactions
 @attribute [Authorize]
-@using BBF.Data
-@using BBF.Data.Entities
-@using BBF.Services
-@using Microsoft.EntityFrameworkCore
-@inject IDbContextFactory<ApplicationDbContext> DbFactory
-@inject BudgetPeriodService BudgetPeriodSvc
-@inject UserContextService UserContext
+@inject IBudgetPeriodService BudgetPeriodSvc
+@inject IBudgetCategoryService CategorySvc
+@inject ITransactionService TransactionSvc
+@inject ApiGroupContext GroupContext
 @inject IDialogService DialogService
 @inject ISnackbar Snackbar
 @implements IDisposable
@@ -15,7 +13,7 @@
 <PageTitle>Budget - BBF</PageTitle>
 
 <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="py-4">
-    @if (!UserContext.IsInitialized || UserContext.ActiveGroupId is null)
+    @if (!GroupContext.IsInitialized || GroupContext.ActiveGroupId is null)
     {
         <MudPaper Class="pa-6 text-center" Elevation="2">
             <MudIcon Icon="@Icons.Material.Filled.Group" Size="Size.Large" Color="Color.Secondary" Class="mb-3" />
@@ -117,7 +115,7 @@
                     }
                 }
 
-                @if (!_lineItems.Any())
+                @if (_lineItems.Count == 0)
                 {
                     <MudText Typo="Typo.body2" Color="Color.Secondary" Class="pa-4 text-center">
                         No budget categories yet. Add one to start tracking spending.
@@ -130,16 +128,16 @@
 
 @code {
     private DateTime _selectedMonth = new(DateTime.Now.Year, DateTime.Now.Month, 1);
-    private BudgetPeriod? _period;
-    private List<BudgetCategory> _categories = [];
+    private BudgetPeriodDto? _period;
+    private List<BudgetCategoryDto> _categories = [];
     private List<LineItemSpending> _lineItems = [];
     private decimal _totalBudget;
     private decimal _totalSpent;
 
     protected override async Task OnInitializedAsync()
     {
-        UserContext.OnGroupChanged += OnGroupChanged;
-        if (UserContext.ActiveGroupId is not null)
+        GroupContext.OnGroupChanged += OnGroupChanged;
+        if (GroupContext.ActiveGroupId is not null)
             await LoadData();
     }
 
@@ -154,15 +152,10 @@
 
     private async Task LoadData()
     {
-        var groupId = UserContext.ActiveGroupId;
+        var groupId = GroupContext.ActiveGroupId;
         if (groupId is null) return;
 
-        await using var db = await DbFactory.CreateDbContextAsync();
-
-        _categories = await db.BudgetCategories
-            .Where(c => c.IsActive && c.GroupId == groupId)
-            .OrderBy(c => c.SortOrder)
-            .ToListAsync();
+        _categories = await CategorySvc.GetCategoriesAsync(groupId.Value);
 
         var isCurrentMonth = _selectedMonth == new DateTime(DateTime.Now.Year, DateTime.Now.Month, 1);
         _period = isCurrentMonth
@@ -178,17 +171,24 @@
             return;
         }
 
-        var spentByCategory = await db.Transactions
-            .Where(t => t.GroupId == groupId && t.Date >= _period.StartDate && t.Date < _period.EndDate && t.Amount > 0)
-            .GroupBy(t => t.CategoryId)
-            .Select(g => new { CategoryId = g.Key, Spent = g.Sum(t => t.Amount) })
-            .ToListAsync();
+        var allTransactions = await TransactionSvc.GetTransactionsAsync(groupId.Value);
+        var spentByCategory = allTransactions
+            .Where(t => t.CategoryId.HasValue && t.Date >= _period.StartDate && t.Date < _period.EndDate && t.Amount > 0)
+            .GroupBy(t => t.CategoryId!.Value)
+            .ToDictionary(g => g.Key, g => g.Sum(t => t.Amount));
 
-        _lineItems = _period.LineItems.Select(li => new LineItemSpending
+        _lineItems = _period.LineItems.Select(li =>
         {
-            LineItem = li,
-            EditAmount = li.BudgetedAmount,
-            Spent = spentByCategory.FirstOrDefault(s => s.CategoryId == li.CategoryId)?.Spent ?? 0
+            var category = _categories.FirstOrDefault(c => c.Id == li.CategoryId)
+                ?? new BudgetCategoryDto(li.CategoryId, li.CategoryName, 0, li.CategoryColor, null, 0, true, "Reset", null);
+            return new LineItemSpending
+            {
+                Category = category,
+                BudgetedAmount = li.BudgetedAmount,
+                RolledOverAmount = li.RolledOverAmount,
+                EditAmount = li.BudgetedAmount,
+                Spent = spentByCategory.GetValueOrDefault(li.CategoryId, 0)
+            };
         }).ToList();
 
         _totalBudget = _lineItems.Sum(li => li.EffectiveBudget);
@@ -215,7 +215,7 @@
 
         if (result is not null && !result.Canceled)
         {
-            await BudgetPeriodSvc.ClosePeriodAsync(_period.Id);
+            await BudgetPeriodSvc.ClosePeriodAsync(GroupContext.ActiveGroupId!.Value, _period.Id);
             Snackbar.Add("Period closed.", Severity.Success);
             await LoadData();
         }
@@ -224,7 +224,8 @@
     private async Task SaveLineItemAmount(LineItemSpending item)
     {
         if (_period is null) return;
-        await BudgetPeriodSvc.UpsertLineItemAsync(_period.Id, item.Category.Id, item.EditAmount);
+        await BudgetPeriodSvc.UpsertLineItemAsync(GroupContext.ActiveGroupId!.Value, _period.Id,
+            new UpsertLineItemRequest(item.Category.Id, item.EditAmount));
         Snackbar.Add($"Updated budget for '{item.Category.Name}'.", Severity.Success);
         await LoadData();
     }
@@ -235,76 +236,46 @@
     {
         var parameters = new DialogParameters<BudgetCategoryDialog>
         {
-            { x => x.Category, new BudgetCategory() },
+            { x => x.IsNew, true },
             { x => x.AvailableParents, _categories.Where(c => c.ParentCategoryId is null).ToList() }
         };
         var dialog = await DialogService.ShowAsync<BudgetCategoryDialog>("Add Category", parameters);
         var result = await dialog.Result;
 
-        if (result is not null && !result.Canceled && result.Data is BudgetCategory cat)
+        if (result is not null && !result.Canceled && result.Data is BudgetCategoryDialog.CategoryResult data)
         {
-            await using var db = await DbFactory.CreateDbContextAsync();
-            cat.GroupId = UserContext.ActiveGroupId;
-            db.BudgetCategories.Add(cat);
-            await db.SaveChangesAsync();
+            await CategorySvc.CreateAsync(GroupContext.ActiveGroupId!.Value, data.ToRequest(0));
             await LoadData();
         }
     }
 
-    private async Task EditCategory(BudgetCategory category)
+    private async Task EditCategory(BudgetCategoryDto category)
     {
         var parameters = new DialogParameters<BudgetCategoryDialog>
         {
-            { x => x.Category, new BudgetCategory
-                {
-                    Id = category.Id, Name = category.Name, MonthlyLimit = category.MonthlyLimit,
-                    Color = category.Color, Icon = category.Icon, SortOrder = category.SortOrder,
-                    IsActive = category.IsActive, ParentCategoryId = category.ParentCategoryId,
-                    RolloverBehavior = category.RolloverBehavior
-                }
-            },
+            { x => x.IsNew, false },
+            { x => x.Name, category.Name },
+            { x => x.MonthlyLimit, category.MonthlyLimit },
+            { x => x.ColorHex, category.Color },
+            { x => x.Icon, category.Icon },
+            { x => x.SortOrder, category.SortOrder },
+            { x => x.IsActive, category.IsActive },
+            { x => x.ParentCategoryId, category.ParentCategoryId },
+            { x => x.RolloverBehavior, category.RolloverBehavior },
             { x => x.AvailableParents, _categories.Where(c => c.ParentCategoryId is null && c.Id != category.Id).ToList() }
         };
         var dialog = await DialogService.ShowAsync<BudgetCategoryDialog>("Edit Category", parameters);
         var result = await dialog.Result;
 
-        if (result is not null && !result.Canceled && result.Data is BudgetCategory updated)
+        if (result is not null && !result.Canceled && result.Data is BudgetCategoryDialog.CategoryResult data)
         {
-            await using var db = await DbFactory.CreateDbContextAsync();
-            var entity = await db.BudgetCategories.FindAsync(category.Id);
-            if (entity is not null)
-            {
-                entity.Name = updated.Name;
-                entity.MonthlyLimit = updated.MonthlyLimit;
-                entity.Color = updated.Color;
-                entity.Icon = updated.Icon;
-                entity.SortOrder = updated.SortOrder;
-                entity.IsActive = updated.IsActive;
-                entity.ParentCategoryId = updated.ParentCategoryId;
-                entity.RolloverBehavior = updated.RolloverBehavior;
-                await db.SaveChangesAsync();
-            }
+            await CategorySvc.UpdateAsync(GroupContext.ActiveGroupId!.Value, category.Id, data.ToRequest(category.Id));
             await LoadData();
         }
     }
 
-    private async Task DeleteCategory(BudgetCategory category)
+    private async Task DeleteCategory(BudgetCategoryDto category)
     {
-        await using var db = await DbFactory.CreateDbContextAsync();
-        var hasHistory = await db.BudgetLineItems.AnyAsync(li => li.CategoryId == category.Id);
-        if (hasHistory)
-        {
-            Snackbar.Add($"'{category.Name}' has budget history and can't be deleted. Toggle it inactive instead.", Severity.Warning);
-            return;
-        }
-
-        var hasSubcategories = await db.BudgetCategories.AnyAsync(c => c.ParentCategoryId == category.Id);
-        if (hasSubcategories)
-        {
-            Snackbar.Add($"'{category.Name}' has subcategories. Reassign or delete them first.", Severity.Warning);
-            return;
-        }
-
         var parameters = new DialogParameters<MessageBoxDialog>
         {
             { x => x.ContentText, $"Delete category '{category.Name}'? Transactions will become uncategorized." },
@@ -316,11 +287,11 @@
 
         if (result is not null && !result.Canceled)
         {
-            var entity = await db.BudgetCategories.FindAsync(category.Id);
-            if (entity is not null)
+            var deleteResult = await CategorySvc.DeleteAsync(GroupContext.ActiveGroupId!.Value, category.Id);
+            if (!deleteResult.Deleted)
             {
-                db.BudgetCategories.Remove(entity);
-                await db.SaveChangesAsync();
+                Snackbar.Add($"'{category.Name}' {deleteResult.BlockedReason}", Severity.Warning);
+                return;
             }
             await LoadData();
         }
@@ -394,16 +365,17 @@
 
     public void Dispose()
     {
-        UserContext.OnGroupChanged -= OnGroupChanged;
+        GroupContext.OnGroupChanged -= OnGroupChanged;
     }
 
     private class LineItemSpending
     {
-        public BudgetLineItem LineItem { get; init; } = null!;
-        public BudgetCategory Category => LineItem.Category;
+        public BudgetCategoryDto Category { get; init; } = null!;
+        public decimal BudgetedAmount { get; init; }
+        public decimal RolledOverAmount { get; init; }
         public decimal Spent { get; init; }
         public decimal EditAmount { get; set; }
-        public decimal EffectiveBudget => LineItem.BudgetedAmount + LineItem.RolledOverAmount;
+        public decimal EffectiveBudget => BudgetedAmount + RolledOverAmount;
         public decimal Remaining => EffectiveBudget - Spent;
     }
 }
