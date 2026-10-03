@@ -55,6 +55,11 @@ builder.Services.AddScoped<AccountsService>();
 builder.Services.AddScoped<BudgetPeriodsService>();
 builder.Services.AddScoped<RecurringTransactionsService>();
 builder.Services.AddScoped<GoalsService>();
+builder.Services.AddScoped<GrocerySectionsService>();
+builder.Services.AddScoped<IngredientsService>();
+builder.Services.AddScoped<RecipesService>();
+builder.Services.AddScoped<MealPlanWeeksService>();
+builder.Services.AddScoped<GroceryListsService>();
 builder.Services.AddHostedService<RecurringMaterializationBackgroundService>();
 
 var app = builder.Build();
@@ -88,5 +93,10 @@ app.MapAccountsEndpoints();
 app.MapBudgetEndpoints();
 app.MapRecurringTransactionsEndpoints();
 app.MapGoalsEndpoints();
+app.MapGrocerySectionsEndpoints();
+app.MapIngredientsEndpoints();
+app.MapRecipesEndpoints();
+app.MapMealPlanEndpoints();
+app.MapGroceryListsEndpoints();
 
 app.Run();
