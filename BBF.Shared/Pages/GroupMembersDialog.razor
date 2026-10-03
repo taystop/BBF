@@ -1,10 +1,5 @@
-@using BBF.Data
-@using BBF.Data.Entities
-@using Microsoft.AspNetCore.Identity
-@using Microsoft.EntityFrameworkCore
-@inject IDbContextFactory<ApplicationDbContext> DbFactory
-@inject UserManager<ApplicationUser> UserManager
-@inject ISnackbar Snackbar
+@using BBF.Shared.Contracts.Auth
+@using BBF.Shared.Contracts.Groups
 
 <MudDialog>
     <DialogContent>
@@ -21,7 +16,7 @@
                              Color="@(member.Role == "Owner" ? Color.Warning : Color.Default)" />
                     <MudStack Spacing="0">
                         <MudText Typo="Typo.body1">
-                            @(member.User?.UserName ?? "Unknown")
+                            @member.UserName
                             @if (isCurrentUser) { <text> (you)</text> }
                         </MudText>
                         <MudText Typo="Typo.caption" Color="Color.Secondary">
@@ -65,13 +60,13 @@
     [CascadingParameter]
     private IMudDialogInstance MudDialog { get; set; } = null!;
 
-    [Parameter]
-    public UserGroup Group { get; set; } = null!;
+    [Parameter] public int GroupId { get; set; }
+    [Parameter] public string CurrentUserId { get; set; } = string.Empty;
 
-    [Parameter]
-    public string CurrentUserId { get; set; } = string.Empty;
+    [Inject] private IGroupService GroupSvc { get; set; } = null!;
+    [Inject] private ISnackbar Snackbar { get; set; } = null!;
 
-    private List<UserGroupMember> _members = [];
+    private List<GroupMemberDto> _members = [];
     private string _addEmail = string.Empty;
 
     protected override async Task OnInitializedAsync()
@@ -81,13 +76,9 @@
 
     private async Task LoadMembers()
     {
-        await using var db = await DbFactory.CreateDbContextAsync();
-        _members = await db.UserGroupMembers
-            .Where(m => m.GroupId == Group.Id)
-            .Include(m => m.User)
-            .OrderByDescending(m => m.Role)
-            .ThenBy(m => m.JoinedAt)
-            .ToListAsync();
+        var groups = await GroupSvc.GetAllGroupsDetailedAsync();
+        var group = groups.FirstOrDefault(g => g.Id == GroupId);
+        _members = group?.Members.OrderByDescending(m => m.Role).ThenBy(m => m.JoinedAt).ToList() ?? [];
     }
 
     private async Task AddMember()
@@ -95,56 +86,29 @@
         var email = _addEmail.Trim();
         if (string.IsNullOrEmpty(email)) return;
 
-        var user = await UserManager.FindByEmailAsync(email);
-        if (user is null)
+        try
         {
-            Snackbar.Add($"No user found with email '{email}'.", Severity.Warning);
-            return;
+            var member = await GroupSvc.AddMemberAsync(GroupId, new AddGroupMemberRequest(email));
+            _addEmail = string.Empty;
+            Snackbar.Add($"Added {member.UserName} to group.", Severity.Success);
+            await LoadMembers();
         }
-
-        if (_members.Any(m => m.UserId == user.Id))
+        catch (InvalidOperationException ex)
         {
-            Snackbar.Add("User is already a member of this group.", Severity.Warning);
-            return;
+            Snackbar.Add(ex.Message, Severity.Warning);
         }
+    }
 
-        await using var db = await DbFactory.CreateDbContextAsync();
-        db.UserGroupMembers.Add(new UserGroupMember
-        {
-            GroupId = Group.Id,
-            UserId = user.Id,
-            Role = "Member",
-            JoinedAt = DateTime.UtcNow
-        });
-        await db.SaveChangesAsync();
-
-        _addEmail = string.Empty;
-        Snackbar.Add($"Added {user.UserName ?? email} to group.", Severity.Success);
+    private async Task RemoveMember(GroupMemberDto member)
+    {
+        await GroupSvc.RemoveMemberAsync(GroupId, member.Id);
+        Snackbar.Add($"Removed {member.UserName} from group.", Severity.Info);
         await LoadMembers();
     }
 
-    private async Task RemoveMember(UserGroupMember member)
+    private async Task ChangeRole(GroupMemberDto member, string newRole)
     {
-        await using var db = await DbFactory.CreateDbContextAsync();
-        var entity = await db.UserGroupMembers.FindAsync(member.Id);
-        if (entity is not null)
-        {
-            db.UserGroupMembers.Remove(entity);
-            await db.SaveChangesAsync();
-        }
-        Snackbar.Add($"Removed {member.User?.UserName ?? "user"} from group.", Severity.Info);
-        await LoadMembers();
-    }
-
-    private async Task ChangeRole(UserGroupMember member, string newRole)
-    {
-        await using var db = await DbFactory.CreateDbContextAsync();
-        var entity = await db.UserGroupMembers.FindAsync(member.Id);
-        if (entity is not null)
-        {
-            entity.Role = newRole;
-            await db.SaveChangesAsync();
-        }
+        await GroupSvc.ChangeMemberRoleAsync(GroupId, member.Id, new ChangeGroupMemberRoleRequest(newRole));
         await LoadMembers();
     }
 

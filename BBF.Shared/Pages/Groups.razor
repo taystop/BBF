@@ -1,12 +1,9 @@
 @page "/groups"
-@using Microsoft.AspNetCore.Authorization
+@using BBF.Shared.Contracts.Auth
+@using BBF.Shared.Contracts.Groups
 @attribute [Authorize(Roles = "Admin")]
-@using BBF.Data
-@using BBF.Data.Entities
-@using BBF.Services
-@using Microsoft.EntityFrameworkCore
-@inject IDbContextFactory<ApplicationDbContext> DbFactory
-@inject UserContextService UserContext
+@inject IGroupService GroupSvc
+@inject ApiGroupContext GroupContext
 @inject IDialogService DialogService
 @inject ISnackbar Snackbar
 
@@ -23,13 +20,13 @@
         </MudButton>
     </MudStack>
 
-    @if (_groups.Any())
+    @if (_groups.Count > 0)
     {
         @foreach (var group in _groups)
         {
-            var membership = group.Members.FirstOrDefault(m => m.UserId == UserContext.UserId);
+            var membership = group.Members.FirstOrDefault(m => m.UserId == _currentUserId);
             var isOwner = membership?.Role == "Owner";
-            var isActive = group.Id == UserContext.ActiveGroupId;
+            var isActive = group.Id == GroupContext.ActiveGroupId;
 
             <MudPaper Class="pa-4 mb-3" Elevation="2">
                 <MudStack Row AlignItems="AlignItems.Start" Style="flex-wrap: wrap; gap: 8px;">
@@ -84,7 +81,7 @@
                     {
                         <MudChip T="string" Size="Size.Small" Variant="Variant.Text"
                                  Icon="@Icons.Material.Filled.Person">
-                            @(member.User?.UserName ?? "Unknown") (@member.Role)
+                            @member.UserName (@member.Role)
                         </MudChip>
                     }
                 </MudStack>
@@ -104,26 +101,26 @@
 </MudContainer>
 
 @code {
-    private List<UserGroup> _groups = [];
+    [CascadingParameter]
+    private Task<AuthenticationState>? AuthStateTask { get; set; }
+
+    private string? _currentUserId;
+    private List<GroupDetailDto> _groups = [];
 
     protected override async Task OnInitializedAsync()
     {
+        if (AuthStateTask is not null)
+        {
+            var authState = await AuthStateTask;
+            _currentUserId = authState.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        }
+
         await LoadGroups();
     }
 
     private async Task LoadGroups()
     {
-        if (UserContext.UserId is null) return;
-
-        await using var db = await DbFactory.CreateDbContextAsync();
-        _groups = await db.UserGroupMembers
-            .Where(m => m.UserId == UserContext.UserId)
-            .Include(m => m.Group)
-                .ThenInclude(g => g.Members)
-                    .ThenInclude(m => m.User)
-            .Select(m => m.Group)
-            .OrderBy(g => g.Name)
-            .ToListAsync();
+        _groups = await GroupSvc.GetAllGroupsDetailedAsync();
     }
 
     private async Task CreateGroup()
@@ -138,31 +135,14 @@
 
         if (result is not null && !result.Canceled && result.Data is string name)
         {
-            await using var db = await DbFactory.CreateDbContextAsync();
-            var group = new UserGroup
-            {
-                Name = name,
-                CreatedAt = DateTime.UtcNow
-            };
-            db.UserGroups.Add(group);
-            await db.SaveChangesAsync();
-
-            db.UserGroupMembers.Add(new UserGroupMember
-            {
-                GroupId = group.Id,
-                UserId = UserContext.UserId!,
-                Role = "Owner",
-                JoinedAt = DateTime.UtcNow
-            });
-            await db.SaveChangesAsync();
-
-            await UserContext.RefreshGroupsAsync();
+            await GroupSvc.CreateGroupAsync(new CreateGroupRequest(name));
+            await GroupContext.RefreshGroupsAsync();
             await LoadGroups();
             Snackbar.Add($"Group '{name}' created!", Severity.Success);
         }
     }
 
-    private async Task EditGroup(UserGroup group)
+    private async Task EditGroup(GroupDetailDto group)
     {
         var parameters = new DialogParameters<GroupDialog>
         {
@@ -174,19 +154,13 @@
 
         if (result is not null && !result.Canceled && result.Data is string name)
         {
-            await using var db = await DbFactory.CreateDbContextAsync();
-            var entity = await db.UserGroups.FindAsync(group.Id);
-            if (entity is not null)
-            {
-                entity.Name = name;
-                await db.SaveChangesAsync();
-            }
-            await UserContext.RefreshGroupsAsync();
+            await GroupSvc.UpdateGroupAsync(group.Id, new UpdateGroupRequest(name));
+            await GroupContext.RefreshGroupsAsync();
             await LoadGroups();
         }
     }
 
-    private async Task DeleteGroup(UserGroup group)
+    private async Task DeleteGroup(GroupDetailDto group)
     {
         var parameters = new DialogParameters<MessageBoxDialog>
         {
@@ -199,36 +173,30 @@
 
         if (result is not null && !result.Canceled)
         {
-            await using var db = await DbFactory.CreateDbContextAsync();
-            var entity = await db.UserGroups.FindAsync(group.Id);
-            if (entity is not null)
-            {
-                db.UserGroups.Remove(entity);
-                await db.SaveChangesAsync();
-            }
-            await UserContext.RefreshGroupsAsync();
+            await GroupSvc.DeleteGroupAsync(group.Id);
+            await GroupContext.RefreshGroupsAsync();
             await LoadGroups();
             Snackbar.Add($"Group '{group.Name}' deleted.", Severity.Info);
         }
     }
 
-    private async Task ManageMembers(UserGroup group)
+    private async Task ManageMembers(GroupDetailDto group)
     {
         var parameters = new DialogParameters<GroupMembersDialog>
         {
-            { x => x.Group, group },
-            { x => x.CurrentUserId, UserContext.UserId! }
+            { x => x.GroupId, group.Id },
+            { x => x.CurrentUserId, _currentUserId ?? "" }
         };
         var dialog = await DialogService.ShowAsync<GroupMembersDialog>($"Members - {group.Name}", parameters);
         await dialog.Result;
 
-        await UserContext.RefreshGroupsAsync();
+        await GroupContext.RefreshGroupsAsync();
         await LoadGroups();
     }
 
     private void SetActiveGroup(int groupId)
     {
-        UserContext.SetActiveGroup(groupId);
+        GroupContext.SetActiveGroup(groupId);
         StateHasChanged();
     }
 }
