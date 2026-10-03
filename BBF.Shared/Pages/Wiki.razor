@@ -1,12 +1,9 @@
 @page "/wiki"
 @page "/wiki/{ArticleId:int}"
-@using Microsoft.AspNetCore.Authorization
-@attribute [Authorize]
-@using BBF.Data
-@using BBF.Data.Entities
-@using Microsoft.EntityFrameworkCore
+@using BBF.Shared.Contracts.Wiki
 @using Markdig
-@inject IDbContextFactory<ApplicationDbContext> DbFactory
+@attribute [Authorize]
+@inject IWikiArticleService WikiSvc
 @inject NavigationManager Nav
 
 <PageTitle>Documentation - BBF</PageTitle>
@@ -195,13 +192,13 @@
     [Parameter]
     public int? ArticleId { get; set; }
 
-    private List<WikiArticle> _articles = [];
-    private WikiArticle? _viewArticle;
-    private WikiArticle _editArticle = new();
+    private List<WikiArticleDto> _articles = [];
+    private WikiArticleDto? _viewArticle;
+    private EditableArticle _editArticle = new();
     private bool _editing;
     private string _searchText = string.Empty;
 
-    private IEnumerable<WikiArticle> FilteredArticles =>
+    private IEnumerable<WikiArticleDto> FilteredArticles =>
         string.IsNullOrWhiteSpace(_searchText)
             ? _articles
             : _articles.Where(a =>
@@ -224,13 +221,10 @@
 
     private async Task LoadArticles()
     {
-        await using var db = await DbFactory.CreateDbContextAsync();
-        _articles = await db.WikiArticles
-            .OrderByDescending(a => a.UpdatedAt)
-            .ToListAsync();
+        _articles = await WikiSvc.GetAllAsync();
     }
 
-    private void ViewArticle(WikiArticle article)
+    private void ViewArticle(WikiArticleDto article)
     {
         _viewArticle = article;
         Nav.NavigateTo($"/wiki/{article.Id}", replace: true);
@@ -244,59 +238,44 @@
 
     private void StartNew()
     {
-        _editArticle = new WikiArticle();
+        _editArticle = new EditableArticle();
         _editing = true;
     }
 
-    private void StartEdit(WikiArticle article)
+    private void StartEdit(WikiArticleDto article)
     {
-        _editArticle = article;
+        _editArticle = new EditableArticle
+        {
+            Id = article.Id,
+            Title = article.Title,
+            Category = article.Category,
+            Tags = article.Tags,
+            Content = article.Content
+        };
         _editing = true;
     }
 
     private void CancelEdit()
     {
         _editing = false;
-        // Reload from list to discard unsaved changes
-        if (_editArticle.Id != 0)
-        {
-            _editArticle = _articles.FirstOrDefault(a => a.Id == _editArticle.Id) ?? _editArticle;
-        }
     }
 
     private async Task SaveArticle()
     {
         if (string.IsNullOrWhiteSpace(_editArticle.Title)) return;
 
-        await using var db = await DbFactory.CreateDbContextAsync();
-        _editArticle.UpdatedAt = DateTime.UtcNow;
+        var saved = await WikiSvc.SaveAsync(new UpsertWikiArticleRequest(
+            _editArticle.Id, _editArticle.Title, _editArticle.Content, _editArticle.Category, _editArticle.Tags));
 
-        if (_editArticle.Id == 0)
-        {
-            _editArticle.CreatedAt = DateTime.UtcNow;
-            db.WikiArticles.Add(_editArticle);
-        }
-        else
-        {
-            db.WikiArticles.Update(_editArticle);
-        }
-
-        await db.SaveChangesAsync();
         _editing = false;
-        _viewArticle = _editArticle;
+        _viewArticle = saved;
         await LoadArticles();
-        Nav.NavigateTo($"/wiki/{_editArticle.Id}", replace: true);
+        Nav.NavigateTo($"/wiki/{saved.Id}", replace: true);
     }
 
-    private async Task DeleteArticle(WikiArticle article)
+    private async Task DeleteArticle(WikiArticleDto article)
     {
-        await using var db = await DbFactory.CreateDbContextAsync();
-        var entity = await db.WikiArticles.FindAsync(article.Id);
-        if (entity is not null)
-        {
-            db.WikiArticles.Remove(entity);
-            await db.SaveChangesAsync();
-        }
+        await WikiSvc.DeleteAsync(article.Id);
         await LoadArticles();
 
         if (_viewArticle?.Id == article.Id)
@@ -320,5 +299,14 @@
     {
         if (string.IsNullOrEmpty(markdown)) return string.Empty;
         return Markdown.ToPlainText(markdown, MarkdownPipeline);
+    }
+
+    private class EditableArticle
+    {
+        public int Id { get; set; }
+        public string Title { get; set; } = string.Empty;
+        public string? Category { get; set; }
+        public string? Tags { get; set; }
+        public string Content { get; set; } = string.Empty;
     }
 }

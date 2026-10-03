@@ -11,6 +11,7 @@ using BBF.Shared.Contracts.Documents;
 using BBF.Shared.Contracts.MealPlanning;
 using BBF.Shared.Contracts.Plaid;
 using BBF.Shared.Contracts.Transactions;
+using BBF.Shared.Contracts.Wiki;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -121,6 +122,7 @@ builder.Services.AddApiHttpClient<IRecipeService, HttpRecipeService>(apiBaseUrl)
 builder.Services.AddApiHttpClient<IMealPlanService, HttpMealPlanService>(apiBaseUrl);
 builder.Services.AddApiHttpClient<IGroceryListService, HttpGroceryListService>(apiBaseUrl);
 builder.Services.AddApiHttpClient<IDocumentService, HttpDocumentService>(apiBaseUrl);
+builder.Services.AddApiHttpClient<IWikiArticleService, HttpWikiArticleService>(apiBaseUrl);
 builder.Services.AddScoped<ApiGroupContext>();
 
 var app = builder.Build();

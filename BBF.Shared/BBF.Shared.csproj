@@ -16,6 +16,7 @@
          FrameworkReference) — FrameworkReference to Microsoft.AspNetCore.App breaks BBF.Mobile's
          Android build entirely (no runtime pack for that framework on android-arm64/x64). -->
     <PackageReference Include="Microsoft.AspNetCore.Components.Authorization" Version="10.0.12" />
+    <PackageReference Include="Markdig" Version="1.1.1" />
     <PackageReference Include="MudBlazor" Version="9.1.0" />
   </ItemGroup>
 
