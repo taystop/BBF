@@ -1,6 +1,6 @@
 using BBF.Shared.Contracts.Auth;
 
-namespace BBF.ApiClients;
+namespace BBF.Shared;
 
 /// <summary>
 /// Replacement for the old UserContextService's group-tracking half, for pages that have moved onto

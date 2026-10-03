@@ -3,8 +3,11 @@ using BBF.Components;
 using BBF.Components.Account;
 using BBF.Data;
 using BBF.Services;
+using BBF.Shared;
 using BBF.Shared.Contracts.Accounts;
 using BBF.Shared.Contracts.Auth;
+using BBF.Shared.Contracts.Budget;
+using BBF.Shared.Contracts.Plaid;
 using BBF.Shared.Contracts.Transactions;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Identity;
@@ -108,6 +111,8 @@ builder.Services.AddApiClientInfrastructure(apiBaseUrl);
 builder.Services.AddApiHttpClient<IGroupService, HttpGroupService>(apiBaseUrl);
 builder.Services.AddApiHttpClient<ITransactionService, HttpTransactionService>(apiBaseUrl);
 builder.Services.AddApiHttpClient<IAccountService, HttpAccountService>(apiBaseUrl);
+builder.Services.AddApiHttpClient<IBudgetCategoryService, HttpBudgetCategoryService>(apiBaseUrl);
+builder.Services.AddApiHttpClient<IPlaidService, HttpPlaidService>(apiBaseUrl);
 builder.Services.AddScoped<ApiGroupContext>();
 
 var app = builder.Build();
@@ -129,7 +134,8 @@ app.UseAntiforgery();
 
 app.MapStaticAssets();
 app.MapRazorComponents<App>()
-    .AddInteractiveServerRenderMode();
+    .AddInteractiveServerRenderMode()
+    .AddAdditionalAssemblies(typeof(BBF.Shared.ApiGroupContext).Assembly);
 
 // Document download endpoint (behind auth)
 app.MapGet("/api/documents/{id:int}/download", async (int id, DocumentService docs) =>

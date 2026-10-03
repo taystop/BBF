@@ -4,6 +4,7 @@
 @using Microsoft.AspNetCore.Components.Authorization
 @using System.Security.Claims
 @inject UserContextService UserContext
+@inject BBF.Shared.ApiGroupContext ApiGroupContext
 @inject AuthenticationStateProvider AuthStateProvider
 @inject NavigationManager Nav
 @inject IBrowserViewportService BrowserViewport
@@ -97,7 +98,10 @@
             var userId = authState.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
             if (userId is not null)
             {
+                // Transitional: both contexts stay in sync until every page has moved off
+                // UserContextService onto the BBF.Api-backed ApiGroupContext.
                 await UserContext.InitializeAsync(userId);
+                await ApiGroupContext.InitializeAsync();
                 StateHasChanged();
             }
         }
@@ -121,7 +125,10 @@
     private void OnGroupChanged(int? groupId)
     {
         if (groupId.HasValue)
+        {
             UserContext.SetActiveGroup(groupId.Value);
+            ApiGroupContext.SetActiveGroup(groupId.Value);
+        }
     }
 
     private void ToggleDrawer() => _drawerOpen = !_drawerOpen;

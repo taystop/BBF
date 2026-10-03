@@ -1,14 +1,14 @@
 @page "/transactions"
-@using Microsoft.AspNetCore.Authorization
+@using BBF.Shared.Contracts.Accounts
+@using BBF.Shared.Contracts.Budget
+@using BBF.Shared.Contracts.Plaid
+@using BBF.Shared.Contracts.Transactions
 @attribute [Authorize]
-@using BBF.Data
-@using BBF.Data.Entities
-@using BBF.Services
-@using Microsoft.EntityFrameworkCore
-@inject IDbContextFactory<ApplicationDbContext> DbFactory
-@inject PlaidService Plaid
-@inject TransactionService TransactionSvc
-@inject UserContextService UserContext
+@inject ITransactionService TransactionSvc
+@inject IAccountService AccountSvc
+@inject IBudgetCategoryService CategorySvc
+@inject IPlaidService Plaid
+@inject ApiGroupContext GroupContext
 @inject IDialogService DialogService
 @inject ISnackbar Snackbar
 @implements IDisposable
@@ -16,7 +16,7 @@
 <PageTitle>Transactions - BBF</PageTitle>
 
 <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="py-4">
-    @if (!UserContext.IsInitialized || UserContext.ActiveGroupId is null)
+    @if (!GroupContext.IsInitialized || GroupContext.ActiveGroupId is null)
     {
         <MudPaper Class="pa-6 text-center" Elevation="2">
             <MudIcon Icon="@Icons.Material.Filled.Group" Size="Size.Large" Color="Color.Secondary" Class="mb-3" />
@@ -90,11 +90,11 @@
                             }
                         </MudTd>
                         <MudTd DataLabel="Category">
-                            @if (context.Category is not null)
+                            @if (context.CategoryId is not null)
                             {
                                 <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined"
-                                         Style="@($"border-color: {context.Category.Color}; color: {context.Category.Color};")">
-                                    @context.Category.Name
+                                         Style="@($"border-color: {context.CategoryColor}; color: {context.CategoryColor};")">
+                                    @context.CategoryName
                                 </MudChip>
                             }
                             else
@@ -112,9 +112,9 @@
                             </MudText>
                         </MudTd>
                         <MudTd DataLabel="Account">
-                            @if (context.Account is not null)
+                            @if (context.AccountId is not null)
                             {
-                                <MudText Typo="Typo.body2">@context.Account.Name</MudText>
+                                <MudText Typo="Typo.body2">@context.AccountName</MudText>
                             }
                             else
                             {
@@ -157,17 +157,17 @@
 
 @code {
     private DateTime _selectedMonth = new(DateTime.Now.Year, DateTime.Now.Month, 1);
-    private List<Transaction> _transactions = [];
-    private List<BudgetCategory> _categories = [];
-    private List<Account> _accounts = [];
-    private List<PlaidConnection> _connections = [];
+    private List<TransactionDto> _transactions = [];
+    private List<BudgetCategoryDto> _categories = [];
+    private List<AccountDto> _accounts = [];
+    private List<PlaidConnectionDto> _connections = [];
     private bool _syncing;
     private bool _importing;
 
     protected override async Task OnInitializedAsync()
     {
-        UserContext.OnGroupChanged += OnGroupChanged;
-        if (UserContext.ActiveGroupId is not null)
+        GroupContext.OnGroupChanged += OnGroupChanged;
+        if (GroupContext.ActiveGroupId is not null)
             await LoadData();
     }
 
@@ -182,29 +182,19 @@
 
     private async Task LoadData()
     {
-        var groupId = UserContext.ActiveGroupId;
+        var groupId = GroupContext.ActiveGroupId;
         if (groupId is null) return;
-
-        await using var db = await DbFactory.CreateDbContextAsync();
 
         var monthEnd = _selectedMonth.AddMonths(1);
 
-        _categories = await db.BudgetCategories
-            .Where(c => c.IsActive && c.GroupId == groupId)
-            .OrderBy(c => c.SortOrder)
-            .ToListAsync();
+        _categories = await CategorySvc.GetCategoriesAsync(groupId.Value);
+        _accounts = await AccountSvc.GetAccountsAsync(groupId.Value);
 
-        _accounts = await db.Accounts
-            .Where(a => a.IsActive && a.GroupId == groupId)
-            .OrderBy(a => a.Name)
-            .ToListAsync();
-
-        _transactions = await db.Transactions
-            .Include(t => t.Category)
-            .Include(t => t.Account)
-            .Where(t => t.GroupId == groupId && t.Date >= _selectedMonth && t.Date < monthEnd)
+        var allTransactions = await TransactionSvc.GetTransactionsAsync(groupId.Value);
+        _transactions = allTransactions
+            .Where(t => t.Date >= _selectedMonth && t.Date < monthEnd)
             .OrderByDescending(t => t.Date)
-            .ToListAsync();
+            .ToList();
 
         _connections = await Plaid.GetConnectionsAsync(groupId.Value);
 
@@ -227,22 +217,13 @@
 
         if (result is not null && !result.Canceled && result.Data is TransactionDialog.TransactionResult data)
         {
-            await TransactionSvc.CreateAsync(new Transaction
-            {
-                Amount = data.Amount,
-                Date = data.Date,
-                Description = data.Description,
-                MerchantName = data.MerchantName,
-                CategoryId = data.CategoryId,
-                AccountId = data.AccountId,
-                GroupId = UserContext.ActiveGroupId,
-                Source = "Manual"
-            });
+            await TransactionSvc.CreateAsync(GroupContext.ActiveGroupId!.Value, new CreateTransactionRequest(
+                data.Amount, data.Date, data.Description, data.MerchantName, data.CategoryId, data.AccountId));
             await LoadData();
         }
     }
 
-    private async Task EditTransaction(Transaction txn)
+    private async Task EditTransaction(TransactionDto txn)
     {
         var parameters = new DialogParameters<TransactionDialog>
         {
@@ -261,13 +242,13 @@
 
         if (result is not null && !result.Canceled && result.Data is TransactionDialog.TransactionResult data)
         {
-            await TransactionSvc.UpdateAsync(txn.Id, data.Amount, data.Date, data.Description,
-                data.MerchantName, data.CategoryId, data.AccountId);
+            await TransactionSvc.UpdateAsync(GroupContext.ActiveGroupId!.Value, txn.Id, new UpdateTransactionRequest(
+                data.Amount, data.Date, data.Description, data.MerchantName, data.CategoryId, data.AccountId));
             await LoadData();
         }
     }
 
-    private async Task CategorizeTransaction(Transaction txn)
+    private async Task CategorizeTransaction(TransactionDto txn)
     {
         var parameters = new DialogParameters<TransactionDialog>
         {
@@ -286,13 +267,13 @@
 
         if (result is not null && !result.Canceled && result.Data is TransactionDialog.TransactionResult data)
         {
-            await TransactionSvc.UpdateAsync(txn.Id, data.Amount, data.Date, data.Description,
-                data.MerchantName, data.CategoryId, data.AccountId);
+            await TransactionSvc.UpdateAsync(GroupContext.ActiveGroupId!.Value, txn.Id, new UpdateTransactionRequest(
+                data.Amount, data.Date, data.Description, data.MerchantName, data.CategoryId, data.AccountId));
             await LoadData();
         }
     }
 
-    private async Task DeleteTransaction(Transaction txn)
+    private async Task DeleteTransaction(TransactionDto txn)
     {
         var parameters = new DialogParameters<MessageBoxDialog>
         {
@@ -305,14 +286,14 @@
 
         if (result is not null && !result.Canceled)
         {
-            await TransactionSvc.DeleteAsync(txn.Id);
+            await TransactionSvc.DeleteAsync(GroupContext.ActiveGroupId!.Value, txn.Id);
             await LoadData();
         }
     }
 
     private async Task SyncTransactions()
     {
-        if (!_connections.Any())
+        if (_connections.Count == 0)
         {
             Snackbar.Add("No bank accounts connected.", Severity.Warning);
             return;
@@ -326,7 +307,8 @@
         {
             try
             {
-                totalAdded += await Plaid.SyncTransactionsAsync(conn);
+                var result = await Plaid.SyncTransactionsAsync(GroupContext.ActiveGroupId!.Value, conn.Id);
+                totalAdded += result.Added;
             }
             catch (Exception ex)
             {
@@ -348,8 +330,9 @@
 
         try
         {
-            var (imported, skipped) = await TransactionSvc.ImportCsvBatchAsync(file, UserContext.ActiveGroupId, null);
-            Snackbar.Add($"Imported {imported} transactions" + (skipped > 0 ? $", skipped {skipped} rows" : ""), Severity.Success);
+            await using var stream = file.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024);
+            var result = await TransactionSvc.ImportCsvAsync(GroupContext.ActiveGroupId!.Value, null, stream);
+            Snackbar.Add($"Imported {result.Imported} transactions" + (result.Skipped > 0 ? $", skipped {result.Skipped} rows" : ""), Severity.Success);
             await LoadData();
         }
         catch (Exception ex)
@@ -365,6 +348,6 @@
 
     public void Dispose()
     {
-        UserContext.OnGroupChanged -= OnGroupChanged;
+        GroupContext.OnGroupChanged -= OnGroupChanged;
     }
 }

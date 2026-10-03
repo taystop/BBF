@@ -12,7 +12,11 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.AspNetCore.Components.Web" Version="10.0.12" />
+    <!-- For [Authorize]/AuthorizeView/AuthenticationStateProvider. A plain NuGet package (not a
+         FrameworkReference) — FrameworkReference to Microsoft.AspNetCore.App breaks BBF.Mobile's
+         Android build entirely (no runtime pack for that framework on android-arm64/x64). -->
+    <PackageReference Include="Microsoft.AspNetCore.Components.Authorization" Version="10.0.12" />
+    <PackageReference Include="MudBlazor" Version="9.1.0" />
   </ItemGroup>
 
 </Project>
