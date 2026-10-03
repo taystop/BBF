@@ -1,11 +1,10 @@
 @page "/goals"
-@using Microsoft.AspNetCore.Authorization
+@using BBF.Shared.Contracts.Accounts
+@using BBF.Shared.Contracts.Goals
 @attribute [Authorize]
-@using BBF.Data.Entities
-@using BBF.Services
-@inject GoalService GoalSvc
-@inject AccountService AccountSvc
-@inject UserContextService UserContext
+@inject IGoalService GoalSvc
+@inject IAccountService AccountSvc
+@inject ApiGroupContext GroupContext
 @inject IDialogService DialogService
 @inject ISnackbar Snackbar
 @implements IDisposable
@@ -13,7 +12,7 @@
 <PageTitle>Goals - BBF</PageTitle>
 
 <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="py-4">
-    @if (!UserContext.IsInitialized || UserContext.ActiveGroupId is null)
+    @if (!GroupContext.IsInitialized || GroupContext.ActiveGroupId is null)
     {
         <MudPaper Class="pa-6 text-center" Elevation="2">
             <MudIcon Icon="@Icons.Material.Filled.Group" Size="Size.Large" Color="Color.Secondary" Class="mb-3" />
@@ -42,8 +41,7 @@
         <MudGrid>
             @foreach (var goal in _goals)
             {
-                var progress = goal.Contributions.Sum(c => c.Amount);
-                var pct = goal.TargetAmount > 0 ? (double)(progress / goal.TargetAmount) * 100 : 0;
+                var pct = goal.TargetAmount > 0 ? (double)(goal.ProgressAmount / goal.TargetAmount) * 100 : 0;
 
                 <MudItem xs="12" sm="6" md="4">
                     <MudPaper Class="pa-4" Elevation="2">
@@ -61,14 +59,14 @@
                                            Size="Size.Small"
                                            OnClick="@(() => ToggleActive(goal))" />
                         </MudStack>
-                        @if (goal.Account is not null)
+                        @if (goal.AccountName is not null)
                         {
-                            <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-2">@goal.Account.Name</MudText>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-2">@goal.AccountName</MudText>
                         }
                         <MudProgressLinear Value="@Math.Min(pct, 100)" Color="@(pct >= 100 ? Color.Success : Color.Primary)"
                                           Size="Size.Large" Rounded Class="mb-2" />
                         <MudStack Row Justify="Justify.SpaceBetween" Class="mb-3">
-                            <MudText Typo="Typo.body2">@progress.ToString("C") of @goal.TargetAmount.ToString("C")</MudText>
+                            <MudText Typo="Typo.body2">@goal.ProgressAmount.ToString("C") of @goal.TargetAmount.ToString("C")</MudText>
                             <MudText Typo="Typo.body2" Color="Color.Secondary">@pct.ToString("N0")%</MudText>
                         </MudStack>
                         @if (goal.TargetDate is not null)
@@ -86,7 +84,7 @@
             }
         </MudGrid>
 
-        @if (!_goals.Any())
+        @if (_goals.Count == 0)
         {
             <MudPaper Class="pa-6 text-center" Elevation="2">
                 <MudText Typo="Typo.body2" Color="Color.Secondary">
@@ -98,13 +96,13 @@
 </MudContainer>
 
 @code {
-    private List<Goal> _goals = [];
-    private List<Account> _accounts = [];
+    private List<GoalDto> _goals = [];
+    private List<AccountDto> _accounts = [];
 
     protected override async Task OnInitializedAsync()
     {
-        UserContext.OnGroupChanged += OnGroupChanged;
-        if (UserContext.ActiveGroupId is not null)
+        GroupContext.OnGroupChanged += OnGroupChanged;
+        if (GroupContext.ActiveGroupId is not null)
             await LoadData();
     }
 
@@ -119,7 +117,7 @@
 
     private async Task LoadData()
     {
-        var groupId = UserContext.ActiveGroupId;
+        var groupId = GroupContext.ActiveGroupId;
         if (groupId is null) return;
 
         _goals = await GoalSvc.GetGoalsAsync(groupId.Value);
@@ -132,52 +130,53 @@
     {
         var parameters = new DialogParameters<GoalDialog>
         {
-            { x => x.Goal, new Goal() },
+            { x => x.IsNew, true },
             { x => x.Accounts, _accounts }
         };
         var dialog = await DialogService.ShowAsync<GoalDialog>("Add Goal", parameters);
         var result = await dialog.Result;
 
-        if (result is not null && !result.Canceled && result.Data is Goal goal)
+        if (result is not null && !result.Canceled && result.Data is GoalDialog.GoalResult data)
         {
-            goal.GroupId = UserContext.ActiveGroupId;
-            await GoalSvc.CreateAsync(goal);
-            Snackbar.Add($"Goal '{goal.Name}' created.", Severity.Success);
+            await GoalSvc.CreateAsync(GroupContext.ActiveGroupId!.Value, new CreateGoalRequest(
+                data.Name, data.TargetAmount, data.TargetDate, data.AccountId));
+            Snackbar.Add($"Goal '{data.Name}' created.", Severity.Success);
             await LoadData();
         }
     }
 
-    private async Task EditGoal(Goal goal)
+    private async Task EditGoal(GoalDto goal)
     {
         var parameters = new DialogParameters<GoalDialog>
         {
-            { x => x.Goal, new Goal
-                {
-                    Id = goal.Id, Name = goal.Name, TargetAmount = goal.TargetAmount,
-                    TargetDate = goal.TargetDate, AccountId = goal.AccountId, IsActive = goal.IsActive
-                }
-            },
+            { x => x.IsNew, false },
+            { x => x.Name, goal.Name },
+            { x => x.TargetAmount, goal.TargetAmount },
+            { x => x.TargetDate, goal.TargetDate },
+            { x => x.AccountId, goal.AccountId },
+            { x => x.IsActive, goal.IsActive },
             { x => x.Accounts, _accounts }
         };
         var dialog = await DialogService.ShowAsync<GoalDialog>("Edit Goal", parameters);
         var result = await dialog.Result;
 
-        if (result is not null && !result.Canceled && result.Data is Goal updated)
+        if (result is not null && !result.Canceled && result.Data is GoalDialog.GoalResult data)
         {
-            await GoalSvc.UpdateAsync(goal.Id, updated.Name, updated.TargetAmount, updated.TargetDate, updated.AccountId);
-            if (updated.IsActive != goal.IsActive)
-                await GoalSvc.SetActiveAsync(goal.Id, updated.IsActive);
+            var groupId = GroupContext.ActiveGroupId!.Value;
+            await GoalSvc.UpdateAsync(groupId, goal.Id, new UpdateGoalRequest(data.Name, data.TargetAmount, data.TargetDate, data.AccountId));
+            if (data.IsActive != goal.IsActive)
+                await GoalSvc.SetActiveAsync(groupId, goal.Id, data.IsActive);
             await LoadData();
         }
     }
 
-    private async Task ToggleActive(Goal goal)
+    private async Task ToggleActive(GoalDto goal)
     {
-        await GoalSvc.SetActiveAsync(goal.Id, !goal.IsActive);
+        await GoalSvc.SetActiveAsync(GroupContext.ActiveGroupId!.Value, goal.Id, !goal.IsActive);
         await LoadData();
     }
 
-    private async Task AddContribution(Goal goal)
+    private async Task AddContribution(GoalDto goal)
     {
         var parameters = new DialogParameters<GoalContributionDialog>();
         var dialog = await DialogService.ShowAsync<GoalContributionDialog>($"Contribute to '{goal.Name}'", parameters);
@@ -185,7 +184,8 @@
 
         if (result is not null && !result.Canceled && result.Data is GoalContributionDialog.GoalContributionResult data)
         {
-            await GoalSvc.AddContributionAsync(goal.Id, data.Amount, data.ContributedAt, null);
+            await GoalSvc.AddContributionAsync(GroupContext.ActiveGroupId!.Value, goal.Id,
+                new AddGoalContributionRequest(data.Amount, data.ContributedAt, null));
             Snackbar.Add("Contribution added.", Severity.Success);
             await LoadData();
         }
@@ -193,6 +193,6 @@
 
     public void Dispose()
     {
-        UserContext.OnGroupChanged -= OnGroupChanged;
+        GroupContext.OnGroupChanged -= OnGroupChanged;
     }
 }

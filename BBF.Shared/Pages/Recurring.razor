@@ -1,14 +1,12 @@
 @page "/recurring"
-@using Microsoft.AspNetCore.Authorization
+@using BBF.Shared.Contracts.Accounts
+@using BBF.Shared.Contracts.Budget
+@using BBF.Shared.Contracts.Recurring
 @attribute [Authorize]
-@using BBF.Data
-@using BBF.Data.Entities
-@using BBF.Services
-@using Microsoft.EntityFrameworkCore
-@inject IDbContextFactory<ApplicationDbContext> DbFactory
-@inject RecurringTransactionService RecurringSvc
-@inject AccountService AccountSvc
-@inject UserContextService UserContext
+@inject IRecurringTransactionService RecurringSvc
+@inject IAccountService AccountSvc
+@inject IBudgetCategoryService CategorySvc
+@inject ApiGroupContext GroupContext
 @inject IDialogService DialogService
 @inject ISnackbar Snackbar
 @implements IDisposable
@@ -16,7 +14,7 @@
 <PageTitle>Recurring - BBF</PageTitle>
 
 <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="py-4">
-    @if (!UserContext.IsInitialized || UserContext.ActiveGroupId is null)
+    @if (!GroupContext.IsInitialized || GroupContext.ActiveGroupId is null)
     {
         <MudPaper Class="pa-6 text-center" Elevation="2">
             <MudIcon Icon="@Icons.Material.Filled.Group" Size="Size.Large" Color="Color.Secondary" Class="mb-3" />
@@ -71,8 +69,8 @@
                                 @context.Amount.ToString("C")
                             </MudText>
                         </MudTd>
-                        <MudTd DataLabel="Category">@(context.Category?.Name ?? "—")</MudTd>
-                        <MudTd DataLabel="Account">@context.Account.Name</MudTd>
+                        <MudTd DataLabel="Category">@(context.CategoryName ?? "—")</MudTd>
+                        <MudTd DataLabel="Account">@context.AccountName</MudTd>
                         <MudTd DataLabel="Frequency">@context.Frequency</MudTd>
                         <MudTd DataLabel="Next">@context.NextOccurrence.ToString("MMM d, yyyy")</MudTd>
                         <MudTd DataLabel="Status">
@@ -109,14 +107,14 @@
 </style>
 
 @code {
-    private List<RecurringTransaction> _rules = [];
-    private List<BudgetCategory> _categories = [];
-    private List<Account> _accounts = [];
+    private List<RecurringTransactionDto> _rules = [];
+    private List<BudgetCategoryDto> _categories = [];
+    private List<AccountDto> _accounts = [];
 
     protected override async Task OnInitializedAsync()
     {
-        UserContext.OnGroupChanged += OnGroupChanged;
-        if (UserContext.ActiveGroupId is not null)
+        GroupContext.OnGroupChanged += OnGroupChanged;
+        if (GroupContext.ActiveGroupId is not null)
             await LoadData();
     }
 
@@ -131,17 +129,12 @@
 
     private async Task LoadData()
     {
-        var groupId = UserContext.ActiveGroupId;
+        var groupId = GroupContext.ActiveGroupId;
         if (groupId is null) return;
 
         _rules = await RecurringSvc.GetActiveAsync(groupId.Value);
         _accounts = await AccountSvc.GetAccountsAsync(groupId.Value);
-
-        await using var db = await DbFactory.CreateDbContextAsync();
-        _categories = await db.BudgetCategories
-            .Where(c => c.IsActive && c.GroupId == groupId)
-            .OrderBy(c => c.SortOrder)
-            .ToListAsync();
+        _categories = await CategorySvc.GetCategoriesAsync(groupId.Value);
 
         StateHasChanged();
     }
@@ -160,24 +153,14 @@
 
         if (result is not null && !result.Canceled && result.Data is RecurringTransactionDialog.RecurringTransactionResult data)
         {
-            await RecurringSvc.CreateAsync(new RecurringTransaction
-            {
-                GroupId = UserContext.ActiveGroupId,
-                Payee = data.Payee,
-                Amount = data.Amount,
-                CategoryId = data.CategoryId,
-                AccountId = data.AccountId,
-                Frequency = data.Frequency,
-                NextOccurrence = data.NextOccurrence,
-                EndDate = data.EndDate,
-                IsActive = data.IsActive
-            });
+            await RecurringSvc.CreateAsync(GroupContext.ActiveGroupId!.Value, new CreateRecurringTransactionRequest(
+                data.Payee, data.Amount, data.CategoryId, data.AccountId, data.Frequency, data.NextOccurrence, data.EndDate));
             Snackbar.Add("Recurring rule created.", Severity.Success);
             await LoadData();
         }
     }
 
-    private async Task EditRule(RecurringTransaction rule)
+    private async Task EditRule(RecurringTransactionDto rule)
     {
         var parameters = new DialogParameters<RecurringTransactionDialog>
         {
@@ -198,13 +181,13 @@
 
         if (result is not null && !result.Canceled && result.Data is RecurringTransactionDialog.RecurringTransactionResult data)
         {
-            await RecurringSvc.UpdateAsync(rule.Id, data.Payee, data.Amount, data.CategoryId, data.AccountId,
-                data.Frequency, data.NextOccurrence, data.EndDate, data.IsActive);
+            await RecurringSvc.UpdateAsync(GroupContext.ActiveGroupId!.Value, rule.Id, new UpdateRecurringTransactionRequest(
+                data.Payee, data.Amount, data.CategoryId, data.AccountId, data.Frequency, data.NextOccurrence, data.EndDate, data.IsActive));
             await LoadData();
         }
     }
 
-    private async Task DeleteRule(RecurringTransaction rule)
+    private async Task DeleteRule(RecurringTransactionDto rule)
     {
         var parameters = new DialogParameters<MessageBoxDialog>
         {
@@ -217,13 +200,13 @@
 
         if (result is not null && !result.Canceled)
         {
-            await RecurringSvc.DeleteAsync(rule.Id);
+            await RecurringSvc.DeleteAsync(GroupContext.ActiveGroupId!.Value, rule.Id);
             await LoadData();
         }
     }
 
     public void Dispose()
     {
-        UserContext.OnGroupChanged -= OnGroupChanged;
+        GroupContext.OnGroupChanged -= OnGroupChanged;
     }
 }

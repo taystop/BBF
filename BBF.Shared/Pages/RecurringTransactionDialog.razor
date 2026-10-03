@@ -1,4 +1,5 @@
-@using BBF.Data.Entities
+@using BBF.Shared.Contracts.Accounts
+@using BBF.Shared.Contracts.Budget
 
 <MudDialog>
     <TitleContent>
@@ -53,9 +54,9 @@
     [Parameter] public string Payee { get; set; } = string.Empty;
     [Parameter] public decimal Amount { get; set; }
     [Parameter] public int? CategoryId { get; set; }
-    [Parameter] public List<BudgetCategory> Categories { get; set; } = [];
+    [Parameter] public List<BudgetCategoryDto> Categories { get; set; } = [];
     [Parameter] public int AccountId { get; set; }
-    [Parameter] public List<Account> Accounts { get; set; } = [];
+    [Parameter] public List<AccountDto> Accounts { get; set; } = [];
     [Parameter] public string Frequency { get; set; } = "Monthly";
     [Parameter] public DateTime? NextOccurrence { get; set; } = DateTime.Today;
     [Parameter] public DateTime? EndDate { get; set; }
