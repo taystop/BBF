@@ -1,10 +1,8 @@
 @page "/grocery-sections"
-@using Microsoft.AspNetCore.Authorization
+@using BBF.Shared.Contracts.MealPlanning
 @attribute [Authorize]
-@using BBF.Data.Entities
-@using BBF.Services
-@inject GrocerySectionService SectionSvc
-@inject UserContextService UserContext
+@inject IGrocerySectionService SectionSvc
+@inject ApiGroupContext GroupContext
 @inject IDialogService DialogService
 @inject ISnackbar Snackbar
 @implements IDisposable
@@ -12,7 +10,7 @@
 <PageTitle>Grocery Sections - BBF</PageTitle>
 
 <MudContainer MaxWidth="MaxWidth.Medium" Class="py-4">
-    @if (!UserContext.IsInitialized || UserContext.ActiveGroupId is null)
+    @if (!GroupContext.IsInitialized || GroupContext.ActiveGroupId is null)
     {
         <MudPaper Class="pa-6 text-center" Elevation="2">
             <MudText Typo="Typo.h5" Class="mb-2">No Group</MudText>
@@ -70,12 +68,12 @@
 </MudContainer>
 
 @code {
-    private List<GrocerySection> _sections = [];
+    private List<GrocerySectionDto> _sections = [];
 
     protected override async Task OnInitializedAsync()
     {
-        UserContext.OnGroupChanged += OnGroupChanged;
-        if (UserContext.ActiveGroupId is not null)
+        GroupContext.OnGroupChanged += OnGroupChanged;
+        if (GroupContext.ActiveGroupId is not null)
             await LoadData();
     }
 
@@ -90,41 +88,42 @@
 
     private async Task LoadData()
     {
-        if (UserContext.ActiveGroupId is not int groupId) return;
+        if (GroupContext.ActiveGroupId is not int groupId) return;
         _sections = await SectionSvc.GetSectionsAsync(groupId);
     }
 
     private async Task AddSection()
     {
-        var parameters = new DialogParameters<GrocerySectionDialog> { { x => x.Section, new GrocerySection() } };
+        var parameters = new DialogParameters<GrocerySectionDialog> { { x => x.IsNew, true } };
         var dialog = await DialogService.ShowAsync<GrocerySectionDialog>("Add Section", parameters);
         var result = await dialog.Result;
 
-        if (result is not null && !result.Canceled && result.Data is GrocerySection section && UserContext.ActiveGroupId is int groupId)
+        if (result is not null && !result.Canceled && result.Data is string name && GroupContext.ActiveGroupId is int groupId)
         {
-            await SectionSvc.CreateAsync(groupId, section.Name);
-            Snackbar.Add($"Section '{section.Name}' added.", Severity.Success);
+            await SectionSvc.CreateAsync(groupId, new CreateGrocerySectionRequest(name));
+            Snackbar.Add($"Section '{name}' added.", Severity.Success);
             await LoadData();
         }
     }
 
-    private async Task EditSection(GrocerySection section)
+    private async Task EditSection(GrocerySectionDto section)
     {
         var parameters = new DialogParameters<GrocerySectionDialog>
         {
-            { x => x.Section, new GrocerySection { Id = section.Id, Name = section.Name } }
+            { x => x.IsNew, false },
+            { x => x.Name, section.Name }
         };
         var dialog = await DialogService.ShowAsync<GrocerySectionDialog>("Edit Section", parameters);
         var result = await dialog.Result;
 
-        if (result is not null && !result.Canceled && result.Data is GrocerySection updated)
+        if (result is not null && !result.Canceled && result.Data is string name && GroupContext.ActiveGroupId is int groupId)
         {
-            await SectionSvc.UpdateAsync(section.Id, updated.Name);
+            await SectionSvc.UpdateAsync(groupId, section.Id, new UpdateGrocerySectionRequest(name));
             await LoadData();
         }
     }
 
-    private async Task DeleteSection(GrocerySection section)
+    private async Task DeleteSection(GrocerySectionDto section)
     {
         var parameters = new DialogParameters<MessageBoxDialog>
         {
@@ -135,9 +134,9 @@
         var dialog = await DialogService.ShowAsync<MessageBoxDialog>("Delete Section", parameters);
         var result = await dialog.Result;
 
-        if (result is not null && !result.Canceled)
+        if (result is not null && !result.Canceled && GroupContext.ActiveGroupId is int groupId)
         {
-            await SectionSvc.DeleteAsync(section.Id);
+            await SectionSvc.DeleteAsync(groupId, section.Id);
             await LoadData();
         }
     }
@@ -156,12 +155,12 @@
 
     private async Task Persist()
     {
-        if (UserContext.ActiveGroupId is not int groupId) return;
-        await SectionSvc.ReorderAsync(groupId, _sections.Select(s => s.Id).ToList());
+        if (GroupContext.ActiveGroupId is not int groupId) return;
+        await SectionSvc.ReorderAsync(groupId, new ReorderGrocerySectionsRequest(_sections.Select(s => s.Id).ToList()));
     }
 
     public void Dispose()
     {
-        UserContext.OnGroupChanged -= OnGroupChanged;
+        GroupContext.OnGroupChanged -= OnGroupChanged;
     }
 }

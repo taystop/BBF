@@ -1,11 +1,9 @@
 @page "/ingredients"
-@using Microsoft.AspNetCore.Authorization
+@using BBF.Shared.Contracts.MealPlanning
 @attribute [Authorize]
-@using BBF.Data.Entities
-@using BBF.Services
-@inject IngredientService IngredientSvc
-@inject GrocerySectionService SectionSvc
-@inject UserContextService UserContext
+@inject IIngredientService IngredientSvc
+@inject IGrocerySectionService SectionSvc
+@inject ApiGroupContext GroupContext
 @inject IDialogService DialogService
 @inject ISnackbar Snackbar
 @implements IDisposable
@@ -13,7 +11,7 @@
 <PageTitle>Ingredients - BBF</PageTitle>
 
 <MudContainer MaxWidth="MaxWidth.Large" Class="py-4">
-    @if (!UserContext.IsInitialized || UserContext.ActiveGroupId is null)
+    @if (!GroupContext.IsInitialized || GroupContext.ActiveGroupId is null)
     {
         <MudPaper Class="pa-6 text-center" Elevation="2">
             <MudText Typo="Typo.h5" Class="mb-2">No Group</MudText>
@@ -48,9 +46,9 @@
                             <MudText Typo="Typo.subtitle2">@ingredient.Name</MudText>
                             <MudText Typo="Typo.caption" Color="Color.Secondary">
                                 @ingredient.MeasurementType
-                                @if (ingredient.Section is not null)
+                                @if (ingredient.SectionName is not null)
                                 {
-                                    @($" · {ingredient.Section.Name}")
+                                    @($" · {ingredient.SectionName}")
                                 }
                                 @if (ingredient.PackageQuantity is not null)
                                 {
@@ -83,18 +81,18 @@
 </MudContainer>
 
 @code {
-    private List<Ingredient> _ingredients = [];
-    private List<GrocerySection> _sections = [];
+    private List<IngredientDto> _ingredients = [];
+    private List<GrocerySectionDto> _sections = [];
     private string _search = "";
 
-    private IEnumerable<Ingredient> FilteredIngredients => string.IsNullOrWhiteSpace(_search)
+    private IEnumerable<IngredientDto> FilteredIngredients => string.IsNullOrWhiteSpace(_search)
         ? _ingredients
         : _ingredients.Where(i => i.Name.Contains(_search, StringComparison.OrdinalIgnoreCase));
 
     protected override async Task OnInitializedAsync()
     {
-        UserContext.OnGroupChanged += OnGroupChanged;
-        if (UserContext.ActiveGroupId is not null)
+        GroupContext.OnGroupChanged += OnGroupChanged;
+        if (GroupContext.ActiveGroupId is not null)
             await LoadData();
     }
 
@@ -109,7 +107,7 @@
 
     private async Task LoadData()
     {
-        if (UserContext.ActiveGroupId is not int groupId) return;
+        if (GroupContext.ActiveGroupId is not int groupId) return;
         _ingredients = await IngredientSvc.GetIngredientsAsync(groupId);
         _sections = await SectionSvc.GetSectionsAsync(groupId);
     }
@@ -118,45 +116,45 @@
     {
         var parameters = new DialogParameters<IngredientDialog>
         {
-            { x => x.Ingredient, new Ingredient() },
+            { x => x.IsNew, true },
             { x => x.Sections, _sections }
         };
         var dialog = await DialogService.ShowAsync<IngredientDialog>("Add Ingredient", parameters);
         var result = await dialog.Result;
 
-        if (result is not null && !result.Canceled && result.Data is Ingredient ingredient && UserContext.ActiveGroupId is int groupId)
+        if (result is not null && !result.Canceled && result.Data is IngredientDialog.IngredientResult data && GroupContext.ActiveGroupId is int groupId)
         {
-            ingredient.GroupId = groupId;
-            await IngredientSvc.CreateAsync(ingredient);
-            Snackbar.Add($"Ingredient '{ingredient.Name}' added.", Severity.Success);
+            await IngredientSvc.CreateAsync(groupId, new CreateIngredientRequest(
+                data.Name, data.MeasurementType, data.SectionId, data.PackageQuantity, data.PackageUnit));
+            Snackbar.Add($"Ingredient '{data.Name}' added.", Severity.Success);
             await LoadData();
         }
     }
 
-    private async Task EditIngredient(Ingredient ingredient)
+    private async Task EditIngredient(IngredientDto ingredient)
     {
         var parameters = new DialogParameters<IngredientDialog>
         {
-            { x => x.Ingredient, new Ingredient
-                {
-                    Id = ingredient.Id, Name = ingredient.Name, MeasurementType = ingredient.MeasurementType,
-                    SectionId = ingredient.SectionId, PackageQuantity = ingredient.PackageQuantity, PackageUnit = ingredient.PackageUnit
-                }
-            },
+            { x => x.IsNew, false },
+            { x => x.Name, ingredient.Name },
+            { x => x.MeasurementType, ingredient.MeasurementType },
+            { x => x.SectionId, ingredient.SectionId },
+            { x => x.PackageQuantity, ingredient.PackageQuantity },
+            { x => x.PackageUnit, ingredient.PackageUnit },
             { x => x.Sections, _sections }
         };
         var dialog = await DialogService.ShowAsync<IngredientDialog>("Edit Ingredient", parameters);
         var result = await dialog.Result;
 
-        if (result is not null && !result.Canceled && result.Data is Ingredient updated)
+        if (result is not null && !result.Canceled && result.Data is IngredientDialog.IngredientResult data && GroupContext.ActiveGroupId is int groupId)
         {
-            await IngredientSvc.UpdateAsync(ingredient.Id, updated.Name, updated.MeasurementType,
-                updated.SectionId, updated.PackageQuantity, updated.PackageUnit);
+            await IngredientSvc.UpdateAsync(groupId, ingredient.Id, new UpdateIngredientRequest(
+                data.Name, data.MeasurementType, data.SectionId, data.PackageQuantity, data.PackageUnit));
             await LoadData();
         }
     }
 
-    private async Task DeleteIngredient(Ingredient ingredient)
+    private async Task DeleteIngredient(IngredientDto ingredient)
     {
         var parameters = new DialogParameters<MessageBoxDialog>
         {
@@ -167,11 +165,11 @@
         var dialog = await DialogService.ShowAsync<MessageBoxDialog>("Delete Ingredient", parameters);
         var result = await dialog.Result;
 
-        if (result is not null && !result.Canceled)
+        if (result is not null && !result.Canceled && GroupContext.ActiveGroupId is int groupId)
         {
             try
             {
-                await IngredientSvc.DeleteAsync(ingredient.Id);
+                await IngredientSvc.DeleteAsync(groupId, ingredient.Id);
                 await LoadData();
             }
             catch (Exception)
@@ -183,6 +181,6 @@
 
     public void Dispose()
     {
-        UserContext.OnGroupChanged -= OnGroupChanged;
+        GroupContext.OnGroupChanged -= OnGroupChanged;
     }
 }

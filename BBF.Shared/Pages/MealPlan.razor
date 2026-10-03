@@ -1,18 +1,16 @@
 @page "/meal-plan"
-@using Microsoft.AspNetCore.Authorization
+@using BBF.Shared.Contracts.MealPlanning
 @attribute [Authorize]
-@using BBF.Data.Entities
-@using BBF.Services
-@inject MealPlanService MealPlanSvc
-@inject RecipeService RecipeSvc
-@inject UserContextService UserContext
+@inject IMealPlanService MealPlanSvc
+@inject IRecipeService RecipeSvc
+@inject ApiGroupContext GroupContext
 @inject IDialogService DialogService
 @implements IDisposable
 
 <PageTitle>Meal Plan - BBF</PageTitle>
 
 <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="py-4">
-    @if (!UserContext.IsInitialized || UserContext.ActiveGroupId is null)
+    @if (!GroupContext.IsInitialized || GroupContext.ActiveGroupId is null)
     {
         <MudPaper Class="pa-6 text-center" Elevation="2">
             <MudText Typo="Typo.h5" Class="mb-2">No Group</MudText>
@@ -30,7 +28,7 @@
                 @_weekStart.ToString("MMM d") - @_weekStart.AddDays(6).ToString("MMM d, yyyy")
             </MudText>
             <MudIconButton Icon="@Icons.Material.Filled.ChevronRight" OnClick="@(() => GoToWeek(7))" />
-            <MudButton Variant="Variant.Outlined" OnClick="@(() => LoadWeek(MealPlanService.GetWeekStart(DateTime.Now)))">
+            <MudButton Variant="Variant.Outlined" OnClick="@(() => LoadWeek(MealPlanDateHelpers.GetWeekStart(DateTime.Now)))">
                 This Week
             </MudButton>
         </MudStack>
@@ -68,7 +66,7 @@
                                     @if (entry is not null)
                                     {
                                         <div class="meal-cell filled" @onclick="@(() => OpenPicker(date, mealSlot, entry))">
-                                            <MudText Typo="Typo.body2">@entry.Recipe.Name</MudText>
+                                            <MudText Typo="Typo.body2">@entry.RecipeName</MudText>
                                             <MudText Typo="Typo.caption" Color="Color.Secondary">@entry.PlannedServings servings</MudText>
                                         </div>
                                     }
@@ -102,7 +100,7 @@
                             <MudText Typo="Typo.body2" Style="min-width: 80px;" Color="Color.Secondary">@mealSlot</MudText>
                             @if (entry is not null)
                             {
-                                <MudChip T="string" Color="Color.Primary">@entry.Recipe.Name (@entry.PlannedServings)</MudChip>
+                                <MudChip T="string" Color="Color.Primary">@entry.RecipeName (@entry.PlannedServings)</MudChip>
                             }
                             else
                             {
@@ -140,16 +138,16 @@
     private static readonly string[] Slots = ["Breakfast", "Lunch", "Dinner"];
 
     private DateTime _weekStart;
-    private MealPlanWeek? _week;
-    private List<Recipe> _recipes = [];
+    private MealPlanWeekDto? _week;
+    private List<RecipeDto> _recipes = [];
 
     private IEnumerable<DateTime> Days => Enumerable.Range(0, 7).Select(i => _weekStart.AddDays(i));
 
     protected override async Task OnInitializedAsync()
     {
-        UserContext.OnGroupChanged += OnGroupChanged;
-        _weekStart = MealPlanService.GetWeekStart(DateTime.Now);
-        if (UserContext.ActiveGroupId is not null)
+        GroupContext.OnGroupChanged += OnGroupChanged;
+        _weekStart = MealPlanDateHelpers.GetWeekStart(DateTime.Now);
+        if (GroupContext.ActiveGroupId is not null)
             await LoadWeek(_weekStart);
     }
 
@@ -164,7 +162,7 @@
 
     private async Task LoadWeek(DateTime weekStart)
     {
-        if (UserContext.ActiveGroupId is not int groupId) return;
+        if (GroupContext.ActiveGroupId is not int groupId) return;
 
         _weekStart = weekStart;
         _week = await MealPlanSvc.GetOrCreateWeekAsync(groupId, weekStart);
@@ -173,14 +171,15 @@
 
     private async Task GoToWeek(int dayOffset) => await LoadWeek(_weekStart.AddDays(dayOffset));
 
-    private MealPlanEntry? GetEntry(DateTime date, string slot) =>
+    private MealPlanEntryDto? GetEntry(DateTime date, string slot) =>
         _week?.Entries.FirstOrDefault(e => e.Date == date.Date && e.MealSlot == slot);
 
-    private async Task OpenPicker(DateTime date, string slot, MealPlanEntry? existing)
+    private async Task OpenPicker(DateTime date, string slot, MealPlanEntryDto? existing)
     {
-        if (_recipes.Count == 0 || _week is null || UserContext.ActiveGroupId is not int groupId) return;
+        if (_recipes.Count == 0 || _week is null || GroupContext.ActiveGroupId is not int groupId) return;
 
         var recent = await MealPlanSvc.GetRecentlyUsedRecipesAsync(groupId, _week.Id);
+        var existingRecipe = existing is null ? null : _recipes.FirstOrDefault(r => r.Id == existing.RecipeId);
 
         var parameters = new DialogParameters<MealPlanEntryDialog>
         {
@@ -188,7 +187,7 @@
             { x => x.MealSlot, slot },
             { x => x.AllRecipes, _recipes },
             { x => x.RecentRecipes, recent },
-            { x => x.ExistingRecipe, existing?.Recipe },
+            { x => x.ExistingRecipe, existingRecipe },
             { x => x.ExistingServings, existing?.PlannedServings ?? 0 }
         };
         var dialog = await DialogService.ShowAsync<MealPlanEntryDialog>($"{slot} · {date:MMM d}", parameters);
@@ -198,11 +197,11 @@
 
         if (data.Remove && existing is not null)
         {
-            await MealPlanSvc.UnassignAsync(existing.Id);
+            await MealPlanSvc.UnassignAsync(groupId, existing.Id);
         }
         else if (data.RecipeId is int recipeId)
         {
-            await MealPlanSvc.AssignRecipeAsync(_week.Id, date, slot, recipeId, data.PlannedServings);
+            await MealPlanSvc.AssignRecipeAsync(groupId, _week.Id, new AssignRecipeRequest(date, slot, recipeId, data.PlannedServings));
         }
 
         await LoadWeek(_weekStart);
@@ -210,6 +209,6 @@
 
     public void Dispose()
     {
-        UserContext.OnGroupChanged -= OnGroupChanged;
+        GroupContext.OnGroupChanged -= OnGroupChanged;
     }
 }

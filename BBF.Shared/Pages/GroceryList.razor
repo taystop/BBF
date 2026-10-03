@@ -1,20 +1,17 @@
 @page "/grocery-list"
-@using Microsoft.AspNetCore.Authorization
+@using BBF.Shared.Contracts.MealPlanning
 @attribute [Authorize]
-@using BBF.Data.Entities
-@using BBF.Services
-@using GroceryListEntity = BBF.Data.Entities.GroceryList
-@inject GroceryListService GroceryListSvc
-@inject MealPlanService MealPlanSvc
-@inject GrocerySectionService SectionSvc
-@inject UserContextService UserContext
+@inject IGroceryListService GroceryListSvc
+@inject IMealPlanService MealPlanSvc
+@inject IGrocerySectionService SectionSvc
+@inject ApiGroupContext GroupContext
 @inject ISnackbar Snackbar
 @implements IDisposable
 
 <PageTitle>Grocery List - BBF</PageTitle>
 
 <MudContainer MaxWidth="MaxWidth.Medium" Class="py-4">
-    @if (!UserContext.IsInitialized || UserContext.ActiveGroupId is null)
+    @if (!GroupContext.IsInitialized || GroupContext.ActiveGroupId is null)
     {
         <MudPaper Class="pa-6 text-center" Elevation="2">
             <MudText Typo="Typo.h5" Class="mb-2">No Group</MudText>
@@ -101,28 +98,28 @@
 
 @code {
     private DateTime _weekStart;
-    private MealPlanWeek? _week;
-    private GroceryListEntity? _list;
-    private List<GrocerySection> _sections = [];
+    private MealPlanWeekDto? _week;
+    private GroceryListDto? _list;
+    private List<GrocerySectionDto> _sections = [];
     private string _newItemDescription = "";
     private int? _newItemSectionId;
 
-    private record SectionGroup(string SectionName, int SortOrder, List<GroceryListItem> Items);
+    private record SectionGroup(string SectionName, int SortOrder, List<GroceryListItemDto> Items);
 
     private IEnumerable<SectionGroup> GroupedItems =>
         (_list?.Items ?? [])
             .GroupBy(i => i.SectionId)
             .Select(g => new SectionGroup(
-                g.First().Section?.Name ?? "Other",
-                g.First().Section?.SortOrder ?? int.MaxValue,
+                g.First().SectionName ?? "Other",
+                _sections.FirstOrDefault(s => s.Id == g.Key)?.SortOrder ?? int.MaxValue,
                 g.OrderBy(i => i.Description).ToList()))
             .OrderBy(g => g.SortOrder);
 
     protected override async Task OnInitializedAsync()
     {
-        UserContext.OnGroupChanged += OnGroupChanged;
-        _weekStart = MealPlanService.GetWeekStart(DateTime.Now);
-        if (UserContext.ActiveGroupId is not null)
+        GroupContext.OnGroupChanged += OnGroupChanged;
+        _weekStart = MealPlanDateHelpers.GetWeekStart(DateTime.Now);
+        if (GroupContext.ActiveGroupId is not null)
             await LoadWeek(_weekStart);
     }
 
@@ -137,11 +134,11 @@
 
     private async Task LoadWeek(DateTime weekStart)
     {
-        if (UserContext.ActiveGroupId is not int groupId) return;
+        if (GroupContext.ActiveGroupId is not int groupId) return;
 
         _weekStart = weekStart;
         _week = await MealPlanSvc.GetOrCreateWeekAsync(groupId, weekStart);
-        _list = await GroceryListSvc.GetAsync(_week.Id);
+        _list = await GroceryListSvc.GetAsync(groupId, _week.Id);
         _sections = await SectionSvc.GetSectionsAsync(groupId);
     }
 
@@ -149,35 +146,37 @@
 
     private async Task Regenerate()
     {
-        if (_week is null) return;
-        _list = await GroceryListSvc.GenerateAsync(_week.Id);
+        if (_week is null || GroupContext.ActiveGroupId is not int groupId) return;
+        _list = await GroceryListSvc.GenerateAsync(groupId, _week.Id);
         Snackbar.Add("Grocery list updated.", Severity.Success);
     }
 
-    private async Task ToggleChecked(GroceryListItem item, bool isChecked)
+    private async Task ToggleChecked(GroceryListItemDto item, bool isChecked)
     {
-        item.IsChecked = isChecked;
-        await GroceryListSvc.SetCheckedAsync(item.Id, isChecked);
+        if (GroupContext.ActiveGroupId is not int groupId) return;
+        await GroceryListSvc.SetCheckedAsync(groupId, item.Id, isChecked);
+        await LoadWeek(_weekStart);
     }
 
-    private async Task RemoveItem(GroceryListItem item)
+    private async Task RemoveItem(GroceryListItemDto item)
     {
-        await GroceryListSvc.RemoveItemAsync(item.Id);
-        _list?.Items.Remove(item);
+        if (GroupContext.ActiveGroupId is not int groupId) return;
+        await GroceryListSvc.RemoveItemAsync(groupId, item.Id);
+        await LoadWeek(_weekStart);
     }
 
     private async Task AddManualItem()
     {
-        if (_list is null || string.IsNullOrWhiteSpace(_newItemDescription)) return;
+        if (_list is null || string.IsNullOrWhiteSpace(_newItemDescription) || GroupContext.ActiveGroupId is not int groupId) return;
 
-        await GroceryListSvc.AddManualItemAsync(_list.Id, _newItemDescription, _newItemSectionId);
+        await GroceryListSvc.AddManualItemAsync(groupId, _list.Id, new AddManualGroceryItemRequest(_newItemDescription, _newItemSectionId));
         _newItemDescription = "";
         _newItemSectionId = null;
-        _list = await GroceryListSvc.GetAsync(_list.MealPlanWeekId);
+        _list = await GroceryListSvc.GetAsync(groupId, _list.MealPlanWeekId);
     }
 
     public void Dispose()
     {
-        UserContext.OnGroupChanged -= OnGroupChanged;
+        GroupContext.OnGroupChanged -= OnGroupChanged;
     }
 }

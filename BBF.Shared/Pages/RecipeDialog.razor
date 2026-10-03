@@ -1,20 +1,19 @@
-@using BBF.Data.Entities
-@using BBF.Services
+@using BBF.Shared.Contracts.MealPlanning
 
 <MudDialog>
     <TitleContent>
-        <MudText Typo="Typo.h6">@(Recipe.Id == 0 ? "Add Recipe" : "Edit Recipe")</MudText>
+        <MudText Typo="Typo.h6">@(IsNew ? "Add Recipe" : "Edit Recipe")</MudText>
     </TitleContent>
     <DialogContent>
-        <MudTextField @bind-Value="Recipe.Name" Label="Recipe Name" Required
+        <MudTextField @bind-Value="Name" Label="Recipe Name" Required
                       Variant="Variant.Outlined" Class="mb-3" />
         <MudStack Row Style="flex-wrap: wrap; gap: 8px;" Class="mb-3">
-            <MudNumericField @bind-Value="Recipe.BaseServings" Label="Base Servings" Min="1"
+            <MudNumericField @bind-Value="BaseServings" Label="Base Servings" Min="1"
                               Variant="Variant.Outlined" Style="min-width: 140px; flex: 1;" />
         </MudStack>
-        <MudTextField @bind-Value="Recipe.Instructions" Label="Instructions" Lines="4"
+        <MudTextField @bind-Value="Instructions" Label="Instructions" Lines="4"
                       Variant="Variant.Outlined" Class="mb-3" />
-        <MudTextField @bind-Value="Recipe.Notes" Label="Notes" Variant="Variant.Outlined" Class="mb-4" />
+        <MudTextField @bind-Value="Notes" Label="Notes" Variant="Variant.Outlined" Class="mb-4" />
 
         <MudText Typo="Typo.subtitle1" Class="mb-2">Ingredients</MudText>
 
@@ -59,7 +58,7 @@
     <DialogActions>
         <MudButton OnClick="Cancel">Cancel</MudButton>
         <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Submit"
-                   Disabled="@(string.IsNullOrWhiteSpace(Recipe.Name))">
+                   Disabled="@(string.IsNullOrWhiteSpace(Name))">
             Save
         </MudButton>
     </DialogActions>
@@ -69,18 +68,20 @@
     [CascadingParameter]
     private IMudDialogInstance MudDialog { get; set; } = null!;
 
-    [Parameter]
-    public Recipe Recipe { get; set; } = new();
+    [Parameter] public bool IsNew { get; set; } = true;
+    [Parameter] public string Name { get; set; } = string.Empty;
+    [Parameter] public int BaseServings { get; set; } = 4;
+    [Parameter] public string? Instructions { get; set; }
+    [Parameter] public string? Notes { get; set; }
+    [Parameter] public List<RecipeIngredientDto> ExistingLines { get; set; } = [];
+    [Parameter] public List<IngredientDto> Ingredients { get; set; } = [];
 
-    [Parameter]
-    public List<Ingredient> Ingredients { get; set; } = [];
-
-    private List<RecipeIngredient> _lines = [];
+    private List<EditableLine> _lines = [];
 
     protected override void OnInitialized()
     {
-        // Work off a copy so cancelling the dialog doesn't mutate the caller's list.
-        _lines = Recipe.Ingredients.Select(l => new RecipeIngredient
+        // Work off a copy so cancelling the dialog doesn't mutate the caller's data.
+        _lines = ExistingLines.Select(l => new EditableLine
         {
             IngredientId = l.IngredientId, Quantity = l.Quantity, Unit = l.Unit, Notes = l.Notes
         }).ToList();
@@ -92,7 +93,7 @@
         return UnitConversion.UnitsFor(ingredient?.MeasurementType ?? "Count");
     }
 
-    private void OnIngredientChanged(RecipeIngredient line, int ingredientId)
+    private void OnIngredientChanged(EditableLine line, int ingredientId)
     {
         line.IngredientId = ingredientId;
         // Reset the unit to match the newly-selected ingredient's measurement type.
@@ -102,7 +103,7 @@
     private void AddLine()
     {
         var first = Ingredients[0];
-        _lines.Add(new RecipeIngredient
+        _lines.Add(new EditableLine
         {
             IngredientId = first.Id,
             Quantity = 1,
@@ -112,9 +113,29 @@
 
     private void Cancel() => MudDialog.Cancel();
 
-    private void Submit()
+    private void Submit() => MudDialog.Close(DialogResult.Ok(new RecipeResult
     {
-        Recipe.Ingredients = _lines;
-        MudDialog.Close(DialogResult.Ok(Recipe));
+        Name = Name,
+        BaseServings = BaseServings,
+        Instructions = Instructions,
+        Notes = Notes,
+        Ingredients = _lines.Select(l => new RecipeIngredientLine(l.IngredientId, l.Quantity, l.Unit, l.Notes)).ToList()
+    }));
+
+    private class EditableLine
+    {
+        public int IngredientId { get; set; }
+        public decimal Quantity { get; set; }
+        public string Unit { get; set; } = "Each";
+        public string? Notes { get; set; }
+    }
+
+    public class RecipeResult
+    {
+        public string Name { get; set; } = string.Empty;
+        public int BaseServings { get; set; } = 4;
+        public string? Instructions { get; set; }
+        public string? Notes { get; set; }
+        public List<RecipeIngredientLine> Ingredients { get; set; } = [];
     }
 }

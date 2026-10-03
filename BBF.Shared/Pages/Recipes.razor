@@ -1,11 +1,9 @@
 @page "/recipes"
-@using Microsoft.AspNetCore.Authorization
+@using BBF.Shared.Contracts.MealPlanning
 @attribute [Authorize]
-@using BBF.Data.Entities
-@using BBF.Services
-@inject RecipeService RecipeSvc
-@inject IngredientService IngredientSvc
-@inject UserContextService UserContext
+@inject IRecipeService RecipeSvc
+@inject IIngredientService IngredientSvc
+@inject ApiGroupContext GroupContext
 @inject IDialogService DialogService
 @inject ISnackbar Snackbar
 @implements IDisposable
@@ -13,7 +11,7 @@
 <PageTitle>Recipes - BBF</PageTitle>
 
 <MudContainer MaxWidth="MaxWidth.Large" Class="py-4">
-    @if (!UserContext.IsInitialized || UserContext.ActiveGroupId is null)
+    @if (!GroupContext.IsInitialized || GroupContext.ActiveGroupId is null)
     {
         <MudPaper Class="pa-6 text-center" Elevation="2">
             <MudText Typo="Typo.h5" Class="mb-2">No Group</MudText>
@@ -82,18 +80,18 @@
 </MudContainer>
 
 @code {
-    private List<Recipe> _recipes = [];
-    private List<Ingredient> _ingredients = [];
+    private List<RecipeDto> _recipes = [];
+    private List<IngredientDto> _ingredients = [];
     private string _search = "";
 
-    private IEnumerable<Recipe> FilteredRecipes => string.IsNullOrWhiteSpace(_search)
+    private IEnumerable<RecipeDto> FilteredRecipes => string.IsNullOrWhiteSpace(_search)
         ? _recipes
         : _recipes.Where(r => r.Name.Contains(_search, StringComparison.OrdinalIgnoreCase));
 
     protected override async Task OnInitializedAsync()
     {
-        UserContext.OnGroupChanged += OnGroupChanged;
-        if (UserContext.ActiveGroupId is not null)
+        GroupContext.OnGroupChanged += OnGroupChanged;
+        if (GroupContext.ActiveGroupId is not null)
             await LoadData();
     }
 
@@ -108,7 +106,7 @@
 
     private async Task LoadData()
     {
-        if (UserContext.ActiveGroupId is not int groupId) return;
+        if (GroupContext.ActiveGroupId is not int groupId) return;
         _recipes = await RecipeSvc.GetRecipesAsync(groupId);
         _ingredients = await IngredientSvc.GetIngredientsAsync(groupId);
     }
@@ -123,46 +121,46 @@
 
         var parameters = new DialogParameters<RecipeDialog>
         {
-            { x => x.Recipe, new Recipe { BaseServings = 4 } },
+            { x => x.IsNew, true },
+            { x => x.BaseServings, 4 },
             { x => x.Ingredients, _ingredients }
         };
         var dialog = await DialogService.ShowAsync<RecipeDialog>("Add Recipe", parameters);
         var result = await dialog.Result;
 
-        if (result is not null && !result.Canceled && result.Data is Recipe recipe && UserContext.ActiveGroupId is int groupId)
+        if (result is not null && !result.Canceled && result.Data is RecipeDialog.RecipeResult data && GroupContext.ActiveGroupId is int groupId)
         {
-            recipe.GroupId = groupId;
-            await RecipeSvc.CreateAsync(recipe);
-            Snackbar.Add($"Recipe '{recipe.Name}' added.", Severity.Success);
+            await RecipeSvc.CreateAsync(groupId, new CreateRecipeRequest(
+                data.Name, data.BaseServings, data.Instructions, data.Notes, data.Ingredients));
+            Snackbar.Add($"Recipe '{data.Name}' added.", Severity.Success);
             await LoadData();
         }
     }
 
-    private async Task EditRecipe(Recipe recipe)
+    private async Task EditRecipe(RecipeDto recipe)
     {
         var parameters = new DialogParameters<RecipeDialog>
         {
-            { x => x.Recipe, new Recipe
-                {
-                    Id = recipe.Id, Name = recipe.Name, BaseServings = recipe.BaseServings,
-                    Instructions = recipe.Instructions, Notes = recipe.Notes,
-                    Ingredients = recipe.Ingredients
-                }
-            },
+            { x => x.IsNew, false },
+            { x => x.Name, recipe.Name },
+            { x => x.BaseServings, recipe.BaseServings },
+            { x => x.Instructions, recipe.Instructions },
+            { x => x.Notes, recipe.Notes },
+            { x => x.ExistingLines, recipe.Ingredients },
             { x => x.Ingredients, _ingredients }
         };
         var dialog = await DialogService.ShowAsync<RecipeDialog>("Edit Recipe", parameters);
         var result = await dialog.Result;
 
-        if (result is not null && !result.Canceled && result.Data is Recipe updated)
+        if (result is not null && !result.Canceled && result.Data is RecipeDialog.RecipeResult data && GroupContext.ActiveGroupId is int groupId)
         {
-            await RecipeSvc.UpdateAsync(recipe.Id, updated.Name, updated.BaseServings, updated.Instructions,
-                updated.Notes, updated.Ingredients);
+            await RecipeSvc.UpdateAsync(groupId, recipe.Id, new UpdateRecipeRequest(
+                data.Name, data.BaseServings, data.Instructions, data.Notes, data.Ingredients));
             await LoadData();
         }
     }
 
-    private async Task DeleteRecipe(Recipe recipe)
+    private async Task DeleteRecipe(RecipeDto recipe)
     {
         var parameters = new DialogParameters<MessageBoxDialog>
         {
@@ -173,11 +171,11 @@
         var dialog = await DialogService.ShowAsync<MessageBoxDialog>("Delete Recipe", parameters);
         var result = await dialog.Result;
 
-        if (result is not null && !result.Canceled)
+        if (result is not null && !result.Canceled && GroupContext.ActiveGroupId is int groupId)
         {
             try
             {
-                await RecipeSvc.DeleteAsync(recipe.Id);
+                await RecipeSvc.DeleteAsync(groupId, recipe.Id);
                 await LoadData();
             }
             catch (Exception)
@@ -189,6 +187,6 @@
 
     public void Dispose()
     {
-        UserContext.OnGroupChanged -= OnGroupChanged;
+        GroupContext.OnGroupChanged -= OnGroupChanged;
     }
 }

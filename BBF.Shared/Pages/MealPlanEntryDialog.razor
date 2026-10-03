@@ -1,4 +1,4 @@
-@using BBF.Data.Entities
+@using BBF.Shared.Contracts.MealPlanning
 
 <MudDialog>
     <TitleContent>
@@ -19,7 +19,7 @@
             </MudStack>
         }
 
-        <MudAutocomplete T="Recipe" Label="Recipe" @bind-Value="_selected"
+        <MudAutocomplete T="RecipeDto" Label="Recipe" @bind-Value="_selected"
                           SearchFunc="Search" ToStringFunc="@(r => r?.Name ?? "")"
                           Variant="Variant.Outlined" Class="mb-3" ResetValueOnEmptyText Clearable />
 
@@ -52,20 +52,20 @@
     public string MealSlot { get; set; } = "";
 
     [Parameter]
-    public List<Recipe> AllRecipes { get; set; } = [];
+    public List<RecipeDto> AllRecipes { get; set; } = [];
 
     [Parameter]
-    public List<Recipe> RecentRecipes { get; set; } = [];
+    public List<RecipeDto> RecentRecipes { get; set; } = [];
 
     [Parameter]
-    public Recipe? ExistingRecipe { get; set; }
+    public RecipeDto? ExistingRecipe { get; set; }
 
     [Parameter]
     public int ExistingServings { get; set; }
 
     private bool IsExisting => ExistingRecipe is not null;
 
-    private Recipe? _selected;
+    private RecipeDto? _selected;
     private int _servings;
 
     protected override void OnInitialized()
@@ -74,13 +74,13 @@
         _servings = ExistingServings > 0 ? ExistingServings : (ExistingRecipe?.BaseServings ?? 1);
     }
 
-    private void Select(Recipe recipe)
+    private void Select(RecipeDto recipe)
     {
         _selected = recipe;
         _servings = recipe.BaseServings;
     }
 
-    private Task<IEnumerable<Recipe>> Search(string value, CancellationToken token)
+    private Task<IEnumerable<RecipeDto>> Search(string value, CancellationToken token)
     {
         var results = string.IsNullOrWhiteSpace(value)
             ? AllRecipes

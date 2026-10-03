@@ -7,6 +7,7 @@ using BBF.Shared;
 using BBF.Shared.Contracts.Accounts;
 using BBF.Shared.Contracts.Auth;
 using BBF.Shared.Contracts.Budget;
+using BBF.Shared.Contracts.MealPlanning;
 using BBF.Shared.Contracts.Plaid;
 using BBF.Shared.Contracts.Transactions;
 using Microsoft.AspNetCore.Components.Authorization;
@@ -113,6 +114,11 @@ builder.Services.AddApiHttpClient<ITransactionService, HttpTransactionService>(a
 builder.Services.AddApiHttpClient<IAccountService, HttpAccountService>(apiBaseUrl);
 builder.Services.AddApiHttpClient<IBudgetCategoryService, HttpBudgetCategoryService>(apiBaseUrl);
 builder.Services.AddApiHttpClient<IPlaidService, HttpPlaidService>(apiBaseUrl);
+builder.Services.AddApiHttpClient<IGrocerySectionService, HttpGrocerySectionService>(apiBaseUrl);
+builder.Services.AddApiHttpClient<IIngredientService, HttpIngredientService>(apiBaseUrl);
+builder.Services.AddApiHttpClient<IRecipeService, HttpRecipeService>(apiBaseUrl);
+builder.Services.AddApiHttpClient<IMealPlanService, HttpMealPlanService>(apiBaseUrl);
+builder.Services.AddApiHttpClient<IGroceryListService, HttpGroceryListService>(apiBaseUrl);
 builder.Services.AddScoped<ApiGroupContext>();
 
 var app = builder.Build();
