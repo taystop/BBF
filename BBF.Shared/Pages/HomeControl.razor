@@ -1,8 +1,7 @@
 @page "/home"
-@using Microsoft.AspNetCore.Authorization
+@using BBF.Shared.Contracts.HomeAssistant
 @attribute [Authorize]
-@using BBF.Services
-@inject HomeAssistantService HA
+@inject IHomeAssistantService HA
 
 <PageTitle>Home Control - BBF</PageTitle>
 

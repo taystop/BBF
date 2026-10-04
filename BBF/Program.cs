@@ -5,10 +5,13 @@ using BBF.Data;
 using BBF.Services;
 using BBF.Shared;
 using BBF.Shared.Contracts.Accounts;
+using BBF.Shared.Contracts.Amp;
 using BBF.Shared.Contracts.Auth;
 using BBF.Shared.Contracts.Budget;
 using BBF.Shared.Contracts.Chat;
 using BBF.Shared.Contracts.Documents;
+using BBF.Shared.Contracts.Emby;
+using BBF.Shared.Contracts.HomeAssistant;
 using BBF.Shared.Contracts.MealPlanning;
 using BBF.Shared.Contracts.Plaid;
 using BBF.Shared.Contracts.Services;
@@ -61,16 +64,11 @@ builder.Services.AddHttpClient<OllamaService>();
 // SearXNG web search service
 builder.Services.AddHttpClient<WebSearchService>();
 
-// Home Assistant integration
-builder.Services.AddHttpClient<HomeAssistantService>();
-
 // Health check service
 builder.Services.AddScoped<HealthCheckService>();
 
-// Emby media server integration
-builder.Services.AddHttpClient<EmbyService>();
-
-// AMP game server integration
+// AMP game server integration — still used directly here only by the anonymous /servers page
+// (PublicServers.razor), which can't carry a Bearer token and so can't go through BBF.Api.
 builder.Services.AddHttpClient<AmpService>();
 
 // Wiki RAG search service
@@ -129,6 +127,9 @@ builder.Services.AddApiHttpClient<IWikiArticleService, HttpWikiArticleService>(a
 // BBF.Api shouldn't get cut off mid-generation.
 builder.Services.AddApiHttpClient<IChatService, HttpChatService>(apiBaseUrl, TimeSpan.FromMinutes(5));
 builder.Services.AddApiHttpClient<IServiceLinkService, HttpServiceLinkService>(apiBaseUrl);
+builder.Services.AddApiHttpClient<IHomeAssistantService, HttpHomeAssistantService>(apiBaseUrl);
+builder.Services.AddApiHttpClient<IEmbyService, HttpEmbyService>(apiBaseUrl);
+builder.Services.AddApiHttpClient<IAmpService, HttpAmpService>(apiBaseUrl);
 builder.Services.AddScoped<ApiGroupContext>();
 
 var app = builder.Build();

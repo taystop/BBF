@@ -1,8 +1,7 @@
 @page "/gameservers"
-@using Microsoft.AspNetCore.Authorization
+@using BBF.Shared.Contracts.Amp
 @attribute [Authorize]
-@using BBF.Services
-@inject AmpService Amp
+@inject IAmpService Amp
 @inject ISnackbar Snackbar
 
 <PageTitle>Game Servers - BBF</PageTitle>
