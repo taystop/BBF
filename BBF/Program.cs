@@ -11,6 +11,7 @@ using BBF.Shared.Contracts.Chat;
 using BBF.Shared.Contracts.Documents;
 using BBF.Shared.Contracts.MealPlanning;
 using BBF.Shared.Contracts.Plaid;
+using BBF.Shared.Contracts.Services;
 using BBF.Shared.Contracts.Transactions;
 using BBF.Shared.Contracts.Wiki;
 using Microsoft.AspNetCore.Components.Authorization;
@@ -127,6 +128,7 @@ builder.Services.AddApiHttpClient<IWikiArticleService, HttpWikiArticleService>(a
 // Longer timeout than the default 100s HttpClient allows — a long LLM response streaming through
 // BBF.Api shouldn't get cut off mid-generation.
 builder.Services.AddApiHttpClient<IChatService, HttpChatService>(apiBaseUrl, TimeSpan.FromMinutes(5));
+builder.Services.AddApiHttpClient<IServiceLinkService, HttpServiceLinkService>(apiBaseUrl);
 builder.Services.AddScoped<ApiGroupContext>();
 
 var app = builder.Build();

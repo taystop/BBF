@@ -1,0 +1,66 @@
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">@(IsNew ? "Add Service" : "Edit Service")</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudTextField @bind-Value="Name" Label="Name" Required Variant="Variant.Outlined" Class="mb-3" />
+        <MudTextField @bind-Value="Url" Label="URL" Required Variant="Variant.Outlined" Class="mb-3"
+                      Placeholder="https://10.69.1.5:8096" />
+        <MudTextField @bind-Value="Description" Label="Description" Variant="Variant.Outlined" Class="mb-3" />
+        <MudTextField @bind-Value="Category" Label="Category" Variant="Variant.Outlined" Class="mb-3"
+                      Placeholder="Media, Infrastructure, Monitoring..." />
+        <MudTextField @bind-Value="Icon" Label="Material Icon" Variant="Variant.Outlined" Class="mb-3"
+                      HelperText="MudBlazor Material icon name" />
+        <MudTextField @bind-Value="HealthCheckUrl" Label="Health Check URL" Variant="Variant.Outlined" Class="mb-3"
+                      Placeholder="http://10.69.1.5:8096/health" HelperText="URL to ping for status checks" />
+        <MudNumericField @bind-Value="SortOrder" Label="Sort Order" Variant="Variant.Outlined" Class="mb-3" />
+        <MudSwitch @bind-Value="IsActive" Label="Active" Color="Color.Primary" />
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Submit"
+                   Disabled="@(string.IsNullOrWhiteSpace(Name) || string.IsNullOrWhiteSpace(Url))">
+            Save
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance MudDialog { get; set; } = null!;
+
+    [Parameter] public bool IsNew { get; set; } = true;
+    [Parameter] public string Name { get; set; } = string.Empty;
+    [Parameter] public string Url { get; set; } = string.Empty;
+    [Parameter] public string? Description { get; set; }
+    [Parameter] public string? Category { get; set; }
+    [Parameter] public string? Icon { get; set; }
+    [Parameter] public string? HealthCheckUrl { get; set; }
+    [Parameter] public int SortOrder { get; set; }
+    [Parameter] public bool IsActive { get; set; } = true;
+
+    private void Cancel() => MudDialog.Cancel();
+    private void Submit() => MudDialog.Close(DialogResult.Ok(new ServiceLinkResult
+    {
+        Name = Name,
+        Url = Url,
+        Description = Description,
+        Category = Category,
+        Icon = Icon,
+        HealthCheckUrl = HealthCheckUrl,
+        SortOrder = SortOrder,
+        IsActive = IsActive
+    }));
+
+    public class ServiceLinkResult
+    {
+        public string Name { get; set; } = string.Empty;
+        public string Url { get; set; } = string.Empty;
+        public string? Description { get; set; }
+        public string? Category { get; set; }
+        public string? Icon { get; set; }
+        public string? HealthCheckUrl { get; set; }
+        public int SortOrder { get; set; }
+        public bool IsActive { get; set; } = true;
+    }
+}
