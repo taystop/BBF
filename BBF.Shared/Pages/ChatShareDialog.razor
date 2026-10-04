@@ -1,7 +1,5 @@
-@using BBF.Data
-@using BBF.Data.Entities
-@using Microsoft.EntityFrameworkCore
-@inject IDbContextFactory<ApplicationDbContext> DbFactory
+@using BBF.Shared.Contracts.Auth
+@using BBF.Shared.Contracts.Chat
 
 <MudDialog>
     <DialogContent>
@@ -23,7 +21,7 @@
             </MudPaper>
         }
 
-        @if (!Groups.Any())
+        @if (Groups.Count == 0)
         {
             <MudText Typo="Typo.body2" Color="Color.Secondary">
                 You have no groups to share with. Create a group first.
@@ -40,23 +38,17 @@
     [CascadingParameter]
     private IMudDialogInstance MudDialog { get; set; } = null!;
 
-    [Parameter]
-    public List<UserGroup> Groups { get; set; } = [];
+    [Inject] private IChatService ChatSvc { get; set; } = null!;
 
-    [Parameter]
-    public List<ChatConversationShare> CurrentShares { get; set; } = [];
-
-    [Parameter]
-    public int ConversationId { get; set; }
+    [Parameter] public List<GroupDto> Groups { get; set; } = [];
+    [Parameter] public List<int> CurrentGroupIds { get; set; } = [];
+    [Parameter] public int ConversationId { get; set; }
 
     private HashSet<int> _sharedGroupIds = [];
 
     protected override void OnInitialized()
     {
-        _sharedGroupIds = CurrentShares
-            .Where(s => s.SharedWithGroupId.HasValue)
-            .Select(s => s.SharedWithGroupId!.Value)
-            .ToHashSet();
+        _sharedGroupIds = CurrentGroupIds.ToHashSet();
     }
 
     private void ToggleGroupShare(int groupId, bool share)
@@ -69,36 +61,7 @@
 
     private async Task Save()
     {
-        await using var db = await DbFactory.CreateDbContextAsync();
-
-        // Remove shares that were unchecked
-        var toRemoveIds = CurrentShares
-            .Where(s => s.SharedWithGroupId.HasValue && !_sharedGroupIds.Contains(s.SharedWithGroupId.Value))
-            .Select(s => s.Id)
-            .ToList();
-        if (toRemoveIds.Any())
-        {
-            var toRemove = await db.ChatConversationShares.Where(s => toRemoveIds.Contains(s.Id)).ToListAsync();
-            db.ChatConversationShares.RemoveRange(toRemove);
-        }
-
-        // Add new shares
-        var existingGroupIds = CurrentShares
-            .Where(s => s.SharedWithGroupId.HasValue)
-            .Select(s => s.SharedWithGroupId!.Value)
-            .ToHashSet();
-
-        foreach (var groupId in _sharedGroupIds.Where(id => !existingGroupIds.Contains(id)))
-        {
-            db.ChatConversationShares.Add(new ChatConversationShare
-            {
-                ConversationId = ConversationId,
-                SharedWithGroupId = groupId,
-                SharedAt = DateTime.UtcNow
-            });
-        }
-
-        await db.SaveChangesAsync();
+        await ChatSvc.UpdateSharesAsync(ConversationId, new UpdateChatSharesRequest(_sharedGroupIds.ToList()));
         MudDialog.Close(DialogResult.Ok(true));
     }
 

@@ -16,11 +16,16 @@ public static class ApiClientServiceCollectionExtensions
     }
 
     /// <summary>Registers a BBF.Api-backed implementation of a BBF.Shared client interface, with the Bearer token attached automatically.</summary>
-    public static IServiceCollection AddApiHttpClient<TInterface, TImplementation>(this IServiceCollection services, string apiBaseUrl)
+    public static IServiceCollection AddApiHttpClient<TInterface, TImplementation>(
+        this IServiceCollection services, string apiBaseUrl, TimeSpan? timeout = null)
         where TInterface : class
         where TImplementation : class, TInterface
     {
-        services.AddHttpClient<TInterface, TImplementation>(c => c.BaseAddress = new Uri(apiBaseUrl))
+        services.AddHttpClient<TInterface, TImplementation>(c =>
+            {
+                c.BaseAddress = new Uri(apiBaseUrl);
+                if (timeout is { } t) c.Timeout = t;
+            })
             .AddHttpMessageHandler<ApiAuthDelegatingHandler>();
         return services;
     }

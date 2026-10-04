@@ -7,6 +7,7 @@ using BBF.Shared;
 using BBF.Shared.Contracts.Accounts;
 using BBF.Shared.Contracts.Auth;
 using BBF.Shared.Contracts.Budget;
+using BBF.Shared.Contracts.Chat;
 using BBF.Shared.Contracts.Documents;
 using BBF.Shared.Contracts.MealPlanning;
 using BBF.Shared.Contracts.Plaid;
@@ -123,6 +124,9 @@ builder.Services.AddApiHttpClient<IMealPlanService, HttpMealPlanService>(apiBase
 builder.Services.AddApiHttpClient<IGroceryListService, HttpGroceryListService>(apiBaseUrl);
 builder.Services.AddApiHttpClient<IDocumentService, HttpDocumentService>(apiBaseUrl);
 builder.Services.AddApiHttpClient<IWikiArticleService, HttpWikiArticleService>(apiBaseUrl);
+// Longer timeout than the default 100s HttpClient allows — a long LLM response streaming through
+// BBF.Api shouldn't get cut off mid-generation.
+builder.Services.AddApiHttpClient<IChatService, HttpChatService>(apiBaseUrl, TimeSpan.FromMinutes(5));
 builder.Services.AddScoped<ApiGroupContext>();
 
 var app = builder.Build();

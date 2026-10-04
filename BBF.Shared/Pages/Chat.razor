@@ -1,17 +1,11 @@
 @page "/chat"
 @page "/chat/{ConversationId:int}"
-@using Microsoft.AspNetCore.Authorization
-@attribute [Authorize]
-@using BBF.Data
-@using BBF.Data.Entities
-@using BBF.Services
-@using Microsoft.EntityFrameworkCore
+@using BBF.Shared.Contracts.Auth
+@using BBF.Shared.Contracts.Chat
 @using Markdig
-@inject IDbContextFactory<ApplicationDbContext> DbFactory
-@inject OllamaService Ollama
-@inject WebSearchService Search
-@inject WikiSearchService WikiSearch
-@inject UserContextService UserContext
+@attribute [Authorize]
+@inject IChatService ChatSvc
+@inject IGroupService GroupSvc
 @inject NavigationManager Nav
 @inject ISnackbar Snackbar
 @inject IDialogService DialogService
@@ -42,16 +36,15 @@
                 {
                     @foreach (var convo in FilteredConversations)
                     {
-                        var isShared = convo.UserId != UserContext.UserId;
                         <MudNavLink Href="@($"/chat/{convo.Id}")"
                                     Match="NavLinkMatch.All"
-                                    Icon="@(isShared ? Icons.Material.Filled.Share : Icons.Material.Filled.ChatBubbleOutline)"
+                                    Icon="@(convo.IsShared ? Icons.Material.Filled.Share : Icons.Material.Filled.ChatBubbleOutline)"
                                     Class="@(convo.Id == ConversationId ? "mud-nav-link-active" : "")">
                             <div class="d-flex align-center justify-space-between" style="width: 100%;">
                                 <MudText Typo="Typo.body2" Class="text-truncate" Style="flex: 1; min-width: 0;">
                                     @(convo.Title ?? "New Chat")
                                 </MudText>
-                                @if (!isShared)
+                                @if (!convo.IsShared)
                                 {
                                     <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small"
                                                    Color="Color.Error"
@@ -88,11 +81,11 @@
                 <MudText Typo="Typo.h6" Class="text-truncate" Style="flex: 1; min-width: 0;">
                     @(_activeConversation?.Title ?? "New Chat")
                 </MudText>
-                @if (_activeConversation is not null && _activeConversation.UserId == UserContext.UserId)
+                @if (_activeConversation is not null && _activeConversation.IsOwnedByCaller)
                 {
                     <MudTooltip Text="Share conversation">
                         <MudIconButton Icon="@Icons.Material.Filled.Share" Size="Size.Small"
-                                       Color="@(_activeConversation.Shares.Any() ? Color.Info : Color.Default)"
+                                       Color="@(_activeConversation.SharedGroupIds.Count > 0 ? Color.Info : Color.Default)"
                                        OnClick="ShowShareDialog" />
                     </MudTooltip>
                 }
@@ -184,7 +177,7 @@
                                     <MudStack Row AlignItems="AlignItems.Center" Spacing="2">
                                         <MudProgressCircular Size="Size.Small" Color="Color.Primary" Indeterminate />
                                         <MudText Typo="Typo.body2" Color="Color.Secondary">
-                                            @(_isSearching ? "Searching..." : "Generating...")
+                                            Generating...
                                         </MudText>
                                     </MudStack>
                                 }
@@ -414,22 +407,22 @@
     public int? ConversationId { get; set; }
 
     private ElementReference _messagesContainer;
-    private List<ChatConversation> _conversations = [];
-    private ChatConversation? _activeConversation;
-    private List<ChatMessage> _messages = [];
+    private List<ChatConversationSummaryDto> _conversations = [];
+    private ChatConversationDetailDto? _activeConversation;
+    private List<ChatMessageDto> _messages = [];
+    private List<GroupDto> _myGroups = [];
     private List<string> _availableModels = [];
     private string _selectedModel = "qwen3.5:9b";
     private string _userInput = string.Empty;
     private string _streamingContent = string.Empty;
     private string _searchText = string.Empty;
     private bool _isStreaming;
-    private bool _isSearching;
     private bool _webSearchEnabled = true;
     private bool _docsSearchEnabled = true;
     private bool _sidebarOpen;
     private CancellationTokenSource? _streamCts;
 
-    private IEnumerable<ChatConversation> FilteredConversations =>
+    private IEnumerable<ChatConversationSummaryDto> FilteredConversations =>
         string.IsNullOrWhiteSpace(_searchText)
             ? _conversations
             : _conversations.Where(c =>
@@ -438,7 +431,8 @@
     protected override async Task OnInitializedAsync()
     {
         await LoadConversations();
-        _availableModels = await Ollama.GetModelsAsync();
+        _myGroups = await GroupSvc.GetMyGroupsAsync();
+        _availableModels = await ChatSvc.GetAvailableModelsAsync();
 
         if (_availableModels.Any() && !_availableModels.Contains(_selectedModel))
             _selectedModel = _availableModels.First();
@@ -467,50 +461,17 @@
 
     private async Task LoadConversations()
     {
-        await using var db = await DbFactory.CreateDbContextAsync();
-        var userId = UserContext.UserId;
-        if (userId is null)
-        {
-            _conversations = await db.ChatConversations
-                .OrderByDescending(c => c.UpdatedAt)
-                .ToListAsync();
-            return;
-        }
-
-        var groupIds = UserContext.Groups.Select(g => g.Id).ToList();
-
-        _conversations = await db.ChatConversations
-            .Include(c => c.Shares)
-            .Where(c => c.UserId == userId
-                || c.Shares.Any(s => s.SharedWithUserId == userId)
-                || c.Shares.Any(s => s.SharedWithGroupId != null && groupIds.Contains(s.SharedWithGroupId.Value)))
-            .OrderByDescending(c => c.UpdatedAt)
-            .ToListAsync();
+        _conversations = await ChatSvc.GetConversationsAsync();
     }
 
     private async Task LoadConversation(int id)
     {
-        await using var db = await DbFactory.CreateDbContextAsync();
-        _activeConversation = await db.ChatConversations
-            .Include(c => c.Messages.OrderBy(m => m.CreatedAt))
-            .Include(c => c.Shares)
-            .FirstOrDefaultAsync(c => c.Id == id);
+        _activeConversation = await ChatSvc.GetConversationAsync(id);
 
         if (_activeConversation is not null)
         {
-            var userId = UserContext.UserId;
-            var groupIds = UserContext.Groups.Select(g => g.Id).ToList();
-            var hasAccess = _activeConversation.UserId == userId
-                || _activeConversation.UserId == null
-                || _activeConversation.Shares.Any(s => s.SharedWithUserId == userId)
-                || _activeConversation.Shares.Any(s => s.SharedWithGroupId != null && groupIds.Contains(s.SharedWithGroupId.Value));
-
-            if (!hasAccess)
-            {
-                Nav.NavigateTo("/chat");
-                return;
-            }
-
+            // Defensive copy — SendMessage mutates _messages directly for optimistic UI updates, and
+            // that must not silently alias (and corrupt) _activeConversation's own Messages list.
             _messages = _activeConversation.Messages.ToList();
             _selectedModel = _activeConversation.Model;
         }
@@ -528,19 +489,11 @@
 
     private async Task DeleteConversation(int id)
     {
-        await using var db = await DbFactory.CreateDbContextAsync();
-        var convo = await db.ChatConversations.FindAsync(id);
-        if (convo is not null)
-        {
-            if (convo.UserId != UserContext.UserId && convo.UserId is not null) return;
+        await ChatSvc.DeleteConversationAsync(id);
+        await LoadConversations();
 
-            db.ChatConversations.Remove(convo);
-            await db.SaveChangesAsync();
-            await LoadConversations();
-
-            if (ConversationId == id)
-                Nav.NavigateTo("/chat");
-        }
+        if (ConversationId == id)
+            Nav.NavigateTo("/chat");
     }
 
     private async Task HandleKeyDown(KeyboardEventArgs e)
@@ -556,146 +509,47 @@
         var input = _userInput?.Trim();
         if (string.IsNullOrEmpty(input)) return;
 
-        await using var db = await DbFactory.CreateDbContextAsync();
-
         _userInput = string.Empty;
-        var isNewConversation = false;
+        var isNewConversation = _activeConversation is null;
 
-        if (_activeConversation is null)
-        {
-            _activeConversation = new ChatConversation
-            {
-                Model = _selectedModel,
-                UserId = UserContext.UserId,
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow
-            };
-            db.ChatConversations.Add(_activeConversation);
-            await db.SaveChangesAsync();
-            await LoadConversations();
-            isNewConversation = true;
-        }
-
-        var userMsg = new ChatMessage
-        {
-            ConversationId = _activeConversation.Id,
-            Role = "user",
-            Content = input,
-            CreatedAt = DateTime.UtcNow
-        };
-        db.ChatMessages.Add(userMsg);
-        await db.SaveChangesAsync();
-        _messages.Add(userMsg);
+        // Optimistic: show the user's message immediately (id doesn't matter — it's never referenced
+        // again client-side; the full list gets reloaded with real ids once the stream finishes).
+        _messages.Add(new ChatMessageDto(0, "user", input, DateTime.UtcNow));
 
         _isStreaming = true;
         _streamingContent = string.Empty;
         _streamCts = new CancellationTokenSource();
         StateHasChanged();
 
-        string? docsContext = null;
-        string? webContext = null;
-
-        if (_docsSearchEnabled || _webSearchEnabled)
-        {
-            _isSearching = true;
-            StateHasChanged();
-
-            if (_docsSearchEnabled)
-            {
-                var ragResults = await WikiSearch.SearchAllAsync(input, maxResults: 5, _streamCts.Token);
-                docsContext = WikiSearchService.FormatAsContext(ragResults);
-            }
-
-            if (_webSearchEnabled)
-            {
-                var searchResults = await Search.SearchAsync(input, maxResults: 5, _streamCts.Token);
-                webContext = WebSearchService.FormatResultsAsContext(searchResults);
-            }
-
-            _isSearching = false;
-            StateHasChanged();
-        }
-
-        var ollamaMessages = _messages.Select(m => new OllamaChatMessage
-        {
-            Role = m.Role,
-            Content = m.Content
-        }).ToList();
-
-        var contextParts = new List<string>();
-        if (!string.IsNullOrEmpty(docsContext)) contextParts.Add(docsContext);
-        if (!string.IsNullOrEmpty(webContext)) contextParts.Add(webContext);
-
-        if (contextParts.Count > 0)
-        {
-            ollamaMessages[^1] = new OllamaChatMessage
-            {
-                Role = "user",
-                Content = $"{input}\n\n---\n{string.Join("\n\n---\n", contextParts)}"
-            };
-        }
+        var request = new SendChatMessageRequest(input, _selectedModel, _webSearchEnabled, _docsSearchEnabled);
+        int? conversationId = _activeConversation?.Id;
+        string? wikiTitle = null;
+        string? errorMessage = null;
 
         try
         {
-            await foreach (var chunk in Ollama.ChatStreamAsync(ollamaMessages, _selectedModel, _streamCts.Token))
+            await foreach (var evt in ChatSvc.SendMessageStreamAsync(conversationId, request, _streamCts.Token))
             {
-                if (!chunk.IsThinking)
+                switch (evt.Type)
                 {
-                    _streamingContent += chunk.Text;
-                    StateHasChanged();
+                    case ChatStreamEventType.Token:
+                        _streamingContent += evt.Token;
+                        StateHasChanged();
+                        break;
+                    case ChatStreamEventType.Done:
+                        conversationId = evt.ConversationId;
+                        wikiTitle = evt.WikiArticleCreatedTitle;
+                        break;
+                    case ChatStreamEventType.Error:
+                        conversationId = evt.ConversationId ?? conversationId;
+                        errorMessage = evt.ErrorMessage;
+                        break;
                 }
             }
-
-            var assistantMsg = new ChatMessage
-            {
-                ConversationId = _activeConversation.Id,
-                Role = "assistant",
-                Content = _streamingContent,
-                CreatedAt = DateTime.UtcNow
-            };
-            db.ChatMessages.Add(assistantMsg);
-            _activeConversation.UpdatedAt = DateTime.UtcNow;
-
-            if (_activeConversation.Title is null)
-            {
-                _activeConversation.Title = input.Length > 50 ? input[..50] + "..." : input;
-            }
-
-            await db.SaveChangesAsync();
-            _messages.Add(assistantMsg);
-            await LoadConversations();
-
-            await ProcessWikiBlocks(_streamingContent);
         }
         catch (OperationCanceledException)
         {
-            if (!string.IsNullOrEmpty(_streamingContent))
-            {
-                var partialMsg = new ChatMessage
-                {
-                    ConversationId = _activeConversation.Id,
-                    Role = "assistant",
-                    Content = _streamingContent + "\n\n_(generation stopped)_",
-                    CreatedAt = DateTime.UtcNow
-                };
-                db.ChatMessages.Add(partialMsg);
-                _activeConversation.UpdatedAt = DateTime.UtcNow;
-
-                if (_activeConversation.Title is null)
-                    _activeConversation.Title = input.Length > 50 ? input[..50] + "..." : input;
-
-                await db.SaveChangesAsync();
-                _messages.Add(partialMsg);
-                await LoadConversations();
-            }
-        }
-        catch (HttpRequestException)
-        {
-            _messages.Add(new ChatMessage
-            {
-                Role = "assistant",
-                Content = "Unable to reach Ollama. Make sure it's running at the configured address."
-            });
+            // User clicked Stop — the server still saves whatever partial content it streamed.
         }
         finally
         {
@@ -703,26 +557,38 @@
             _streamingContent = string.Empty;
             _streamCts?.Dispose();
             _streamCts = null;
-            StateHasChanged();
+        }
+
+        if (errorMessage is not null)
+        {
+            Snackbar.Add(errorMessage, Severity.Error);
+        }
+
+        if (conversationId is int cid)
+        {
+            await LoadConversations();
+            await LoadConversation(cid);
 
             if (isNewConversation)
-                Nav.NavigateTo($"/chat/{_activeConversation.Id}", replace: true);
+                Nav.NavigateTo($"/chat/{cid}", replace: true);
         }
+
+        if (wikiTitle is not null)
+            Snackbar.Add($"Wiki article '{wikiTitle}' created!", Severity.Success);
+
+        StateHasChanged();
     }
 
     // --- Share dialog ---
 
     private async Task ShowShareDialog()
     {
-        if (_activeConversation is null || _activeConversation.UserId != UserContext.UserId) return;
-
-        var groups = UserContext.Groups;
-        var currentShares = _activeConversation.Shares.ToList();
+        if (_activeConversation is null || !_activeConversation.IsOwnedByCaller) return;
 
         var parameters = new DialogParameters<ChatShareDialog>
         {
-            { x => x.Groups, groups },
-            { x => x.CurrentShares, currentShares },
+            { x => x.Groups, _myGroups },
+            { x => x.CurrentGroupIds, _activeConversation.SharedGroupIds },
             { x => x.ConversationId, _activeConversation.Id }
         };
         var dialog = await DialogService.ShowAsync<ChatShareDialog>("Share Conversation", parameters);
@@ -750,7 +616,8 @@
         _streamCts?.Cancel();
     }
 
-    // --- Wiki integration ---
+    // --- Wiki integration (display-only here — the server creates the article; this just strips the
+    // raw [WIKI_CREATE] block from what's shown and offers a manual "Save to Wiki" for any reply) ---
 
     private static readonly System.Text.RegularExpressions.Regex WikiBlockRegex = new(
         @"\[WIKI_CREATE\]\s*\ntitle:\s*(.+)\ncategory:\s*(.+)\ntags:\s*(.+)\n---\n([\s\S]*?)\[/WIKI_CREATE\]",
@@ -762,68 +629,17 @@
     private static string StripWikiBlocks(string content) =>
         WikiBlockRegex.Replace(content, "").Trim();
 
-    private async Task ProcessWikiBlocks(string content)
+    private async Task SaveToWiki(ChatMessageDto msg)
     {
-        await using var db = await DbFactory.CreateDbContextAsync();
-        var matches = WikiBlockRegex.Matches(content);
-        foreach (System.Text.RegularExpressions.Match match in matches)
+        try
         {
-            var title = match.Groups[1].Value.Trim();
-            var category = match.Groups[2].Value.Trim();
-            var tags = match.Groups[3].Value.Trim();
-            var body = match.Groups[4].Value.Trim();
-
-            if (string.IsNullOrEmpty(title) || string.IsNullOrEmpty(body))
-                continue;
-
-            var exists = await db.WikiArticles.AnyAsync(a => a.Title == title);
-            if (exists)
-            {
-                Snackbar.Add($"Wiki article '{title}' already exists — skipped.", Severity.Warning);
-                continue;
-            }
-
-            db.WikiArticles.Add(new WikiArticle
-            {
-                Title = title,
-                Content = body,
-                Category = string.IsNullOrWhiteSpace(category) ? null : category,
-                Tags = string.IsNullOrWhiteSpace(tags) ? null : tags,
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow
-            });
-            await db.SaveChangesAsync();
-            Snackbar.Add($"Wiki article '{title}' created!", Severity.Success);
+            var title = await ChatSvc.SaveMessageToWikiAsync(msg.Id);
+            Snackbar.Add($"Saved to wiki: '{title}'", Severity.Success);
         }
-    }
-
-    private async Task SaveToWiki(ChatMessage msg)
-    {
-        await using var db = await DbFactory.CreateDbContextAsync();
-        var lines = msg.Content.Split('\n', StringSplitOptions.RemoveEmptyEntries);
-        var title = lines.FirstOrDefault()?.TrimStart('#', ' ') ?? "Untitled";
-        if (title.Length > 80) title = title[..80] + "...";
-
-        var content = StripWikiBlocks(msg.Content);
-
-        var exists = await db.WikiArticles.AnyAsync(a => a.Title == title);
-        if (exists)
+        catch (InvalidOperationException ex)
         {
-            Snackbar.Add($"Wiki article '{title}' already exists.", Severity.Warning);
-            return;
+            Snackbar.Add(ex.Message, Severity.Warning);
         }
-
-        db.WikiArticles.Add(new WikiArticle
-        {
-            Title = title,
-            Content = content,
-            Category = "AI Generated",
-            Tags = "chat,ai-generated",
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow
-        });
-        await db.SaveChangesAsync();
-        Snackbar.Add($"Saved to wiki: '{title}'", Severity.Success);
     }
 
     public void Dispose()

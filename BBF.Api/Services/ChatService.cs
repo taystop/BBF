@@ -191,7 +191,10 @@ public class ChatService(
 
         if (errorMessage is not null)
         {
-            yield return new ChatStreamEvent(ChatStreamEventType.Error, null, null, null, null, null, errorMessage);
+            // ConversationId is included even on error — the conversation (and the user's message) was
+            // already saved above before the Ollama call, so a brand-new conversation must not be left
+            // orphaned client-side just because generation itself failed.
+            yield return new ChatStreamEvent(ChatStreamEventType.Error, null, conversation.Id, conversation.Title, null, null, errorMessage);
             yield break;
         }
 
