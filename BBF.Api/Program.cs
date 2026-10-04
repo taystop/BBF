@@ -86,6 +86,10 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi();
 }
 
+// Anonymous — used by the deploy pipeline's smoke test and available for future uptime monitoring.
+// No DB/LAN-service calls here on purpose, so it reflects only "is the process up and routing requests."
+app.MapGet("/health", () => Results.Ok("healthy"));
+
 app.UseExceptionHandler(errorApp =>
 {
     errorApp.Run(async context =>

@@ -15,14 +15,20 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
-      - name: Restore
+      - name: Restore BBF.Web
         run: dotnet restore BBF/BBF.csproj
 
-      - name: Build (Release)
+      - name: Build BBF.Web (Release)
         run: dotnet build BBF/BBF.csproj -c Release --no-restore
 
-  deploy:
-    name: Deploy to production
+      - name: Restore BBF.Api
+        run: dotnet restore BBF.Api/BBF.Api.csproj
+
+      - name: Build BBF.Api (Release)
+        run: dotnet build BBF.Api/BBF.Api.csproj -c Release --no-restore
+
+  migrate:
+    name: Apply database migrations
     needs: build
     runs-on: [self-hosted, Windows, bbf-server]
     steps:
@@ -36,14 +42,25 @@ jobs:
         working-directory: BBF
         run: dotnet tool restore
 
-      - name: Publish
-        run: dotnet publish BBF/BBF.csproj -c Release -o ./publish
-
       - name: Apply database migrations
         working-directory: BBF
         env:
           DEPLOY_DB_CONNECTION: ${{ secrets.PROD_DB_CONNECTION }}
         run: dotnet tool run dotnet-ef database update --connection "$env:DEPLOY_DB_CONNECTION"
+
+  deploy-web:
+    name: Deploy BBF.Web
+    needs: migrate
+    runs-on: [self-hosted, Windows, bbf-server]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Publish
+        run: dotnet publish BBF/BBF.csproj -c Release -o ./publish-web
 
       - name: Stop IIS site
         shell: powershell
@@ -58,7 +75,7 @@ jobs:
       - name: Copy published files (preserving web.config and production/dev settings)
         shell: powershell
         run: |
-          robocopy ".\publish" "D:\Website\BBF" /MIR /XF web.config appsettings.Development.json appsettings.Production.json /XD logs
+          robocopy ".\publish-web" "D:\Website\BBF" /MIR /XF web.config appsettings.Development.json appsettings.Production.json /XD logs
           # Robocopy exit codes 0-7 are success; 8+ indicates a real failure.
           if ($LASTEXITCODE -ge 8) { exit 1 } else { exit 0 }
 
@@ -73,4 +90,48 @@ jobs:
         run: |
           Start-Sleep -Seconds 5
           $response = Invoke-WebRequest -Uri "http://localhost:5000" -UseBasicParsing -TimeoutSec 30
+          if ($response.StatusCode -ne 200) { throw "Smoke test failed: HTTP $($response.StatusCode)" }
+
+  deploy-api:
+    name: Deploy BBF.Api
+    needs: migrate
+    runs-on: [self-hosted, Windows, bbf-server]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Publish
+        run: dotnet publish BBF.Api/BBF.Api.csproj -c Release -o ./publish-api
+
+      - name: Stop IIS site
+        shell: powershell
+        run: |
+          Import-Module WebAdministration
+          try {
+            Stop-Website -Name "bbf-api" -ErrorAction Stop
+          } catch {
+            Write-Warning "Could not stop site 'bbf-api' (may already be stopped): $_"
+          }
+
+      - name: Copy published files (preserving web.config and production/dev settings)
+        shell: powershell
+        run: |
+          robocopy ".\publish-api" "D:\Website\BBF.Api" /MIR /XF web.config appsettings.Development.json appsettings.Production.json /XD logs
+          # Robocopy exit codes 0-7 are success; 8+ indicates a real failure.
+          if ($LASTEXITCODE -ge 8) { exit 1 } else { exit 0 }
+
+      - name: Start IIS site
+        shell: powershell
+        run: |
+          Import-Module WebAdministration
+          Start-Website -Name "bbf-api"
+
+      - name: Smoke test
+        shell: powershell
+        run: |
+          Start-Sleep -Seconds 5
+          $response = Invoke-WebRequest -Uri "http://localhost:5001/health" -UseBasicParsing -TimeoutSec 30
           if ($response.StatusCode -ne 200) { throw "Smoke test failed: HTTP $($response.StatusCode)" }

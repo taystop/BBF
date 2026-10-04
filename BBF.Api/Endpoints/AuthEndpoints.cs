@@ -40,6 +40,14 @@ public static class AuthEndpoints
             UserManager<ApplicationUser> userManager,
             JwtTokenService tokenService) =>
         {
+            // Defense in depth: the Cloudflare Tunnel ingress config blocks this exact path on the
+            // public hostname (see Deployment_Guide.md's Phase 5 section) so only BBF.Web's same-box
+            // loopback call can ever reach it — but if that rule were ever misconfigured, a request
+            // that actually came in through Cloudflare still carries its injected headers, so reject
+            // on those too rather than trusting the ingress rule alone.
+            if (httpRequest.Headers.ContainsKey("CF-Connecting-IP"))
+                return Results.NotFound();
+
             var expectedKey = configuration["Jwt:InternalServiceKey"];
             var providedKey = httpRequest.Headers["X-Internal-Key"].ToString();
             if (string.IsNullOrEmpty(expectedKey) || providedKey != expectedKey)
