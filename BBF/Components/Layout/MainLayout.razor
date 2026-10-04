@@ -1,9 +1,6 @@
 @inherits LayoutComponentBase
-@using BBF.Services
-@using BBF.Data.Entities
 @using Microsoft.AspNetCore.Components.Authorization
 @using System.Security.Claims
-@inject UserContextService UserContext
 @inject BBF.Shared.ApiGroupContext ApiGroupContext
 @inject AuthenticationStateProvider AuthStateProvider
 @inject NavigationManager Nav
@@ -23,14 +20,14 @@
         <MudSpacer />
         <AuthorizeView>
             <Authorized>
-                @if (UserContext.Groups.Count > 1)
+                @if (ApiGroupContext.Groups.Count > 1)
                 {
-                    <MudSelect T="int?" Value="UserContext.ActiveGroupId"
+                    <MudSelect T="int?" Value="ApiGroupContext.ActiveGroupId"
                                ValueChanged="OnGroupChanged"
                                Variant="Variant.Outlined" Dense Margin="Margin.Dense"
                                Style="max-width: 160px; color: inherit;"
                                Class="mr-2">
-                        @foreach (var group in UserContext.Groups)
+                        @foreach (var group in ApiGroupContext.Groups)
                         {
                             <MudSelectItem T="int?" Value="@group.Id">@group.Name</MudSelectItem>
                         }
@@ -98,9 +95,6 @@
             var userId = authState.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
             if (userId is not null)
             {
-                // Transitional: both contexts stay in sync until every page has moved off
-                // UserContextService onto the BBF.Api-backed ApiGroupContext.
-                await UserContext.InitializeAsync(userId);
                 await ApiGroupContext.InitializeAsync();
                 StateHasChanged();
             }
@@ -126,7 +120,6 @@
     {
         if (groupId.HasValue)
         {
-            UserContext.SetActiveGroup(groupId.Value);
             ApiGroupContext.SetActiveGroup(groupId.Value);
         }
     }

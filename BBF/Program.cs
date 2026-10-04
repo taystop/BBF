@@ -60,54 +60,13 @@ builder.Services.AddIdentityCore<ApplicationUser>(options =>
 
 builder.Services.AddSingleton<IEmailSender<ApplicationUser>, IdentityNoOpEmailSender>();
 
-// SearXNG web search service
-builder.Services.AddHttpClient<WebSearchService>();
-
-// Health check service
-builder.Services.AddScoped<HealthCheckService>();
-
-// AMP game server integration — still used directly here only by the anonymous /servers page
+// AMP game server integration — used directly here only by the anonymous /servers page
 // (PublicServers.razor), which can't carry a Bearer token and so can't go through BBF.Api.
 builder.Services.AddHttpClient<AmpService>();
 
-// Wiki RAG search service
-builder.Services.AddScoped<WikiSearchService>();
-
-// Document storage service
-builder.Services.AddScoped<DocumentService>();
-
-// Plaid banking integration
-builder.Services.AddScoped<PlaidService>();
-
-// Manual account ledger + balance maintenance
-builder.Services.AddScoped<AccountService>();
-
-// Transaction CRUD + CSV import (keeps account balance recalculation in one place)
-builder.Services.AddScoped<TransactionService>();
-
-// Zero-based budget periods, line items, and rollover
-builder.Services.AddScoped<BudgetPeriodService>();
-
-// Recurring transaction rules + login-triggered materialization
-builder.Services.AddScoped<RecurringTransactionService>();
-
-// Savings goals + contributions
-builder.Services.AddScoped<GoalService>();
-
-// User context (multi-tenancy)
-builder.Services.AddScoped<UserContextService>();
-
-// Meal planning: sections/ingredients maintenance, recipes, weekly plan, grocery list generation
-builder.Services.AddScoped<GrocerySectionService>();
-builder.Services.AddScoped<IngredientService>();
-builder.Services.AddScoped<RecipeService>();
-builder.Services.AddScoped<MealPlanService>();
-builder.Services.AddScoped<GroceryListService>();
-
-// --- BBF.Api client infrastructure (Phase 2) ---
-// Additive for now: registers the HTTP-backed implementations pages will switch to as they move into
-// BBF.Shared, alongside (not instead of) the direct-EF services above, which still back every page
-// that hasn't moved yet. Nothing above this block changes behavior.
+// --- BBF.Api client infrastructure ---
+// Every other page now calls BBF.Api over HTTP instead of talking to the database or LAN services
+// directly — these register that client plumbing.
 var apiBaseUrl = builder.Configuration["Api:BaseUrl"] ?? "http://localhost:5001";
 builder.Services.AddApiClientInfrastructure(apiBaseUrl);
 builder.Services.AddApiHttpClient<IGroupService, HttpGroupService>(apiBaseUrl);
