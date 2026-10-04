@@ -1,11 +1,13 @@
 @page "/"
-@using BBF.Data
-@using BBF.Data.Entities
-@using BBF.Services
-@using Microsoft.AspNetCore.Authorization
-@using Microsoft.EntityFrameworkCore
-@inject IDbContextFactory<ApplicationDbContext> DbFactory
-@inject OllamaService Ollama
+@using BBF.Shared.Contracts.Chat
+@using BBF.Shared.Contracts.Integrations
+@using BBF.Shared.Contracts.Services
+@using BBF.Shared.Contracts.Wiki
+@using Microsoft.AspNetCore.Components.Authorization
+@inject IIntegrationsStatusService IntegrationsStatus
+@inject IChatService ChatSvc
+@inject IWikiArticleService WikiSvc
+@inject IServiceLinkService ServiceLinkSvc
 
 <PageTitle>BBF</PageTitle>
 
@@ -71,7 +73,7 @@
                     <MudText Typo="Typo.h6" Class="mb-3">Quick Links</MudText>
                     @if (_services.Any())
                     {
-                        <MudList T="ServiceLink" Dense>
+                        <MudList T="ServiceLinkDto" Dense>
                             @foreach (var svc in _services)
                             {
                                 <MudListItem Icon="@Icons.Material.Filled.OpenInNew"
@@ -171,24 +173,35 @@
     private int _conversationCount;
     private int _serviceCount;
     private int _articleCount;
-    private List<ServiceLink> _services = [];
+    private List<ServiceLinkDto> _services = [];
     private List<string> _models = [];
 
     private static readonly string[] SplashImages =
         ["FuturisticSplash1.jpg", "FuturisticSplash2.jpg", "MedievalSplash1.jpg"];
     private string _splashImage = SplashImages[Random.Shared.Next(SplashImages.Length)];
 
+    [CascadingParameter]
+    private Task<AuthenticationState>? AuthStateTask { get; set; }
+
     protected override async Task OnInitializedAsync()
     {
-        await using var db = await DbFactory.CreateDbContextAsync();
-        _conversationCount = await db.ChatConversations.CountAsync();
-        _serviceCount = await db.ServiceLinks.CountAsync(s => s.IsActive);
-        _articleCount = await db.WikiArticles.CountAsync();
-        _services = await db.ServiceLinks.Where(s => s.IsActive).OrderBy(s => s.SortOrder).ToListAsync();
+        var authState = AuthStateTask is not null ? await AuthStateTask : null;
+        if (authState?.User.Identity?.IsAuthenticated != true) return;
 
-        // HTTP calls are fine after DB work is done
-        _ollamaOnline = await Ollama.IsHealthyAsync();
-        if (_ollamaOnline)
-            _models = await Ollama.GetModelsAsync();
+        var conversationsTask = ChatSvc.GetConversationsAsync();
+        var articlesTask = WikiSvc.GetAllAsync();
+        var allServicesTask = ServiceLinkSvc.GetAllAsync();
+        var ollamaStatusTask = IntegrationsStatus.GetOllamaStatusAsync();
+
+        await Task.WhenAll(conversationsTask, articlesTask, allServicesTask, ollamaStatusTask);
+
+        _conversationCount = conversationsTask.Result.Count;
+        _articleCount = articlesTask.Result.Count;
+        _services = allServicesTask.Result.Where(s => s.IsActive).OrderBy(s => s.SortOrder).ToList();
+        _serviceCount = _services.Count;
+
+        var status = ollamaStatusTask.Result;
+        _ollamaOnline = status.Online;
+        _models = status.Models;
     }
 }

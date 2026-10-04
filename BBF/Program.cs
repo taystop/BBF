@@ -12,6 +12,7 @@ using BBF.Shared.Contracts.Chat;
 using BBF.Shared.Contracts.Documents;
 using BBF.Shared.Contracts.Emby;
 using BBF.Shared.Contracts.HomeAssistant;
+using BBF.Shared.Contracts.Integrations;
 using BBF.Shared.Contracts.MealPlanning;
 using BBF.Shared.Contracts.Plaid;
 using BBF.Shared.Contracts.Services;
@@ -57,9 +58,6 @@ builder.Services.AddIdentityCore<ApplicationUser>(options =>
     .AddDefaultTokenProviders();
 
 builder.Services.AddSingleton<IEmailSender<ApplicationUser>, IdentityNoOpEmailSender>();
-
-// Ollama LLM service
-builder.Services.AddHttpClient<OllamaService>();
 
 // SearXNG web search service
 builder.Services.AddHttpClient<WebSearchService>();
@@ -130,6 +128,7 @@ builder.Services.AddApiHttpClient<IServiceLinkService, HttpServiceLinkService>(a
 builder.Services.AddApiHttpClient<IHomeAssistantService, HttpHomeAssistantService>(apiBaseUrl);
 builder.Services.AddApiHttpClient<IEmbyService, HttpEmbyService>(apiBaseUrl);
 builder.Services.AddApiHttpClient<IAmpService, HttpAmpService>(apiBaseUrl);
+builder.Services.AddApiHttpClient<IIntegrationsStatusService, HttpIntegrationsStatusService>(apiBaseUrl);
 builder.Services.AddScoped<ApiGroupContext>();
 
 var app = builder.Build();

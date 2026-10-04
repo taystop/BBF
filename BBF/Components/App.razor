@@ -31,5 +31,11 @@
     [CascadingParameter]
     private HttpContext HttpContext { get; set; } = default!;
 
-    private IComponentRenderMode? RenderModeForPage => HttpContext.Request.Path.StartsWithSegments("/Account") ? null : InteractiveServer;
+    // prerender: false — migrated BBF.Shared pages fetch data via BBF.Api using a per-circuit JWT
+    // (ApiAuthTokenProvider), which needs the Blazor Server circuit's real authentication-state DI
+    // scope to resolve. That scope isn't established yet during static prerendering, so every
+    // migrated page's first OnInitializedAsync call would throw there if prerendering stayed on.
+    private static readonly IComponentRenderMode InteractiveServerNoPrerender = new InteractiveServerRenderMode(prerender: false);
+
+    private IComponentRenderMode? RenderModeForPage => HttpContext.Request.Path.StartsWithSegments("/Account") ? null : InteractiveServerNoPrerender;
 }
