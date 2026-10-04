@@ -70,6 +70,7 @@ builder.Services.AddScoped<WikiSearchService>();
 builder.Services.AddScoped<ChatService>();
 builder.Services.AddScoped<GroupManagementService>();
 builder.Services.AddScoped<ServiceLinksService>();
+builder.Services.AddScoped<UserManagementService>();
 builder.Services.AddScoped<PlaidService>();
 builder.Services.AddHttpClient<OllamaService>();
 builder.Services.AddHttpClient<WebSearchService>();
@@ -128,5 +129,6 @@ app.MapEmbyEndpoints();
 app.MapAmpEndpoints();
 app.MapIntegrationsStatusEndpoints();
 app.MapPlaidEndpoints();
+app.MapUsersEndpoints();
 
 app.Run();

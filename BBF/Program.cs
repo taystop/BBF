@@ -17,6 +17,7 @@ using BBF.Shared.Contracts.MealPlanning;
 using BBF.Shared.Contracts.Plaid;
 using BBF.Shared.Contracts.Services;
 using BBF.Shared.Contracts.Transactions;
+using BBF.Shared.Contracts.Users;
 using BBF.Shared.Contracts.Wiki;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Identity;
@@ -129,6 +130,7 @@ builder.Services.AddApiHttpClient<IHomeAssistantService, HttpHomeAssistantServic
 builder.Services.AddApiHttpClient<IEmbyService, HttpEmbyService>(apiBaseUrl);
 builder.Services.AddApiHttpClient<IAmpService, HttpAmpService>(apiBaseUrl);
 builder.Services.AddApiHttpClient<IIntegrationsStatusService, HttpIntegrationsStatusService>(apiBaseUrl);
+builder.Services.AddApiHttpClient<IUserManagementService, HttpUserManagementService>(apiBaseUrl);
 builder.Services.AddScoped<ApiGroupContext>();
 
 var app = builder.Build();

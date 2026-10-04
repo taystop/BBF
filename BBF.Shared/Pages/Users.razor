@@ -1,11 +1,7 @@
 @page "/users"
-@using Microsoft.AspNetCore.Authorization
-@using Microsoft.AspNetCore.Identity
+@using BBF.Shared.Contracts.Users
 @attribute [Authorize(Roles = "Admin")]
-@using BBF.Data
-@using Microsoft.EntityFrameworkCore
-@inject UserManager<ApplicationUser> UserManager
-@inject RoleManager<IdentityRole> RoleManager
+@inject IUserManagementService UserMgmt
 @inject IDialogService DialogService
 
 <PageTitle>Users - BBF</PageTitle>
@@ -57,10 +53,10 @@
         </HeaderContent>
         <RowTemplate>
             <MudTd DataLabel="Email">
-                <MudText Typo="Typo.body2">@context.User.Email</MudText>
+                <MudText Typo="Typo.body2">@context.Email</MudText>
             </MudTd>
             <MudTd DataLabel="Email Confirmed">
-                @if (context.User.EmailConfirmed)
+                @if (context.EmailConfirmed)
                 {
                     <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Success" Size="Size.Small" />
                 }
@@ -84,7 +80,7 @@
                 }
             </MudTd>
             <MudTd DataLabel="Lockout">
-                @if (context.User.LockoutEnd.HasValue && context.User.LockoutEnd > DateTimeOffset.UtcNow)
+                @if (context.IsLockedOut)
                 {
                     <MudChip T="string" Size="Size.Small" Color="Color.Error" Variant="Variant.Filled">Locked</MudChip>
                 }
@@ -113,17 +109,17 @@
 </MudContainer>
 
 @code {
-    private List<UserRow> _users = [];
+    private List<UserSummaryDto> _users = [];
     private List<string> _roles = [];
     private string _searchText = string.Empty;
     private string _newRoleName = string.Empty;
     private bool _loading;
 
-    private IEnumerable<UserRow> FilteredUsers =>
+    private IEnumerable<UserSummaryDto> FilteredUsers =>
         string.IsNullOrWhiteSpace(_searchText)
             ? _users
             : _users.Where(u =>
-                (u.User.Email?.Contains(_searchText, StringComparison.OrdinalIgnoreCase) == true) ||
+                (u.Email?.Contains(_searchText, StringComparison.OrdinalIgnoreCase) == true) ||
                 u.Roles.Any(r => r.Contains(_searchText, StringComparison.OrdinalIgnoreCase)));
 
     protected override async Task OnInitializedAsync()
@@ -136,18 +132,8 @@
         _loading = true;
         StateHasChanged();
 
-        _roles = await RoleManager.Roles
-            .Select(r => r.Name!)
-            .OrderBy(r => r)
-            .ToListAsync();
-
-        var users = await UserManager.Users.OrderBy(u => u.Email).ToListAsync();
-        _users = [];
-        foreach (var user in users)
-        {
-            var roles = await UserManager.GetRolesAsync(user);
-            _users.Add(new UserRow { User = user, Roles = roles.ToList() });
-        }
+        _roles = await UserMgmt.GetAllRolesAsync();
+        _users = await UserMgmt.GetAllUsersAsync();
 
         _loading = false;
         StateHasChanged();
@@ -166,40 +152,25 @@
 
         if (result is not null && !result.Canceled && result.Data is UserDialog.UserDialogResult data)
         {
-            var user = new ApplicationUser();
-            await UserManager.SetUserNameAsync(user, data.Email);
-            await UserManager.SetEmailAsync(user, data.Email);
-
-            var createResult = await UserManager.CreateAsync(user, data.Password!);
-            if (!createResult.Succeeded)
+            try
             {
-                var errors = string.Join(", ", createResult.Errors.Select(e => e.Description));
-                await DialogService.ShowAsync<MessageBoxDialog>("Error", new DialogParameters<MessageBoxDialog>
-                {
-                    { x => x.ContentText, errors },
-                    { x => x.ButtonText, "OK" }
-                });
-                return;
+                await UserMgmt.CreateUserAsync(new CreateUserRequest(data.Email, data.Password ?? "", data.Roles));
+                await LoadData();
             }
-
-            // Confirm email automatically for admin-created users
-            var token = await UserManager.GenerateEmailConfirmationTokenAsync(user);
-            await UserManager.ConfirmEmailAsync(user, token);
-
-            if (data.Roles.Any())
-                await UserManager.AddToRolesAsync(user, data.Roles);
-
-            await LoadData();
+            catch (Exception ex)
+            {
+                await ShowError(ex.Message);
+            }
         }
     }
 
-    private async Task OpenEditDialog(UserRow row)
+    private async Task OpenEditDialog(UserSummaryDto row)
     {
         var parameters = new DialogParameters<UserDialog>
         {
             { x => x.IsNew, false },
-            { x => x.UserId, row.User.Id },
-            { x => x.Email, row.User.Email ?? string.Empty },
+            { x => x.UserId, row.Id },
+            { x => x.Email, row.Email ?? string.Empty },
             { x => x.AllRoles, _roles.ToList() },
             { x => x.SelectedRoles, row.Roles.ToList() }
         };
@@ -208,50 +179,23 @@
 
         if (result is not null && !result.Canceled && result.Data is UserDialog.UserDialogResult data)
         {
-            var user = await UserManager.FindByIdAsync(row.User.Id);
-            if (user is null) return;
-
-            // Update email
-            if (user.Email != data.Email)
+            try
             {
-                await UserManager.SetUserNameAsync(user, data.Email);
-                await UserManager.SetEmailAsync(user, data.Email);
+                await UserMgmt.UpdateUserAsync(row.Id, new UpdateUserRequest(data.Email, data.Password, data.Roles));
+                await LoadData();
             }
-
-            // Update password if provided
-            if (!string.IsNullOrEmpty(data.Password))
+            catch (Exception ex)
             {
-                var resetToken = await UserManager.GeneratePasswordResetTokenAsync(user);
-                var pwResult = await UserManager.ResetPasswordAsync(user, resetToken, data.Password);
-                if (!pwResult.Succeeded)
-                {
-                    var errors = string.Join(", ", pwResult.Errors.Select(e => e.Description));
-                    await DialogService.ShowAsync<MessageBoxDialog>("Error", new DialogParameters<MessageBoxDialog>
-                    {
-                        { x => x.ContentText, errors },
-                        { x => x.ButtonText, "OK" }
-                    });
-                    return;
-                }
+                await ShowError(ex.Message);
             }
-
-            // Sync roles
-            var currentRoles = await UserManager.GetRolesAsync(user);
-            var toRemove = currentRoles.Except(data.Roles).ToList();
-            var toAdd = data.Roles.Except(currentRoles).ToList();
-
-            if (toRemove.Any()) await UserManager.RemoveFromRolesAsync(user, toRemove);
-            if (toAdd.Any()) await UserManager.AddToRolesAsync(user, toAdd);
-
-            await LoadData();
         }
     }
 
-    private async Task DeleteUser(UserRow row)
+    private async Task DeleteUser(UserSummaryDto row)
     {
         var parameters = new DialogParameters<MessageBoxDialog>
         {
-            { x => x.ContentText, $"Are you sure you want to delete '{row.User.Email}'? This cannot be undone." },
+            { x => x.ContentText, $"Are you sure you want to delete '{row.Email}'? This cannot be undone." },
             { x => x.ButtonText, "Delete" },
             { x => x.Color, Color.Error }
         };
@@ -260,7 +204,7 @@
 
         if (result is not null && !result.Canceled)
         {
-            await UserManager.DeleteAsync(row.User);
+            await UserMgmt.DeleteUserAsync(row.Id);
             await LoadData();
         }
     }
@@ -270,12 +214,9 @@
         var name = _newRoleName.Trim();
         if (string.IsNullOrEmpty(name)) return;
 
-        if (!await RoleManager.RoleExistsAsync(name))
-        {
-            await RoleManager.CreateAsync(new IdentityRole(name));
-            _newRoleName = string.Empty;
-            await LoadData();
-        }
+        await UserMgmt.CreateRoleAsync(name);
+        _newRoleName = string.Empty;
+        await LoadData();
     }
 
     private async Task DeleteRole(string roleName)
@@ -291,18 +232,17 @@
 
         if (result is not null && !result.Canceled)
         {
-            var role = await RoleManager.FindByNameAsync(roleName);
-            if (role is not null)
-            {
-                await RoleManager.DeleteAsync(role);
-                await LoadData();
-            }
+            await UserMgmt.DeleteRoleAsync(roleName);
+            await LoadData();
         }
     }
 
-    private record UserRow
+    private async Task ShowError(string message)
     {
-        public ApplicationUser User { get; init; } = null!;
-        public List<string> Roles { get; init; } = [];
+        await DialogService.ShowAsync<MessageBoxDialog>("Error", new DialogParameters<MessageBoxDialog>
+        {
+            { x => x.ContentText, message },
+            { x => x.ButtonText, "OK" }
+        });
     }
 }
