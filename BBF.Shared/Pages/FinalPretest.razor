@@ -2,7 +2,6 @@
 @using System.Text.Json
 @using System.Text.Json.Serialization
 @using Microsoft.AspNetCore.Components.Web
-@inject IWebHostEnvironment Env
 @inject NavigationManager Nav
 
 <PageTitle>Call Taker Final Exam Pretest - BBF</PageTitle>
@@ -116,8 +115,11 @@
     {
         try
         {
-            var path = Path.Combine(Env.WebRootPath, "data", "call-taker-final-pretest.json");
-            var json = await File.ReadAllTextAsync(path);
+            // Same-origin static file fetch instead of a direct disk read — IWebHostEnvironment isn't
+            // available in every host this page can run in (e.g. BBF.Mobile), but a relative-URL fetch
+            // against whichever host is rendering the page works the same way everywhere.
+            using var http = new HttpClient { BaseAddress = new Uri(Nav.BaseUri) };
+            var json = await http.GetStringAsync("data/call-taker-final-pretest.json");
             _data = JsonSerializer.Deserialize<PretestData>(json, new JsonSerializerOptions
             {
                 PropertyNamingPolicy = JsonNamingPolicy.CamelCase
