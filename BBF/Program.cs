@@ -214,6 +214,13 @@ app.MapPost("/api/admin/migrate-tenancy", async (IDbContextFactory<ApplicationDb
     var unownedConnections = await db.PlaidConnections.Where(p => p.GroupId == null).ToListAsync();
     foreach (var conn in unownedConnections) conn.GroupId = group.Id;
 
+    // Document.GroupId was added later (Phase 1 tenancy migration) than the other entities above —
+    // every document uploaded before that migration has GroupId == null, and since Document's query
+    // filter requires an exact group match (not "ungrouped data is visible to everyone" like some
+    // other entities), those documents became permanently invisible once any group went active.
+    var unownedDocuments = await db.Documents.Where(d => d.GroupId == null).ToListAsync();
+    foreach (var doc in unownedDocuments) doc.GroupId = group.Id;
+
     await db.SaveChangesAsync();
 
     return Results.Ok(new
@@ -222,6 +229,7 @@ app.MapPost("/api/admin/migrate-tenancy", async (IDbContextFactory<ApplicationDb
         categoriesAssigned = unownedCategories.Count,
         transactionsAssigned = unownedTransactions.Count,
         connectionsAssigned = unownedConnections.Count,
+        documentsAssigned = unownedDocuments.Count,
         groupId = group.Id,
         groupName = group.Name
     });
