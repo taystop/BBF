@@ -42,11 +42,14 @@ jobs:
         working-directory: BBF
         run: dotnet tool restore
 
+      - name: Build BBF.Web
+        run: dotnet build BBF/BBF.csproj -c Release
+
       - name: Apply database migrations
         working-directory: BBF
         env:
           DEPLOY_DB_CONNECTION: ${{ secrets.PROD_DB_CONNECTION }}
-        run: dotnet tool run dotnet-ef database update --connection "$env:DEPLOY_DB_CONNECTION"
+        run: dotnet tool run dotnet-ef database update --configuration Release --connection "$env:DEPLOY_DB_CONNECTION"
 
   deploy-web:
     name: Deploy BBF.Web
