@@ -12,8 +12,13 @@ public class HttpHomeAssistantService(HttpClient http) : IHomeAssistantService
     public async Task<List<HaEntity>> GetEntitiesByDomainAsync(string domain, CancellationToken ct = default) =>
         await http.GetFromJsonAsync<List<HaEntity>>($"/api/integrations/home-assistant/entities?domain={HttpUtility.UrlEncode(domain)}", ct) ?? [];
 
-    public async Task<HaEntity?> GetEntityAsync(string entityId, CancellationToken ct = default) =>
-        await http.GetFromJsonAsync<HaEntity>($"/api/integrations/home-assistant/entities/{entityId}", ct);
+    public async Task<HaEntity?> GetEntityAsync(string entityId, CancellationToken ct = default)
+    {
+        var response = await http.GetAsync($"/api/integrations/home-assistant/entities/{entityId}", ct);
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound) return null;
+        await response.EnsureSuccessWithErrorBodyAsync(ct);
+        return await response.Content.ReadFromJsonAsync<HaEntity>(ct);
+    }
 
     public async Task<bool> CallServiceAsync(HaServiceCallRequest request, CancellationToken ct = default)
     {

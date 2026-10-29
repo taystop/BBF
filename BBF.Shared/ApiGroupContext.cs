@@ -24,6 +24,12 @@ public class ApiGroupContext(IGroupService groupService)
         Groups = await groupService.GetMyGroupsAsync();
         ActiveGroupId = Groups.FirstOrDefault()?.Id;
         IsInitialized = true;
+
+        // Pages render before MainLayout finishes this call (it runs in OnAfterRenderAsync, after the
+        // rest of the tree's first render), so any page that read ActiveGroupId during its own
+        // OnInitializedAsync saw it as null. Without this, those pages never learn the group arrived —
+        // SetActiveGroup/RefreshGroupsAsync below already raise this same event for the same reason.
+        OnGroupChanged?.Invoke();
     }
 
     public void SetActiveGroup(int groupId)

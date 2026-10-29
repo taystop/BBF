@@ -5,14 +5,24 @@ namespace BBF.ApiClients;
 
 public class HttpEmbyService(HttpClient http) : IEmbyService
 {
-    public async Task<EmbySystemInfo?> GetSystemInfoAsync(CancellationToken ct = default) =>
-        await http.GetFromJsonAsync<EmbySystemInfo>("/api/integrations/emby/system-info", ct);
+    public async Task<EmbySystemInfo?> GetSystemInfoAsync(CancellationToken ct = default)
+    {
+        var response = await http.GetAsync("/api/integrations/emby/system-info", ct);
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound) return null;
+        await response.EnsureSuccessWithErrorBodyAsync(ct);
+        return await response.Content.ReadFromJsonAsync<EmbySystemInfo>(ct);
+    }
 
     public async Task<List<EmbyLibrary>> GetLibrariesAsync(CancellationToken ct = default) =>
         await http.GetFromJsonAsync<List<EmbyLibrary>>("/api/integrations/emby/libraries", ct) ?? [];
 
-    public async Task<EmbyItemCounts?> GetItemCountsAsync(CancellationToken ct = default) =>
-        await http.GetFromJsonAsync<EmbyItemCounts>("/api/integrations/emby/item-counts", ct);
+    public async Task<EmbyItemCounts?> GetItemCountsAsync(CancellationToken ct = default)
+    {
+        var response = await http.GetAsync("/api/integrations/emby/item-counts", ct);
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound) return null;
+        await response.EnsureSuccessWithErrorBodyAsync(ct);
+        return await response.Content.ReadFromJsonAsync<EmbyItemCounts>(ct);
+    }
 
     public async Task<List<EmbySession>> GetActiveSessionsAsync(CancellationToken ct = default) =>
         await http.GetFromJsonAsync<List<EmbySession>>("/api/integrations/emby/sessions", ct) ?? [];

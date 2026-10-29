@@ -2,7 +2,6 @@
 @using Microsoft.AspNetCore.Components.Authorization
 @using System.Security.Claims
 @inject BBF.Shared.ApiGroupContext ApiGroupContext
-@inject AuthenticationStateProvider AuthStateProvider
 @inject NavigationManager Nav
 @inject IBrowserViewportService BrowserViewport
 @implements IAsyncDisposable
@@ -82,16 +81,26 @@
         }
     };
 
+    [CascadingParameter]
+    private Task<AuthenticationState>? AuthStateTask { get; set; }
+
     protected override void OnInitialized()
     {
         Nav.LocationChanged += OnLocationChanged;
+
+        // Hand the cascading auth state Task to the circuit-keyed accessor as early as a component
+        // can run, so ApiAuthTokenProvider (several async hops deep inside an HttpClient handler,
+        // where calling the provider directly throws) has something safe to await instead. See
+        // CircuitAuthStateAccessor for why this indirection exists.
+        if (AuthStateTask is not null)
+            BBF.ApiClients.CircuitAuthStateAccessor.SetState(AuthStateTask);
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (firstRender)
+        if (firstRender && AuthStateTask is not null)
         {
-            var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+            var authState = await AuthStateTask;
             var userId = authState.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
             if (userId is not null)
             {

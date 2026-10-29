@@ -5,8 +5,13 @@ namespace BBF.ApiClients;
 
 public class HttpGroceryListService(HttpClient http) : IGroceryListService
 {
-    public async Task<GroceryListDto?> GetAsync(int groupId, int weekId, CancellationToken ct = default) =>
-        await http.GetFromJsonAsync<GroceryListDto>($"/api/groups/{groupId}/meal-plan/weeks/{weekId}/grocery-list", ct);
+    public async Task<GroceryListDto?> GetAsync(int groupId, int weekId, CancellationToken ct = default)
+    {
+        var response = await http.GetAsync($"/api/groups/{groupId}/meal-plan/weeks/{weekId}/grocery-list", ct);
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound) return null;
+        await response.EnsureSuccessWithErrorBodyAsync(ct);
+        return await response.Content.ReadFromJsonAsync<GroceryListDto>(ct);
+    }
 
     public async Task<GroceryListDto?> GenerateAsync(int groupId, int weekId, CancellationToken ct = default)
     {

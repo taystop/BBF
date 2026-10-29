@@ -1,7 +1,6 @@
 using System.Net.Http.Json;
 using System.Security.Claims;
 using BBF.Shared.Contracts.Auth;
-using Microsoft.AspNetCore.Components.Authorization;
 
 namespace BBF.ApiClients;
 
@@ -13,7 +12,6 @@ namespace BBF.ApiClients;
 /// Scoped — one instance (and one cached token) per circuit, matching how UserContextService worked.
 /// </summary>
 public class ApiAuthTokenProvider(
-    AuthenticationStateProvider authStateProvider,
     IHttpClientFactory httpClientFactory,
     IConfiguration config) : IApiAuthTokenProvider
 {
@@ -30,7 +28,7 @@ public class ApiAuthTokenProvider(
         {
             if (IsStillValid()) return _cachedToken!;
 
-            var authState = await authStateProvider.GetAuthenticationStateAsync();
+            var authState = await CircuitAuthStateAccessor.StateTask;
             var userId = authState.User.FindFirst(ClaimTypes.NameIdentifier)?.Value
                 ?? throw new InvalidOperationException("No authenticated user on this circuit.");
 

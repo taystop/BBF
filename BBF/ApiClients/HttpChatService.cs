@@ -10,8 +10,13 @@ public class HttpChatService(HttpClient http) : IChatService
     public async Task<List<ChatConversationSummaryDto>> GetConversationsAsync(CancellationToken ct = default) =>
         await http.GetFromJsonAsync<List<ChatConversationSummaryDto>>("/api/chat/conversations", ct) ?? [];
 
-    public async Task<ChatConversationDetailDto?> GetConversationAsync(int conversationId, CancellationToken ct = default) =>
-        await http.GetFromJsonAsync<ChatConversationDetailDto>($"/api/chat/conversations/{conversationId}", ct);
+    public async Task<ChatConversationDetailDto?> GetConversationAsync(int conversationId, CancellationToken ct = default)
+    {
+        var response = await http.GetAsync($"/api/chat/conversations/{conversationId}", ct);
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound) return null;
+        await response.EnsureSuccessWithErrorBodyAsync(ct);
+        return await response.Content.ReadFromJsonAsync<ChatConversationDetailDto>(ct);
+    }
 
     public async Task DeleteConversationAsync(int conversationId, CancellationToken ct = default)
     {
