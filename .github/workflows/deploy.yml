@@ -65,15 +65,33 @@ jobs:
       - name: Publish
         run: dotnet publish BBF/BBF.csproj -c Release -o ./publish-web
 
-      - name: Stop IIS site
+      - name: Stop IIS site and app pool
         shell: powershell
         run: |
           Import-Module WebAdministration
+
+          # Stop-Website alone stops routing new requests but doesn't kill the worker process
+          # (w3wp.exe) — it can keep BBF.dll loaded (and locked) for a while afterward, which is
+          # what the next step's robocopy would end up retrying against. Stopping the app pool too
+          # forces the worker process to actually exit before we copy files.
+          $poolName = $null
+          try { $poolName = (Get-Website -Name "bigboisfederation").applicationPool } catch {}
+
           try {
             Stop-Website -Name "bigboisfederation" -ErrorAction Stop
           } catch {
             Write-Warning "Could not stop site 'bigboisfederation' (may already be stopped): $_"
           }
+
+          if ($poolName) {
+            try {
+              Stop-WebAppPool -Name $poolName -ErrorAction Stop
+            } catch {
+              Write-Warning "Could not stop app pool '$poolName' (may already be stopped): $_"
+            }
+          }
+
+          Start-Sleep -Seconds 3
 
       - name: Copy published files (preserving web.config and production/dev settings)
         shell: powershell
@@ -82,10 +100,12 @@ jobs:
           # Robocopy exit codes 0-7 are success; 8+ indicates a real failure.
           if ($LASTEXITCODE -ge 8) { exit 1 } else { exit 0 }
 
-      - name: Start IIS site
+      - name: Start IIS site and app pool
         shell: powershell
         run: |
           Import-Module WebAdministration
+          $poolName = (Get-Website -Name "bigboisfederation").applicationPool
+          Start-WebAppPool -Name $poolName
           Start-Website -Name "bigboisfederation"
 
       - name: Smoke test
@@ -109,15 +129,31 @@ jobs:
       - name: Publish
         run: dotnet publish BBF.Api/BBF.Api.csproj -c Release -o ./publish-api
 
-      - name: Stop IIS site
+      - name: Stop IIS site and app pool
         shell: powershell
         run: |
           Import-Module WebAdministration
+
+          # See the matching step in deploy-web: Stop-Website alone doesn't kill the worker process,
+          # which can keep BBF.Api.dll locked for a while afterward.
+          $poolName = $null
+          try { $poolName = (Get-Website -Name "bbf-api").applicationPool } catch {}
+
           try {
             Stop-Website -Name "bbf-api" -ErrorAction Stop
           } catch {
             Write-Warning "Could not stop site 'bbf-api' (may already be stopped): $_"
           }
+
+          if ($poolName) {
+            try {
+              Stop-WebAppPool -Name $poolName -ErrorAction Stop
+            } catch {
+              Write-Warning "Could not stop app pool '$poolName' (may already be stopped): $_"
+            }
+          }
+
+          Start-Sleep -Seconds 3
 
       - name: Copy published files (preserving web.config and production/dev settings)
         shell: powershell
@@ -126,10 +162,12 @@ jobs:
           # Robocopy exit codes 0-7 are success; 8+ indicates a real failure.
           if ($LASTEXITCODE -ge 8) { exit 1 } else { exit 0 }
 
-      - name: Start IIS site
+      - name: Start IIS site and app pool
         shell: powershell
         run: |
           Import-Module WebAdministration
+          $poolName = (Get-Website -Name "bbf-api").applicationPool
+          Start-WebAppPool -Name $poolName
           Start-Website -Name "bbf-api"
 
       - name: Smoke test
