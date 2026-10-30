@@ -43,6 +43,7 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
     public DbSet<MealPlanEntry> MealPlanEntries => Set<MealPlanEntry>();
     public DbSet<GroceryList> GroceryLists => Set<GroceryList>();
     public DbSet<GroceryListItem> GroceryListItems => Set<GroceryListItem>();
+    public DbSet<ErrorLog> ErrorLogs => Set<ErrorLog>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -76,6 +77,14 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
         builder.Entity<ServiceHealthLog>(e =>
         {
             e.ToTable("ServiceHealthLog");
+        });
+
+        // Global, not group-scoped — written by BBF.Api's unhandled-exception handler so the real
+        // exception detail is recoverable even though the HTTP response only ever gets a generic message.
+        builder.Entity<ErrorLog>(e =>
+        {
+            e.ToTable("ErrorLog");
+            e.HasIndex(x => x.OccurredAtUtc);
         });
 
         builder.Entity<Document>(e =>

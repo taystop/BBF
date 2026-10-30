@@ -1,13 +1,27 @@
+using System.Security.Claims;
 using System.Text;
+using System.Threading.RateLimiting;
 using BBF.Api.Auth;
 using BBF.Api.BackgroundServices;
 using BBF.Api.Endpoints;
 using BBF.Api.Services;
 using BBF.Data;
+using BBF.Data.Entities;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+
+// Cloudflare Tunnel terminates on localhost, so Kestrel sees every request as coming from 127.0.0.1 —
+// rate limiting by RemoteIpAddress alone would bucket every real client together. Fall back to it only
+// when CF-Connecting-IP is absent (local/dev/direct LAN calls), the same trust model AuthEndpoints
+// already uses for the internal-token block.
+static string GetClientIp(HttpContext context) =>
+    context.Request.Headers["CF-Connecting-IP"].FirstOrDefault()
+    ?? context.Connection.RemoteIpAddress?.ToString()
+    ?? "unknown";
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -48,6 +62,31 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 builder.Services.AddAuthorization(options =>
 {
     options.AddPolicy("AdminOnly", policy => policy.RequireRole("Admin"));
+});
+
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+    // Loose, per-IP safety net across the whole API now that it's reachable from the open internet.
+    options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
+        RateLimitPartition.GetFixedWindowLimiter(GetClientIp(context), _ => new FixedWindowRateLimiterOptions
+        {
+            Window = TimeSpan.FromMinutes(1),
+            PermitLimit = 300,
+            QueueLimit = 0,
+        }));
+
+    // Tighter policy for /api/auth — this is the actual brute-force/credential-stuffing target.
+    // Identity's per-account lockout (5 attempts/5 min) only slows guessing one account at a time;
+    // this caps total attempts per source IP across any number of usernames.
+    options.AddPolicy<string>("auth", context =>
+        RateLimitPartition.GetFixedWindowLimiter(GetClientIp(context), _ => new FixedWindowRateLimiterOptions
+        {
+            Window = TimeSpan.FromMinutes(1),
+            PermitLimit = 10,
+            QueueLimit = 0,
+        }));
 });
 
 builder.Services.AddScoped<ICurrentUserContext, CurrentUserContext>();
@@ -94,19 +133,56 @@ app.UseExceptionHandler(errorApp =>
 {
     errorApp.Run(async context =>
     {
-        var exception = context.Features.Get<Microsoft.AspNetCore.Diagnostics.IExceptionHandlerFeature>()?.Error;
-        context.Response.StatusCode = exception switch
+        var exception = context.Features.Get<IExceptionHandlerFeature>()?.Error;
+        var statusCode = exception switch
         {
             ForbiddenAccessException => StatusCodes.Status403Forbidden,
             KeyNotFoundException => StatusCodes.Status404NotFound,
             InvalidOperationException => StatusCodes.Status409Conflict,
             _ => StatusCodes.Status500InternalServerError,
         };
-        await context.Response.WriteAsJsonAsync(new { error = exception?.Message });
+        context.Response.StatusCode = statusCode;
+
+        // The real exception detail is never sent to the client (it can contain SQL/file-path/stack
+        // detail) — it only ever goes to this DB log, so it stays recoverable for diagnosis.
+        if (exception is not null)
+        {
+            try
+            {
+                var dbFactory = context.RequestServices.GetRequiredService<IDbContextFactory<ApplicationDbContext>>();
+                await using var db = await dbFactory.CreateDbContextAsync(CancellationToken.None);
+                db.ErrorLogs.Add(new ErrorLog
+                {
+                    StatusCode = statusCode,
+                    Method = context.Request.Method,
+                    Path = context.Request.Path.Value ?? "",
+                    ExceptionType = exception.GetType().FullName ?? exception.GetType().Name,
+                    ExceptionMessage = exception.Message,
+                    StackTrace = exception.StackTrace,
+                    UserId = context.User.FindFirstValue(ClaimTypes.NameIdentifier),
+                });
+                await db.SaveChangesAsync(CancellationToken.None);
+            }
+            catch
+            {
+                // Logging the error must never mask the original failure or crash the error handler itself.
+            }
+        }
+
+        var genericMessage = statusCode switch
+        {
+            StatusCodes.Status403Forbidden => "Forbidden.",
+            StatusCodes.Status404NotFound => "Not found.",
+            StatusCodes.Status409Conflict => "Conflict.",
+            _ => "An unexpected error occurred.",
+        };
+        await context.Response.WriteAsJsonAsync(new { error = genericMessage });
     });
 });
 
 app.UseHttpsRedirection();
+
+app.UseRateLimiter();
 
 app.UseAuthentication();
 app.UseAuthorization();
