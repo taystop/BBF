@@ -1,4 +1,5 @@
 using BBF.Mobile.Auth;
+using BBF.Mobile.DocumentDownload;
 using BBF.Shared;
 using BBF.Shared.ApiClients;
 using BBF.Shared.Contracts.Accounts;
@@ -74,6 +75,7 @@ public static class MauiProgram
         builder.Services.AddApiHttpClient<IMealPlanService, HttpMealPlanService>(ApiBaseUrl);
         builder.Services.AddApiHttpClient<IGroceryListService, HttpGroceryListService>(ApiBaseUrl);
         builder.Services.AddApiHttpClient<IDocumentService, HttpDocumentService>(ApiBaseUrl);
+        builder.Services.AddScoped<IDocumentDownloadHandler, NativeDocumentDownloadHandler>();
         builder.Services.AddApiHttpClient<IWikiArticleService, HttpWikiArticleService>(ApiBaseUrl);
         builder.Services.AddApiHttpClient<IChatService, HttpChatService>(ApiBaseUrl, TimeSpan.FromMinutes(5));
         builder.Services.AddApiHttpClient<IServiceLinkService, HttpServiceLinkService>(ApiBaseUrl);

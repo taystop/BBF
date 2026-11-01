@@ -35,4 +35,11 @@ public class HttpDocumentService(HttpClient http) : IDocumentService
         var response = await http.DeleteAsync($"/api/groups/{groupId}/documents/{documentId}", ct);
         return response.IsSuccessStatusCode;
     }
+
+    public async Task<Stream> DownloadAsync(int groupId, int documentId, CancellationToken ct = default)
+    {
+        var response = await http.GetAsync($"/api/groups/{groupId}/documents/{documentId}/download", HttpCompletionOption.ResponseHeadersRead, ct);
+        await response.EnsureSuccessWithErrorBodyAsync(ct);
+        return await response.Content.ReadAsStreamAsync(ct);
+    }
 }

@@ -74,6 +74,7 @@ var apiBaseUrl = builder.Configuration["Api:BaseUrl"] ?? "http://localhost:5001"
 builder.Services.AddApiClientInfrastructure();
 builder.Services.AddHttpClient("BBF.Api.Internal", c => c.BaseAddress = new Uri(apiBaseUrl));
 builder.Services.AddScoped<IApiAuthTokenProvider, ApiAuthTokenProvider>();
+builder.Services.AddScoped<IDocumentDownloadHandler, BrowserDocumentDownloadHandler>();
 builder.Services.AddApiHttpClient<IGroupService, HttpGroupService>(apiBaseUrl);
 builder.Services.AddApiHttpClient<ITransactionService, HttpTransactionService>(apiBaseUrl);
 builder.Services.AddApiHttpClient<IAccountService, HttpAccountService>(apiBaseUrl);

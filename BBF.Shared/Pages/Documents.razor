@@ -2,6 +2,7 @@
 @using BBF.Shared.Contracts.Documents
 @attribute [Authorize]
 @inject IDocumentService Docs
+@inject IDocumentDownloadHandler DownloadHandler
 @inject ApiGroupContext GroupContext
 @inject IDialogService DialogService
 @inject ISnackbar Snackbar
@@ -111,7 +112,7 @@
                 <MudTd>
                     <MudStack Row Spacing="0">
                         <MudIconButton Icon="@Icons.Material.Filled.Download" Size="Size.Small"
-                                       Href="@($"/api/documents/{context.Id}/download?groupId={GroupContext.ActiveGroupId}")" Target="_blank"
+                                       OnClick="@(() => DownloadDocument(context))"
                                        title="Download" />
                         <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
                                        OnClick="@(() => EditDocument(context))" title="Edit" />
@@ -240,6 +241,20 @@
             Snackbar.Add($"Skipped {skipped} file(s) with unsupported extensions", Severity.Warning);
 
         await LoadDocuments();
+    }
+
+    private async Task DownloadDocument(DocumentDto doc)
+    {
+        if (GroupContext.ActiveGroupId is not int groupId) return;
+
+        try
+        {
+            await DownloadHandler.DownloadAsync(doc, groupId);
+        }
+        catch (Exception)
+        {
+            Snackbar.Add($"Failed to download {doc.FileName}", Severity.Error);
+        }
     }
 
     private async Task EditDocument(DocumentDto doc)
