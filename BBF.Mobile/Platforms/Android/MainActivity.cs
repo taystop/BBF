@@ -1,6 +1,8 @@
 ﻿using Android.App;
 using Android.Content.PM;
 using Android.OS;
+using AndroidX.Core.App;
+using AndroidX.Core.Content;
 using AndroidX.Core.View;
 
 namespace BBF.Mobile;
@@ -22,6 +24,14 @@ public class MainActivity : MauiAppCompatActivity
         var rootView = Window?.DecorView.FindViewById(Android.Resource.Id.Content);
         if (rootView is not null)
             ViewCompat.SetOnApplyWindowInsetsListener(rootView, new SystemBarInsetsListener());
+
+        // API 33+ requires runtime consent to show any notification, including FCM pushes — ask once
+        // at startup rather than gating it behind login, so it's not tied to app state.
+        if ((int)Build.VERSION.SdkInt >= 33
+            && ContextCompat.CheckSelfPermission(this, Android.Manifest.Permission.PostNotifications) != Permission.Granted)
+        {
+            ActivityCompat.RequestPermissions(this, new[] { Android.Manifest.Permission.PostNotifications }, 101);
+        }
     }
 
     private sealed class SystemBarInsetsListener : Java.Lang.Object, IOnApplyWindowInsetsListener

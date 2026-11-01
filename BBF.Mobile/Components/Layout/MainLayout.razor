@@ -1,5 +1,9 @@
 @inherits LayoutComponentBase
+@using BBF.Mobile.Push
+@using BBF.Shared.Contracts.Devices
 @inject BBF.Shared.ApiGroupContext ApiGroupContext
+@inject IPushTokenProvider PushTokenProvider
+@inject IDeviceService DeviceService
 
 <MudLayout>
     <MudAppBar Elevation="1">
@@ -59,7 +63,24 @@
             {
                 await ApiGroupContext.InitializeAsync();
                 StateHasChanged();
+
+                _ = RegisterPushTokenAsync();
             }
+        }
+    }
+
+    private async Task RegisterPushTokenAsync()
+    {
+        // Covers the "already signed in from a previous session" path (Login.razor's own call
+        // after a fresh sign-in covers the other one); best-effort, same as token-refresh handling.
+        try
+        {
+            var token = await PushTokenProvider.GetCurrentTokenAsync();
+            if (!string.IsNullOrEmpty(token))
+                await DeviceService.RegisterAsync(new RegisterDeviceRequest(token, "Android"));
+        }
+        catch
+        {
         }
     }
 

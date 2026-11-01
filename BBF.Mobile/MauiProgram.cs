@@ -1,5 +1,6 @@
 using BBF.Mobile.Auth;
 using BBF.Mobile.DocumentDownload;
+using BBF.Mobile.Push;
 using BBF.Shared;
 using BBF.Shared.ApiClients;
 using BBF.Shared.Contracts.Accounts;
@@ -7,6 +8,7 @@ using BBF.Shared.Contracts.Amp;
 using BBF.Shared.Contracts.Auth;
 using BBF.Shared.Contracts.Budget;
 using BBF.Shared.Contracts.Chat;
+using BBF.Shared.Contracts.Devices;
 using BBF.Shared.Contracts.Documents;
 using BBF.Shared.Contracts.Emby;
 using BBF.Shared.Contracts.Goals;
@@ -84,6 +86,11 @@ public static class MauiProgram
         builder.Services.AddApiHttpClient<IAmpService, HttpAmpService>(ApiBaseUrl);
         builder.Services.AddApiHttpClient<IIntegrationsStatusService, HttpIntegrationsStatusService>(ApiBaseUrl);
         builder.Services.AddApiHttpClient<IUserManagementService, HttpUserManagementService>(ApiBaseUrl);
+        builder.Services.AddApiHttpClient<IDeviceService, HttpDeviceService>(ApiBaseUrl);
+
+#if ANDROID
+        builder.Services.AddSingleton<IPushTokenProvider, BBF.Mobile.Platforms.Android.Push.AndroidPushTokenProvider>();
+#endif
 
 #if DEBUG
         builder.Services.AddBlazorWebViewDeveloperTools();

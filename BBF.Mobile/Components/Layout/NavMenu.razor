@@ -1,5 +1,9 @@
 @using BBF.Mobile.Auth
+@using BBF.Mobile.Push
+@using BBF.Shared.Contracts.Devices
 @inject MobileAuthenticationStateProvider AuthProvider
+@inject IPushTokenProvider PushTokenProvider
+@inject IDeviceService DeviceService
 @inject NavigationManager Nav
 
 <MudNavMenu>
@@ -35,8 +39,20 @@
 </MudNavMenu>
 
 @code {
-    private void SignOutAsync()
+    private async Task SignOutAsync()
     {
+        // Unregister the device token while still authenticated (the endpoint requires it) — best
+        // effort, a sign-out should never get stuck on a failed network call.
+        try
+        {
+            var token = await PushTokenProvider.GetCurrentTokenAsync();
+            if (!string.IsNullOrEmpty(token))
+                await DeviceService.UnregisterAsync(token);
+        }
+        catch
+        {
+        }
+
         AuthProvider.SignOut();
         Nav.NavigateTo("/login", replace: true);
     }
