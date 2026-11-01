@@ -24,7 +24,7 @@
         <ApplicationTitle>BBF.Mobile</ApplicationTitle>
 
         <!-- App Identifier -->
-        <ApplicationId>com.companyname.bbf.mobile</ApplicationId>
+        <ApplicationId>com.stoppel.bbf.mobile</ApplicationId>
 
         <!-- Versions -->
         <ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
