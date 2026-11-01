@@ -44,6 +44,7 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
     public DbSet<GroceryList> GroceryLists => Set<GroceryList>();
     public DbSet<GroceryListItem> GroceryListItems => Set<GroceryListItem>();
     public DbSet<ErrorLog> ErrorLogs => Set<ErrorLog>();
+    public DbSet<DeviceToken> DeviceTokens => Set<DeviceToken>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -85,6 +86,13 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
         {
             e.ToTable("ErrorLog");
             e.HasIndex(x => x.OccurredAtUtc);
+        });
+
+        builder.Entity<DeviceToken>(e =>
+        {
+            e.ToTable("DeviceToken");
+            e.HasIndex(x => x.Token).IsUnique();
+            e.HasIndex(x => x.UserId);
         });
 
         builder.Entity<Document>(e =>

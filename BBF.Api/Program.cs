@@ -4,9 +4,12 @@ using System.Threading.RateLimiting;
 using BBF.Api.Auth;
 using BBF.Api.BackgroundServices;
 using BBF.Api.Endpoints;
+using BBF.Api.Notifications;
 using BBF.Api.Services;
 using BBF.Data;
 using BBF.Data.Entities;
+using FirebaseAdmin;
+using Google.Apis.Auth.OAuth2;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Identity;
@@ -111,12 +114,28 @@ builder.Services.AddScoped<GroupManagementService>();
 builder.Services.AddScoped<ServiceLinksService>();
 builder.Services.AddScoped<UserManagementService>();
 builder.Services.AddScoped<PlaidService>();
+builder.Services.AddScoped<DeviceTokenService>();
 builder.Services.AddHttpClient<OllamaService>();
 builder.Services.AddHttpClient<WebSearchService>();
 builder.Services.AddHttpClient<HomeAssistantService>();
 builder.Services.AddHttpClient<EmbyService>();
 builder.Services.AddHttpClient<AmpService>();
 builder.Services.AddHostedService<RecurringMaterializationBackgroundService>();
+builder.Services.AddHostedService<ServiceHealthMonitorBackgroundService>();
+
+// Firebase only initializes when a real service account is configured — keeps the API runnable
+// before (or without) setting up push, with every call site still going through INotificationSender
+// unconditionally via the no-op fallback.
+var firebaseServiceAccountPath = builder.Configuration["Firebase:ServiceAccountPath"];
+if (!string.IsNullOrEmpty(firebaseServiceAccountPath) && File.Exists(firebaseServiceAccountPath))
+{
+    FirebaseApp.Create(new AppOptions { Credential = GoogleCredential.FromFile(firebaseServiceAccountPath) });
+    builder.Services.AddScoped<INotificationSender, FirebaseNotificationSender>();
+}
+else
+{
+    builder.Services.AddScoped<INotificationSender, NullNotificationSender>();
+}
 
 var app = builder.Build();
 
@@ -210,5 +229,6 @@ app.MapAmpEndpoints();
 app.MapIntegrationsStatusEndpoints();
 app.MapPlaidEndpoints();
 app.MapUsersEndpoints();
+app.MapDevicesEndpoints();
 
 app.Run();
