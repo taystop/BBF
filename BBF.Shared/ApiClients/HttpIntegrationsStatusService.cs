@@ -1,7 +1,7 @@
 using System.Net.Http.Json;
 using BBF.Shared.Contracts.Integrations;
 
-namespace BBF.ApiClients;
+namespace BBF.Shared.ApiClients;
 
 public class HttpIntegrationsStatusService(HttpClient http) : IIntegrationsStatusService
 {

@@ -1,7 +1,7 @@
 using System.Net.Http.Json;
 using BBF.Shared.Contracts.Documents;
 
-namespace BBF.ApiClients;
+namespace BBF.Shared.ApiClients;
 
 public class HttpDocumentService(HttpClient http) : IDocumentService
 {

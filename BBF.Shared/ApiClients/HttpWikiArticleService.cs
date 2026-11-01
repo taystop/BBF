@@ -1,7 +1,7 @@
 using System.Net.Http.Json;
 using BBF.Shared.Contracts.Wiki;
 
-namespace BBF.ApiClients;
+namespace BBF.Shared.ApiClients;
 
 public class HttpWikiArticleService(HttpClient http) : IWikiArticleService
 {

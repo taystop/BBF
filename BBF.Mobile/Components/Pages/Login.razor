@@ -1,0 +1,63 @@
+@page "/login"
+@layout Layout.LoginLayout
+@using BBF.Mobile.Auth
+@using BBF.Shared.Contracts.Auth
+@inject IAuthService AuthService
+@inject MobileAuthenticationStateProvider AuthProvider
+@inject NavigationManager Nav
+
+<MudContainer MaxWidth="MaxWidth.ExtraSmall" Class="mt-16">
+    <MudPaper Class="p-6" Elevation="4">
+        <MudText Typo="Typo.h5" Class="mb-4">Sign in to BBF</MudText>
+
+        <MudTextField @bind-Value="_userName" Label="Username" Variant="Variant.Outlined" Class="mb-3"
+                      Disabled="_busy" />
+        <MudTextField @bind-Value="_password" Label="Password" InputType="InputType.Password"
+                      Variant="Variant.Outlined" Class="mb-3" Disabled="_busy"
+                      OnKeyDown="OnPasswordKeyDown" />
+
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error" Class="mb-3" Dense="true">@_error</MudAlert>
+        }
+
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" FullWidth="true"
+                   OnClick="SubmitAsync" Disabled="_busy">
+            @(_busy ? "Signing in..." : "Sign in")
+        </MudButton>
+    </MudPaper>
+</MudContainer>
+
+@code {
+    private string _userName = "";
+    private string _password = "";
+    private string? _error;
+    private bool _busy;
+
+    private async Task OnPasswordKeyDown(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await SubmitAsync();
+    }
+
+    private async Task SubmitAsync()
+    {
+        if (_busy) return;
+
+        _busy = true;
+        _error = null;
+        try
+        {
+            var login = await AuthService.LoginAsync(new LoginRequest(_userName, _password));
+            await AuthProvider.SignInAsync(login);
+            Nav.NavigateTo("/", replace: true);
+        }
+        catch (Exception)
+        {
+            _error = "Invalid username or password.";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

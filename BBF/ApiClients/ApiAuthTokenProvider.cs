@@ -1,5 +1,6 @@
 using System.Net.Http.Json;
 using System.Security.Claims;
+using BBF.Shared.ApiClients;
 using BBF.Shared.Contracts.Auth;
 
 namespace BBF.ApiClients;

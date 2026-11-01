@@ -1,0 +1,43 @@
+@using BBF.Mobile.Auth
+@inject MobileAuthenticationStateProvider AuthProvider
+@inject NavigationManager Nav
+
+<MudNavMenu>
+    <MudNavLink Href="/" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Dashboard">Dashboard</MudNavLink>
+    <MudNavLink Href="/chat" Icon="@Icons.Material.Filled.Chat">AI Chat</MudNavLink>
+    <MudNavLink Href="/home" Icon="@Icons.Material.Filled.Home">Home Control</MudNavLink>
+    <MudNavLink Href="/media" Icon="@Icons.Material.Filled.Movie">Media</MudNavLink>
+    <MudNavLink Href="/gameservers" Icon="@Icons.Material.Filled.SportsEsports">Game Servers</MudNavLink>
+    <MudNavLink Href="/services" Icon="@Icons.Material.Filled.Apps">Services</MudNavLink>
+    <MudNavLink Href="/wiki" Icon="@Icons.Material.Filled.MenuBook">Documentation</MudNavLink>
+    <MudNavLink Href="/documents" Icon="@Icons.Material.Filled.Folder">Documents</MudNavLink>
+    <MudNavLink Href="/status" Icon="@Icons.Material.Filled.MonitorHeart">Status</MudNavLink>
+    <MudDivider Class="my-2" />
+    <MudNavLink Href="/budget" Icon="@Icons.Material.Filled.AccountBalance">Budget</MudNavLink>
+    <MudNavLink Href="/transactions" Icon="@Icons.Material.Filled.Receipt">Transactions</MudNavLink>
+    <MudNavLink Href="/accounts" Icon="@Icons.Material.Filled.AccountBalanceWallet">Accounts</MudNavLink>
+    <MudNavLink Href="/recurring" Icon="@Icons.Material.Filled.Autorenew">Recurring</MudNavLink>
+    <MudNavLink Href="/goals" Icon="@Icons.Material.Filled.Flag">Goals</MudNavLink>
+    <MudDivider Class="my-2" />
+    <MudNavLink Href="/meal-plan" Icon="@Icons.Material.Filled.CalendarMonth">Meal Plan</MudNavLink>
+    <MudNavLink Href="/grocery-list" Icon="@Icons.Material.Filled.ShoppingCart">Grocery List</MudNavLink>
+    <MudNavLink Href="/recipes" Icon="@Icons.Material.Filled.MenuBook">Recipes</MudNavLink>
+    <MudNavLink Href="/ingredients" Icon="@Icons.Material.Filled.Kitchen">Ingredients</MudNavLink>
+    <MudNavLink Href="/grocery-sections" Icon="@Icons.Material.Filled.Storefront">Grocery Sections</MudNavLink>
+    <AuthorizeView Roles="Admin" Context="adminContext">
+        <MudDivider Class="my-2" />
+        <MudNavLink Href="/users" Icon="@Icons.Material.Filled.SupervisedUserCircle">Users</MudNavLink>
+        <MudNavLink Href="/groups" Icon="@Icons.Material.Filled.Group">Groups</MudNavLink>
+    </AuthorizeView>
+
+    <MudDivider Class="my-2" />
+    <MudNavLink OnClick="SignOutAsync" Icon="@Icons.Material.Filled.Logout">Log out</MudNavLink>
+</MudNavMenu>
+
+@code {
+    private void SignOutAsync()
+    {
+        AuthProvider.SignOut();
+        Nav.NavigateTo("/login", replace: true);
+    }
+}

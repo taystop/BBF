@@ -2,7 +2,7 @@ using System.Net.Http.Json;
 using BBF.Shared.Contracts.Auth;
 using BBF.Shared.Contracts.Groups;
 
-namespace BBF.ApiClients;
+namespace BBF.Shared.ApiClients;
 
 public class HttpGroupService(HttpClient http) : IGroupService
 {

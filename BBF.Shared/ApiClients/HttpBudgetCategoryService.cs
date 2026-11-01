@@ -1,7 +1,7 @@
 using System.Net.Http.Json;
 using BBF.Shared.Contracts.Budget;
 
-namespace BBF.ApiClients;
+namespace BBF.Shared.ApiClients;
 
 public class HttpBudgetCategoryService(HttpClient http) : IBudgetCategoryService
 {

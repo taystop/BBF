@@ -1,3 +1,62 @@
-﻿@inherits LayoutComponentBase
+@inherits LayoutComponentBase
+@inject BBF.Shared.ApiGroupContext ApiGroupContext
 
-@Body
+<MudLayout>
+    <MudAppBar Elevation="1">
+        <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit"
+                       Edge="Edge.Start" OnClick="ToggleDrawer" />
+        <MudText Typo="Typo.h5" Class="ml-3">BBF</MudText>
+        <MudSpacer />
+        <AuthorizeView>
+            <Authorized>
+                @if (ApiGroupContext.Groups.Count > 1)
+                {
+                    <MudSelect T="int?" Value="ApiGroupContext.ActiveGroupId"
+                               ValueChanged="OnGroupChanged"
+                               Variant="Variant.Outlined" Margin="Margin.Dense"
+                               Style="max-width: 140px; color: inherit;">
+                        @foreach (var group in ApiGroupContext.Groups)
+                        {
+                            <MudSelectItem T="int?" Value="@group.Id">@group.Name</MudSelectItem>
+                        }
+                    </MudSelect>
+                }
+            </Authorized>
+        </AuthorizeView>
+    </MudAppBar>
+
+    <MudDrawer @bind-Open="_drawerOpen" Breakpoint="Breakpoint.Md" Elevation="2" Variant="@DrawerVariant.Temporary">
+        <Layout.NavMenu />
+    </MudDrawer>
+
+    <MudMainContent Class="px-2 px-sm-4 pb-4">
+        @Body
+    </MudMainContent>
+</MudLayout>
+
+<div id="blazor-error-ui" data-nosnippet>
+    An unhandled error has occurred.
+    <a href="." class="reload">Reload</a>
+    <span class="dismiss">X</span>
+</div>
+
+@code {
+    private bool _drawerOpen;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await ApiGroupContext.InitializeAsync();
+            StateHasChanged();
+        }
+    }
+
+    private void OnGroupChanged(int? groupId)
+    {
+        if (groupId.HasValue)
+            ApiGroupContext.SetActiveGroup(groupId.Value);
+    }
+
+    private void ToggleDrawer() => _drawerOpen = !_drawerOpen;
+}

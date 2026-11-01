@@ -1,7 +1,7 @@
 using System.Net.Http.Json;
 using BBF.Shared.Contracts.Amp;
 
-namespace BBF.ApiClients;
+namespace BBF.Shared.ApiClients;
 
 public class HttpAmpService(HttpClient http) : IAmpService
 {

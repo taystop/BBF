@@ -1,6 +1,6 @@
 using System.Net.Http.Json;
 
-namespace BBF.ApiClients;
+namespace BBF.Shared.ApiClients;
 
 public static class HttpResponseMessageExtensions
 {

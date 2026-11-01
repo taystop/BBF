@@ -1,6 +1,6 @@
 using System.Net.Http.Headers;
 
-namespace BBF.ApiClients;
+namespace BBF.Shared.ApiClients;
 
 /// <summary>Attaches the current circuit's Bearer token to every outgoing call to BBF.Api. Registered on each typed HttpClient via AddHttpMessageHandler.</summary>
 public class ApiAuthDelegatingHandler(IApiAuthTokenProvider tokenProvider) : DelegatingHandler

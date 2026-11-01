@@ -1,16 +1,17 @@
-namespace BBF.ApiClients;
+using Microsoft.Extensions.DependencyInjection;
+
+namespace BBF.Shared.ApiClients;
 
 public static class ApiClientServiceCollectionExtensions
 {
     /// <summary>
-    /// Registers the shared plumbing every BBF.Api-backed client needs: the unauthenticated client used
-    /// to fetch the internal token itself, plus the token provider and auth handler the typed clients
-    /// below attach to.
+    /// Registers the handler every BBF.Api-backed typed client attaches for its Bearer token. Each host
+    /// (BBF.Web, BBF.Mobile) must separately register its own IApiAuthTokenProvider implementation —
+    /// Web exchanges its cookie session for a token via the internal-token endpoint; Mobile reads one
+    /// from SecureStorage after a direct password login.
     /// </summary>
-    public static IServiceCollection AddApiClientInfrastructure(this IServiceCollection services, string apiBaseUrl)
+    public static IServiceCollection AddApiClientInfrastructure(this IServiceCollection services)
     {
-        services.AddHttpClient("BBF.Api.Internal", c => c.BaseAddress = new Uri(apiBaseUrl));
-        services.AddScoped<IApiAuthTokenProvider, ApiAuthTokenProvider>();
         services.AddTransient<ApiAuthDelegatingHandler>();
         return services;
     }

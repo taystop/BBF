@@ -4,6 +4,7 @@ using BBF.Components.Account;
 using BBF.Data;
 using BBF.Services;
 using BBF.Shared;
+using BBF.Shared.ApiClients;
 using BBF.Shared.Contracts.Accounts;
 using BBF.Shared.Contracts.Amp;
 using BBF.Shared.Contracts.Auth;
@@ -70,7 +71,9 @@ builder.Services.AddHttpClient<AmpService>();
 // Every other page now calls BBF.Api over HTTP instead of talking to the database or LAN services
 // directly — these register that client plumbing.
 var apiBaseUrl = builder.Configuration["Api:BaseUrl"] ?? "http://localhost:5001";
-builder.Services.AddApiClientInfrastructure(apiBaseUrl);
+builder.Services.AddApiClientInfrastructure();
+builder.Services.AddHttpClient("BBF.Api.Internal", c => c.BaseAddress = new Uri(apiBaseUrl));
+builder.Services.AddScoped<IApiAuthTokenProvider, ApiAuthTokenProvider>();
 builder.Services.AddApiHttpClient<IGroupService, HttpGroupService>(apiBaseUrl);
 builder.Services.AddApiHttpClient<ITransactionService, HttpTransactionService>(apiBaseUrl);
 builder.Services.AddApiHttpClient<IAccountService, HttpAccountService>(apiBaseUrl);

@@ -2,7 +2,7 @@ using System.Net.Http.Json;
 using System.Web;
 using BBF.Shared.Contracts.HomeAssistant;
 
-namespace BBF.ApiClients;
+namespace BBF.Shared.ApiClients;
 
 public class HttpHomeAssistantService(HttpClient http) : IHomeAssistantService
 {

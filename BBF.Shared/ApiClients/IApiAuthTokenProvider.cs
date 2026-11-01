@@ -1,4 +1,4 @@
-namespace BBF.ApiClients;
+namespace BBF.Shared.ApiClients;
 
 public interface IApiAuthTokenProvider
 {
