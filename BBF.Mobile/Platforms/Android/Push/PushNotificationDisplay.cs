@@ -1,5 +1,6 @@
 using Android.App;
 using Android.Content;
+using Android.Graphics;
 using Android.OS;
 using AndroidX.Core.App;
 
@@ -19,10 +20,14 @@ public static class PushNotificationDisplay
         var pendingIntent = PendingIntent.GetActivity(
             context, 0, launchIntent, PendingIntentFlags.Immutable | PendingIntentFlags.UpdateCurrent);
 
+        // The status bar always renders SetSmallIcon as a flat white silhouette (Android forces this
+        // via the icon's alpha channel, regardless of its actual colors) — the BBF wolf mark on a
+        // transparent background. SetLargeIcon is shown in full color in the expanded notification.
         var notification = new NotificationCompat.Builder(context, ChannelId)
             .SetContentTitle(title)
             .SetContentText(body)
-            .SetSmallIcon(Resource.Mipmap.appicon)
+            .SetSmallIcon(Resource.Drawable.notification_icon)
+            .SetLargeIcon(BitmapFactory.DecodeResource(context.Resources, Resource.Drawable.notification_large_icon))
             .SetAutoCancel(true)
             .SetContentIntent(pendingIntent)
             .Build();
