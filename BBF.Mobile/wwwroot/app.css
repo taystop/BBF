@@ -58,22 +58,55 @@ h1:focus {
     text-align: start;
 }
 
+/* Status/nav-bar insets are handled natively (see MainActivity's SystemBarInsetsListener), which pads
+   the whole WebView viewport so it never draws under the system bars in the first place — nothing
+   here needs to reserve space for them itself. */
 .status-bar-safe-area {
     display: none;
 }
 
-@supports (-webkit-touch-callout: none) {
-    .status-bar-safe-area {
-        display: flex;
-        position: sticky;
-        top: 0;
-        height: env(safe-area-inset-top);
-        background-color: #f7f7f7;
-        width: 100%;
-        z-index: 1;
-    }
+.bbf-bottom-nav {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 56px;
+    display: flex;
+    background-color: var(--mud-palette-surface);
+    box-shadow: 0 -1px 4px rgba(0, 0, 0, 0.15);
+    z-index: var(--mud-zindex-appbar);
+}
 
-    .flex-column, .navbar-brand {
-        padding-left: env(safe-area-inset-left);
-    }
+.bbf-bottom-nav-item {
+    flex: 1 1 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    font-size: 0.7rem;
+    color: var(--mud-palette-text-secondary);
+    text-decoration: none;
+    cursor: pointer;
+}
+
+.bbf-bottom-nav-item.active {
+    color: var(--mud-palette-primary);
+}
+
+/* MudBlazor's own .mud-main-content padding-top depends on a --mud-appbar-height variable and
+   compound selectors we can't fully verify render the same way inside a BlazorWebView as they do in
+   a browser — rather than guess at that, pin both paddings to this app's actual fixed bar heights
+   (standard 64px MudAppBar, our own 56px BottomNav) so content never renders under either bar. */
+.mud-main-content {
+    padding-top: 64px !important;
+    padding-bottom: 56px !important;
+}
+
+/* Chat.razor sets its own full-height flex layout via an unscoped inline <style> tag that assumes
+   only a 64px top app bar (true on BBF.Web, which has no bottom nav) — its calc() renders later in
+   the DOM than this stylesheet, so it would otherwise win the cascade even with matching specificity.
+   Mobile-only override, not touched in BBF.Shared since this would break Web's actual layout there. */
+.chat-root {
+    height: calc(100dvh - 64px - 16px - 56px) !important;
 }

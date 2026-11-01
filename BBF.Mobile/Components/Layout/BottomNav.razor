@@ -1,0 +1,31 @@
+@* MudBlazor has no bottom-navigation component, so this is a small hand-built one: a fixed strip of
+   icon+label tabs, matching the standard Material "bottom navigation" pattern. *@
+<div class="bbf-bottom-nav">
+    <NavLink href="/" Match="NavLinkMatch.All" class="bbf-bottom-nav-item">
+        <MudIcon Icon="@Icons.Material.Filled.Dashboard" />
+        <span>Home</span>
+    </NavLink>
+    <NavLink href="/chat" class="bbf-bottom-nav-item">
+        <MudIcon Icon="@Icons.Material.Filled.Chat" />
+        <span>Chat</span>
+    </NavLink>
+    <NavLink href="/budget" class="bbf-bottom-nav-item">
+        <MudIcon Icon="@Icons.Material.Filled.AccountBalance" />
+        <span>Budget</span>
+    </NavLink>
+    <NavLink href="/documents" class="bbf-bottom-nav-item">
+        <MudIcon Icon="@Icons.Material.Filled.Folder" />
+        <span>Documents</span>
+    </NavLink>
+    <div class="bbf-bottom-nav-item" @onclick="OnMoreClick">
+        <MudIcon Icon="@Icons.Material.Filled.MoreHoriz" />
+        <span>More</span>
+    </div>
+</div>
+
+@code {
+    [Parameter]
+    public EventCallback OnMore { get; set; }
+
+    private Task OnMoreClick() => OnMore.InvokeAsync();
+}

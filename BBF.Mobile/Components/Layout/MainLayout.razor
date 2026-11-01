@@ -3,9 +3,7 @@
 
 <MudLayout>
     <MudAppBar Elevation="1">
-        <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit"
-                       Edge="Edge.Start" OnClick="ToggleDrawer" />
-        <MudText Typo="Typo.h5" Class="ml-3">BBF</MudText>
+        <MudText Typo="Typo.h5">BBF</MudText>
         <MudSpacer />
         <AuthorizeView>
             <Authorized>
@@ -25,13 +23,16 @@
         </AuthorizeView>
     </MudAppBar>
 
-    <MudDrawer @bind-Open="_drawerOpen" Breakpoint="Breakpoint.Md" Elevation="2" Variant="@DrawerVariant.Temporary">
-        <Layout.NavMenu />
+    <MudDrawer @bind-Open="_drawerOpen" Anchor="Anchor.Bottom" Breakpoint="Breakpoint.Md" Elevation="2"
+               Variant="@DrawerVariant.Temporary" Height="80%">
+        <NavMenu />
     </MudDrawer>
 
-    <MudMainContent Class="px-2 px-sm-4 pb-4">
+    <MudMainContent Class="px-2 px-sm-4">
         @Body
     </MudMainContent>
+
+    <BottomNav OnMore="ToggleDrawer" />
 </MudLayout>
 
 <div id="blazor-error-ui" data-nosnippet>
@@ -43,12 +44,22 @@
 @code {
     private bool _drawerOpen;
 
+    [CascadingParameter]
+    private Task<AuthenticationState>? AuthStateTask { get; set; }
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (firstRender)
+        // "/" has no [Authorize] attribute (it shows its own Welcome/Sign-in screen for anonymous
+        // visitors), so this layout renders before login too — never call an authenticated API
+        // without checking first, or ApiAuthDelegatingHandler throws "Not signed in."
+        if (firstRender && AuthStateTask is not null)
         {
-            await ApiGroupContext.InitializeAsync();
-            StateHasChanged();
+            var authState = await AuthStateTask;
+            if (authState.User.Identity?.IsAuthenticated == true)
+            {
+                await ApiGroupContext.InitializeAsync();
+                StateHasChanged();
+            }
         }
     }
 

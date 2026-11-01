@@ -1,0 +1,11 @@
+@page "/login"
+@inject NavigationManager NavigationManager
+
+@code {
+    // BBF.Shared's Home.razor links to "/login" as the one host-agnostic route for "go sign in" —
+    // BBF.Mobile has a real page there; BBF.Web's actual login lives under Identity's Account/Login.
+    protected override void OnInitialized()
+    {
+        NavigationManager.NavigateTo($"Account/Login?returnUrl={Uri.EscapeDataString(NavigationManager.Uri)}", forceLoad: true);
+    }
+}
