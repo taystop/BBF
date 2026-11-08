@@ -7,7 +7,15 @@
     </TitleContent>
     <DialogContent>
         <MudNumericField @bind-Value="Amount" Label="Amount ($)" Required
-                         Variant="Variant.Outlined" Class="mb-3" Format="N2" />
+                         Variant="Variant.Outlined" Class="mb-3" Format="N2"
+                         HelperText="Positive = money out, negative = money in" />
+        <MudSelect T="string" @bind-Value="Kind" Label="Type"
+                   Variant="Variant.Outlined" Class="mb-3"
+                   HelperText="Transfers between your own accounts don't count toward the budget">
+            <MudSelectItem T="string" Value="@("Spending")">Spending</MudSelectItem>
+            <MudSelectItem T="string" Value="@("Income")">Income</MudSelectItem>
+            <MudSelectItem T="string" Value="@("Transfer")">Transfer</MudSelectItem>
+        </MudSelect>
         <MudDatePicker @bind-Date="SelectedDate" Label="Date" Required
                        Variant="Variant.Outlined" Class="mb-3" />
         <MudTextField @bind-Value="Description" Label="Description" Required
@@ -54,6 +62,7 @@
     [Parameter] public List<BudgetCategoryDto> Categories { get; set; } = [];
     [Parameter] public int? AccountId { get; set; }
     [Parameter] public List<AccountDto> Accounts { get; set; } = [];
+    [Parameter] public string Kind { get; set; } = "Spending";
 
     private void Cancel() => MudDialog.Cancel();
     private void Submit() => MudDialog.Close(DialogResult.Ok(new TransactionResult
@@ -63,7 +72,8 @@
         Description = Description,
         MerchantName = MerchantName,
         CategoryId = CategoryId,
-        AccountId = AccountId
+        AccountId = AccountId,
+        Kind = Kind
     }));
 
     public class TransactionResult
@@ -74,5 +84,6 @@
         public string? MerchantName { get; set; }
         public int? CategoryId { get; set; }
         public int? AccountId { get; set; }
+        public string Kind { get; set; } = "Spending";
     }
 }

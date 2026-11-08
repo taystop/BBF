@@ -83,6 +83,8 @@ builder.Services.AddApiHttpClient<IRecurringTransactionService, HttpRecurringTra
 builder.Services.AddApiHttpClient<IBudgetCategoryService, HttpBudgetCategoryService>(apiBaseUrl);
 builder.Services.AddApiHttpClient<IBudgetPeriodService, HttpBudgetPeriodService>(apiBaseUrl);
 builder.Services.AddApiHttpClient<IPlaidService, HttpPlaidService>(apiBaseUrl);
+builder.Services.AddApiHttpClient<BBF.Shared.Contracts.Bills.IBillService, HttpBillService>(apiBaseUrl);
+builder.Services.AddApiHttpClient<BBF.Shared.Contracts.Finance.IFinanceSettingsService, HttpFinanceSettingsService>(apiBaseUrl);
 builder.Services.AddApiHttpClient<IGrocerySectionService, HttpGrocerySectionService>(apiBaseUrl);
 builder.Services.AddApiHttpClient<IIngredientService, HttpIngredientService>(apiBaseUrl);
 builder.Services.AddApiHttpClient<IRecipeService, HttpRecipeService>(apiBaseUrl);

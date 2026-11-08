@@ -100,6 +100,8 @@ builder.Services.AddScoped<AccountsService>();
 builder.Services.AddScoped<BudgetCategoriesService>();
 builder.Services.AddScoped<BudgetPeriodsService>();
 builder.Services.AddScoped<RecurringTransactionsService>();
+builder.Services.AddScoped<BillsService>();
+builder.Services.AddScoped<FinanceSettingsService>();
 builder.Services.AddScoped<GoalsService>();
 builder.Services.AddScoped<GrocerySectionsService>();
 builder.Services.AddScoped<IngredientsService>();
@@ -120,7 +122,9 @@ builder.Services.AddHttpClient<WebSearchService>();
 builder.Services.AddHttpClient<HomeAssistantService>();
 builder.Services.AddHttpClient<EmbyService>();
 builder.Services.AddHttpClient<AmpService>();
-builder.Services.AddHostedService<RecurringMaterializationBackgroundService>();
+builder.Services.AddHostedService<RecurringBillsBackgroundService>();
+builder.Services.AddSingleton<PlaidSyncQueue>();
+builder.Services.AddHostedService<PlaidSyncBackgroundService>();
 builder.Services.AddHostedService<ServiceHealthMonitorBackgroundService>();
 
 // Firebase only initializes when a real service account is configured — keeps the API runnable
@@ -213,6 +217,8 @@ app.MapAccountsEndpoints();
 app.MapBudgetCategoriesEndpoints();
 app.MapBudgetEndpoints();
 app.MapRecurringTransactionsEndpoints();
+app.MapBillsEndpoints();
+app.MapFinanceSettingsEndpoints();
 app.MapGoalsEndpoints();
 app.MapGrocerySectionsEndpoints();
 app.MapIngredientsEndpoints();

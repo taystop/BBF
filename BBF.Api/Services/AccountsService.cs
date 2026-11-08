@@ -13,7 +13,8 @@ public class AccountsService(ITenantDbContextFactory tenantDb)
         await using var db = await tenantDb.CreateForGroupAsync(groupId, ct);
         return await db.Accounts
             .OrderBy(a => a.Name)
-            .Select(a => new AccountDto(a.Id, a.Name, a.AccountType, a.StartingBalance, a.CurrentBalance, a.IsActive, a.PlaidAccountId))
+            .Select(a => new AccountDto(a.Id, a.Name, a.AccountType, a.StartingBalance, a.CurrentBalance, a.IsActive, a.PlaidAccountId,
+                a.CountPurchasesInBudget, a.AvailableBalance, a.BalanceAsOf))
             .ToListAsync(ct);
     }
 
@@ -26,6 +27,7 @@ public class AccountsService(ITenantDbContextFactory tenantDb)
             AccountType = request.AccountType,
             StartingBalance = request.StartingBalance,
             CurrentBalance = request.StartingBalance,
+            CountPurchasesInBudget = request.CountPurchasesInBudget ?? DefaultCountPurchases(request.AccountType),
             GroupId = groupId,
         };
         db.Accounts.Add(account);
@@ -41,7 +43,17 @@ public class AccountsService(ITenantDbContextFactory tenantDb)
 
         entity.Name = request.Name;
         entity.AccountType = request.AccountType;
+        var unlinked = entity.PlaidAccountId is not null && request.PlaidAccountId is null;
         entity.PlaidAccountId = request.PlaidAccountId;
+        if (unlinked)
+        {
+            // No longer bank-fed: fall back to the calculated balance.
+            entity.BalanceAsOf = null;
+            entity.AvailableBalance = null;
+            await RecalculateBalanceAsync(entity.Id, db);
+        }
+        if (request.CountPurchasesInBudget is bool count)
+            entity.CountPurchasesInBudget = count;
         await db.SaveChangesAsync(ct);
     }
 
@@ -65,6 +77,9 @@ public class AccountsService(ITenantDbContextFactory tenantDb)
         var account = await db.Accounts.FirstOrDefaultAsync(a => a.Id == accountId);
         if (account is null) return;
 
+        // Bank-linked accounts take their balance straight from the bank on every sync.
+        if (account.PlaidAccountId is not null && account.BalanceAsOf is not null) return;
+
         var spent = await db.Transactions
             .Where(t => t.AccountId == accountId)
             .SumAsync(t => t.Amount);
@@ -72,6 +87,10 @@ public class AccountsService(ITenantDbContextFactory tenantDb)
         account.CurrentBalance = account.StartingBalance - spent;
     }
 
+    /// <summary>Credit card purchases are off by default: the household budgets the card payment instead.</summary>
+    public static bool DefaultCountPurchases(string accountType) => accountType != "CreditCard";
+
     private static AccountDto ToDto(Account a) =>
-        new(a.Id, a.Name, a.AccountType, a.StartingBalance, a.CurrentBalance, a.IsActive, a.PlaidAccountId);
+        new(a.Id, a.Name, a.AccountType, a.StartingBalance, a.CurrentBalance, a.IsActive, a.PlaidAccountId,
+            a.CountPurchasesInBudget, a.AvailableBalance, a.BalanceAsOf);
 }

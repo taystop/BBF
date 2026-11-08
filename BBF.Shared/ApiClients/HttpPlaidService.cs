@@ -13,6 +13,20 @@ public class HttpPlaidService(HttpClient http) : IPlaidService
         return body?["linkToken"] ?? throw new InvalidOperationException("Empty response creating Plaid link token.");
     }
 
+    public async Task<string> CreateUpdateLinkTokenAsync(int groupId, int connectionId, CancellationToken ct = default)
+    {
+        var response = await http.PostAsync($"/api/groups/{groupId}/plaid/connections/{connectionId}/update-link-token", null, ct);
+        response.EnsureSuccessStatusCode();
+        var body = await response.Content.ReadFromJsonAsync<Dictionary<string, string>>(ct);
+        return body?["linkToken"] ?? throw new InvalidOperationException("Empty response creating Plaid update link token.");
+    }
+
+    public async Task RefreshAccountsAsync(int groupId, int connectionId, CancellationToken ct = default)
+    {
+        var response = await http.PostAsync($"/api/groups/{groupId}/plaid/connections/{connectionId}/refresh-accounts", null, ct);
+        response.EnsureSuccessStatusCode();
+    }
+
     public async Task<PlaidConnectionDto> ExchangePublicTokenAsync(int groupId, ExchangePublicTokenRequest request, CancellationToken ct = default)
     {
         var response = await http.PostAsJsonAsync($"/api/groups/{groupId}/plaid/exchange-token", request, ct);

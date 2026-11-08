@@ -59,12 +59,19 @@
                                             <MudChip T="string" Size="Size.Small" Class="ml-2">Inactive</MudChip>
                                         }
                                     </MudText>
-                                    <MudText Typo="Typo.caption" Color="Color.Secondary">@acct.AccountType</MudText>
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                        @acct.AccountType@(acct.AccountType == "CreditCard" ? (acct.CountPurchasesInBudget ? " · purchases count in budget" : " · only payments count in budget") : "")
+                                    </MudText>
                                 </MudStack>
-                                <MudText Typo="Typo.body1" Color="@(acct.CurrentBalance >= 0 ? Color.Success : Color.Error)"
-                                         Style="min-width: 100px; text-align: right;">
-                                    @acct.CurrentBalance.ToString("C")
-                                </MudText>
+                                <MudStack Spacing="0" AlignItems="AlignItems.End" Style="min-width: 100px;">
+                                    <MudText Typo="Typo.body1" Color="@(acct.CurrentBalance >= 0 ? Color.Success : Color.Error)">
+                                        @acct.CurrentBalance.ToString("C")
+                                    </MudText>
+                                    @if (acct.BalanceAsOf is DateTime asOf)
+                                    {
+                                        <MudText Typo="Typo.caption" Color="Color.Secondary">@BankBalanceCaption(acct, asOf)</MudText>
+                                    }
+                                </MudStack>
                                 <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
                                                OnClick="@(() => EditAccount(acct))" />
                                 <MudIconButton Icon="@(acct.IsActive ? Icons.Material.Filled.VisibilityOff : Icons.Material.Filled.Visibility)"
@@ -88,6 +95,9 @@
                     <MudStack Row AlignItems="AlignItems.Center" Style="flex-wrap: wrap; gap: 8px;" Class="mb-3">
                         <MudText Typo="Typo.h6">Linked Accounts</MudText>
                         <MudSpacer />
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">
+                            Each new bank adds a monthly Plaid fee. Use "Add Accounts" for more accounts at a bank already linked.
+                        </MudText>
                         <MudButton Variant="Variant.Filled" Color="Color.Primary"
                                    StartIcon="@Icons.Material.Filled.AddLink" OnClick="ConnectBank">
                             Connect Bank
@@ -108,6 +118,13 @@
                                             &middot; @conn.Accounts.Count(a => a.IsActive) account@(conn.Accounts.Count(a => a.IsActive) != 1 ? "s" : "")
                                         </MudText>
                                     </MudStack>
+                                    <MudTooltip Text="Add savings or credit card accounts at this bank (no extra Plaid fee)">
+                                        <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Primary"
+                                                   StartIcon="@Icons.Material.Filled.PlaylistAdd"
+                                                   OnClick="@(() => AddAccountsToBank(conn))">
+                                            Add Accounts
+                                        </MudButton>
+                                    </MudTooltip>
                                     <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Error"
                                                OnClick="@(() => DisconnectBank(conn))">
                                         Disconnect
@@ -161,6 +178,9 @@
 </MudContainer>
 
 @code {
+    /// <summary>Set by the Plaid OAuth callback after adding accounts in update mode.</summary>
+    [SupplyParameterFromQuery] public int? RefreshConnection { get; set; }
+
     private List<AccountDto> _accounts = [];
     private List<PlaidConnectionDto> _connections = [];
     private List<PlaidAccountDto> _plaidAccounts = [];
@@ -170,7 +190,17 @@
     {
         GroupContext.OnGroupChanged += OnGroupChanged;
         if (GroupContext.ActiveGroupId is not null)
+        {
+            if (RefreshConnection is int connectionId)
+                await RefreshConnectionAccounts(connectionId);
             await LoadData();
+        }
+    }
+
+    private static string BankBalanceCaption(AccountDto acct, DateTime asOf)
+    {
+        var available = acct.AvailableBalance is decimal a && acct.AccountType != "CreditCard" ? $"{a:C} available · " : "";
+        return $"{available}from bank {asOf.ToLocalTime():MMM d, h:mm tt}";
     }
 
     private async void OnGroupChanged()
@@ -213,7 +243,7 @@
         if (result is not null && !result.Canceled && result.Data is AccountDialog.AccountResult data)
         {
             await AccountSvc.CreateAsync(GroupContext.ActiveGroupId!.Value, new CreateAccountRequest(
-                data.Name, data.AccountType, data.StartingBalance));
+                data.Name, data.AccountType, data.StartingBalance, data.CountPurchasesInBudget));
             await LoadData();
             Snackbar.Add($"Account '{data.Name}' created.", Severity.Success);
         }
@@ -229,6 +259,7 @@
             { x => x.StartingBalance, account.StartingBalance },
             { x => x.PlaidAccountId, account.PlaidAccountId },
             { x => x.IsActive, account.IsActive },
+            { x => x.CountPurchasesInBudget, account.CountPurchasesInBudget },
             { x => x.PlaidAccounts, _plaidAccounts }
         };
         var dialog = await DialogService.ShowAsync<AccountDialog>("Edit Account", parameters);
@@ -237,7 +268,7 @@
         if (result is not null && !result.Canceled && result.Data is AccountDialog.AccountResult data)
         {
             var groupId = GroupContext.ActiveGroupId!.Value;
-            await AccountSvc.UpdateAsync(groupId, account.Id, new UpdateAccountRequest(data.Name, data.AccountType, data.PlaidAccountId));
+            await AccountSvc.UpdateAsync(groupId, account.Id, new UpdateAccountRequest(data.Name, data.AccountType, data.PlaidAccountId, data.CountPurchasesInBudget));
             if (data.IsActive != account.IsActive)
                 await AccountSvc.SetActiveAsync(groupId, account.Id, data.IsActive);
             await LoadData();
@@ -295,6 +326,41 @@
         Snackbar.Add("Bank account connected!", Severity.Success);
         await LoadData();
         StateHasChanged();
+    }
+
+    private async Task AddAccountsToBank(PlaidConnectionDto conn)
+    {
+        try
+        {
+            var token = await Plaid.CreateUpdateLinkTokenAsync(GroupContext.ActiveGroupId!.Value, conn.Id);
+            _dotNetRef ??= DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("plaidLink.openUpdate", _dotNetRef, token, conn.Id);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error: {ex.Message}", Severity.Error);
+        }
+    }
+
+    [JSInvokable]
+    public async Task OnPlaidUpdateSuccess(int connectionId)
+    {
+        await RefreshConnectionAccounts(connectionId);
+        await LoadData();
+        StateHasChanged();
+    }
+
+    private async Task RefreshConnectionAccounts(int connectionId)
+    {
+        try
+        {
+            await Plaid.RefreshAccountsAsync(GroupContext.ActiveGroupId!.Value, connectionId);
+            Snackbar.Add("Accounts updated. Their transactions arrive with the next bank sync.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Couldn't refresh accounts: {ex.Message}", Severity.Error);
+        }
     }
 
     [JSInvokable]

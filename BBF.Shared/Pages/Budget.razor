@@ -1,10 +1,10 @@
 @page "/budget"
 @using BBF.Shared.Contracts.Budget
-@using BBF.Shared.Contracts.Transactions
+@using BBF.Shared.Contracts.Finance
 @attribute [Authorize]
 @inject IBudgetPeriodService BudgetPeriodSvc
 @inject IBudgetCategoryService CategorySvc
-@inject ITransactionService TransactionSvc
+@inject IFinanceSettingsService FinanceSettingsSvc
 @inject ApiGroupContext GroupContext
 @inject IDialogService DialogService
 @inject ISnackbar Snackbar
@@ -48,6 +48,9 @@
             {
                 <MudChip T="string" Size="Size.Small" Color="Color.Default">Closed</MudChip>
             }
+            <MudTooltip Text="Budget settings">
+                <MudIconButton Icon="@Icons.Material.Filled.Settings" OnClick="OpenSettings" />
+            </MudTooltip>
         </MudStack>
 
         @if (_period is null)
@@ -87,6 +90,14 @@
                     </MudPaper>
                 </MudItem>
             </MudGrid>
+
+            @if (_period.UncategorizedSpent != 0)
+            {
+                <MudAlert Severity="Severity.Info" Dense Class="mb-4">
+                    @_period.UncategorizedSpent.ToString("C") of spending this month has no category yet.
+                    <MudLink Href="/transactions" Class="ml-1">Categorize it</MudLink>
+                </MudAlert>
+            }
 
             <MudPaper Class="pa-4" Elevation="2">
                 <MudStack Row AlignItems="AlignItems.Center" Style="flex-wrap: wrap; gap: 8px;" Class="mb-3">
@@ -171,12 +182,8 @@
             return;
         }
 
-        var allTransactions = await TransactionSvc.GetTransactionsAsync(groupId.Value);
-        var spentByCategory = allTransactions
-            .Where(t => t.CategoryId.HasValue && t.Date >= _period.StartDate && t.Date < _period.EndDate && t.Amount > 0)
-            .GroupBy(t => t.CategoryId!.Value)
-            .ToDictionary(g => g.Key, g => g.Sum(t => t.Amount));
-
+        // Spent comes from the API: net of refunds, transfers excluded, card purchases excluded
+        // unless that card is set to count them, and nothing before the budget start date.
         _lineItems = _period.LineItems.Select(li =>
         {
             var category = _categories.FirstOrDefault(c => c.Id == li.CategoryId)
@@ -187,7 +194,7 @@
                 BudgetedAmount = li.BudgetedAmount,
                 RolledOverAmount = li.RolledOverAmount,
                 EditAmount = li.BudgetedAmount,
-                Spent = spentByCategory.GetValueOrDefault(li.CategoryId, 0)
+                Spent = li.Spent
             };
         }).ToList();
 
@@ -199,6 +206,24 @@
 
     private void PreviousMonth() { _selectedMonth = _selectedMonth.AddMonths(-1); _ = LoadData(); }
     private void NextMonth() { _selectedMonth = _selectedMonth.AddMonths(1); _ = LoadData(); }
+
+    private async Task OpenSettings()
+    {
+        var groupId = GroupContext.ActiveGroupId;
+        if (groupId is null) return;
+
+        var settings = await FinanceSettingsSvc.GetAsync(groupId.Value);
+        var parameters = new DialogParameters<FinanceSettingsDialog> { { x => x.BudgetStartDate, settings.BudgetStartDate } };
+        var dialog = await DialogService.ShowAsync<FinanceSettingsDialog>("Budget Settings", parameters);
+        var result = await dialog.Result;
+
+        if (result is not null && !result.Canceled && result.Data is FinanceSettingsDialog.SettingsResult data)
+        {
+            await FinanceSettingsSvc.UpdateAsync(groupId.Value, new UpdateFinanceSettingsRequest(data.BudgetStartDate));
+            Snackbar.Add("Budget settings saved.", Severity.Success);
+            await LoadData();
+        }
+    }
 
     private async Task ClosePeriod()
     {

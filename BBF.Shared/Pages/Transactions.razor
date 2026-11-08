@@ -83,14 +83,28 @@
                             <MudText Typo="Typo.body2">@context.Date.ToString("MMM d")</MudText>
                         </MudTd>
                         <MudTd DataLabel="Description">
-                            <MudText Typo="Typo.body2">@context.Description</MudText>
+                            <MudText Typo="Typo.body2">
+                                @context.Description
+                                @if (context.IsPending)
+                                {
+                                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Warning" Class="ml-1">Pending</MudChip>
+                                }
+                            </MudText>
                             @if (!string.IsNullOrEmpty(context.MerchantName) && context.MerchantName != context.Description)
                             {
                                 <MudText Typo="Typo.caption" Color="Color.Secondary">@context.MerchantName</MudText>
                             }
                         </MudTd>
                         <MudTd DataLabel="Category">
-                            @if (context.CategoryId is not null)
+                            @if (context.Kind == "Transfer")
+                            {
+                                <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Icon="@Icons.Material.Filled.SwapHoriz">Transfer</MudChip>
+                            }
+                            else if (context.Kind == "Income" && context.CategoryId is null)
+                            {
+                                <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="Color.Success" Icon="@Icons.Material.Filled.Payments">Income</MudChip>
+                            }
+                            else if (context.CategoryId is not null)
                             {
                                 <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined"
                                          Style="@($"border-color: {context.CategoryColor}; color: {context.CategoryColor};")">
@@ -107,7 +121,7 @@
                         </MudTd>
                         <MudTd DataLabel="Amount" Style="text-align: right;">
                             <MudText Typo="Typo.body2"
-                                     Color="@(context.Amount >= 0 ? Color.Error : Color.Success)">
+                                     Color="@(context.Kind == "Transfer" ? Color.Default : context.Amount >= 0 ? Color.Error : Color.Success)">
                                 @context.Amount.ToString("C")
                             </MudText>
                         </MudTd>
@@ -218,7 +232,7 @@
         if (result is not null && !result.Canceled && result.Data is TransactionDialog.TransactionResult data)
         {
             await TransactionSvc.CreateAsync(GroupContext.ActiveGroupId!.Value, new CreateTransactionRequest(
-                data.Amount, data.Date, data.Description, data.MerchantName, data.CategoryId, data.AccountId));
+                data.Amount, data.Date, data.Description, data.MerchantName, data.CategoryId, data.AccountId, data.Kind));
             await LoadData();
         }
     }
@@ -234,6 +248,7 @@
             { x => x.MerchantName, txn.MerchantName },
             { x => x.CategoryId, txn.CategoryId },
             { x => x.AccountId, txn.AccountId },
+            { x => x.Kind, txn.Kind },
             { x => x.Categories, _categories },
             { x => x.Accounts, _accounts }
         };
@@ -243,7 +258,7 @@
         if (result is not null && !result.Canceled && result.Data is TransactionDialog.TransactionResult data)
         {
             await TransactionSvc.UpdateAsync(GroupContext.ActiveGroupId!.Value, txn.Id, new UpdateTransactionRequest(
-                data.Amount, data.Date, data.Description, data.MerchantName, data.CategoryId, data.AccountId));
+                data.Amount, data.Date, data.Description, data.MerchantName, data.CategoryId, data.AccountId, data.Kind));
             await LoadData();
         }
     }
@@ -259,6 +274,7 @@
             { x => x.MerchantName, txn.MerchantName },
             { x => x.CategoryId, txn.CategoryId },
             { x => x.AccountId, txn.AccountId },
+            { x => x.Kind, txn.Kind },
             { x => x.Categories, _categories },
             { x => x.Accounts, _accounts }
         };
@@ -268,7 +284,7 @@
         if (result is not null && !result.Canceled && result.Data is TransactionDialog.TransactionResult data)
         {
             await TransactionSvc.UpdateAsync(GroupContext.ActiveGroupId!.Value, txn.Id, new UpdateTransactionRequest(
-                data.Amount, data.Date, data.Description, data.MerchantName, data.CategoryId, data.AccountId));
+                data.Amount, data.Date, data.Description, data.MerchantName, data.CategoryId, data.AccountId, data.Kind));
             await LoadData();
         }
     }

@@ -12,7 +12,10 @@ public record TransactionDto(
     string? CategoryColor,
     int? AccountId,
     string? AccountName,
-    int? RecurringTransactionId);
+    int? RecurringTransactionId,
+    string Kind = "Spending",
+    bool IsPending = false,
+    string? PlaidCategory = null);
 
 public record CreateTransactionRequest(
     decimal Amount,
@@ -20,7 +23,8 @@ public record CreateTransactionRequest(
     string Description,
     string? MerchantName,
     int? CategoryId,
-    int? AccountId);
+    int? AccountId,
+    string Kind = "Spending");
 
 public record UpdateTransactionRequest(
     decimal Amount,
@@ -28,6 +32,7 @@ public record UpdateTransactionRequest(
     string Description,
     string? MerchantName,
     int? CategoryId,
-    int? AccountId);
+    int? AccountId,
+    string Kind = "Spending");
 
 public record CsvImportResult(int Imported, int Skipped);

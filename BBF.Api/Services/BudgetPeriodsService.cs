@@ -1,4 +1,5 @@
 using BBF.Api.Auth;
+using BBF.Data;
 using BBF.Data.Entities;
 using BBF.Shared.Contracts.Budget;
 using Microsoft.EntityFrameworkCore;
@@ -13,7 +14,7 @@ public class BudgetPeriodsService(ITenantDbContextFactory tenantDb)
         var period = await db.BudgetPeriods
             .Include(p => p.LineItems).ThenInclude(li => li.Category)
             .FirstOrDefaultAsync(p => p.StartDate == monthStart, ct);
-        return period is null ? null : ToDto(period);
+        return period is null ? null : ToDto(period, await GetSpendingAsync(db, period.StartDate, period.EndDate, ct));
     }
 
     public async Task<BudgetPeriodDto> GetOrCreateCurrentPeriodAsync(int groupId, CancellationToken ct = default)
@@ -64,7 +65,7 @@ public class BudgetPeriodsService(ITenantDbContextFactory tenantDb)
                 .FirstAsync(p => p.Id == period.Id, ct);
         }
 
-        return ToDto(period);
+        return ToDto(period, await GetSpendingAsync(db, period.StartDate, period.EndDate, ct));
     }
 
     public async Task UpsertLineItemAsync(int groupId, int periodId, UpsertLineItemRequest request, CancellationToken ct = default)
@@ -106,14 +107,11 @@ public class BudgetPeriodsService(ITenantDbContextFactory tenantDb)
         if (period is null || period.Status == "Closed") return;
 
         var nextLineItems = new List<(int CategoryId, decimal BudgetedAmount, decimal RolledOverAmount)>();
+        var spending = await GetSpendingAsync(db, period.StartDate, period.EndDate, ct);
 
         foreach (var lineItem in period.LineItems)
         {
-            var spent = await db.Transactions
-                .Where(t => t.CategoryId == lineItem.CategoryId
-                    && t.Date >= period.StartDate && t.Date < period.EndDate
-                    && t.Amount > 0)
-                .SumAsync(t => t.Amount, ct);
+            var spent = spending.GetValueOrDefault(lineItem.CategoryId);
 
             var remaining = lineItem.BudgetedAmount + lineItem.RolledOverAmount - spent;
             var rolloverForNext = lineItem.Category.RolloverBehavior == "RollOver" ? remaining : 0m;
@@ -148,8 +146,31 @@ public class BudgetPeriodsService(ITenantDbContextFactory tenantDb)
         await db.SaveChangesAsync(ct);
     }
 
-    private static BudgetPeriodDto ToDto(BudgetPeriod p) => new(
+    /// <summary>
+    /// Net spending per category (key 0 = uncategorized) for [start, end): purchases minus refunds, only
+    /// "Spending" transactions, skipping accounts whose purchases don't count (credit cards by default,
+    /// since the card payment is what gets budgeted) and anything before the group's budget start date.
+    /// </summary>
+    public static async Task<Dictionary<int, decimal>> GetSpendingAsync(ApplicationDbContext db, DateTime start, DateTime end, CancellationToken ct)
+    {
+        var budgetStart = await FinanceSettingsService.GetBudgetStartAsync(db, ct);
+        var from = budgetStart is DateTime cutoff && cutoff > start ? cutoff : start;
+
+        var rows = await db.Transactions
+            .Where(t => t.Date >= from && t.Date < end
+                && t.Kind == TransactionKinds.Spending
+                && (t.Account == null || t.Account.CountPurchasesInBudget))
+            .GroupBy(t => t.CategoryId ?? 0)
+            .Select(g => new { CategoryId = g.Key, Spent = g.Sum(t => t.Amount) })
+            .ToListAsync(ct);
+
+        return rows.ToDictionary(r => r.CategoryId, r => r.Spent);
+    }
+
+    private static BudgetPeriodDto ToDto(BudgetPeriod p, Dictionary<int, decimal> spending) => new(
         p.Id, p.StartDate, p.EndDate, p.Status,
         p.LineItems.Select(li => new BudgetLineItemDto(
-            li.Id, li.CategoryId, li.Category.Name, li.Category.Color, li.BudgetedAmount, li.RolledOverAmount)).ToList());
+            li.Id, li.CategoryId, li.Category.Name, li.Category.Color, li.BudgetedAmount, li.RolledOverAmount,
+            spending.GetValueOrDefault(li.CategoryId))).ToList(),
+        spending.GetValueOrDefault(0));
 }

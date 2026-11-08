@@ -11,7 +11,10 @@ public record RecurringTransactionDto(
     string Frequency,
     DateTime NextOccurrence,
     DateTime? EndDate,
-    bool IsActive);
+    bool IsActive,
+    bool AutoPost = false,
+    string? MatchText = null,
+    DateTime? NextDue = null);
 
 public record CreateRecurringTransactionRequest(
     string Payee,
@@ -20,7 +23,9 @@ public record CreateRecurringTransactionRequest(
     int AccountId,
     string Frequency,
     DateTime NextOccurrence,
-    DateTime? EndDate);
+    DateTime? EndDate,
+    bool AutoPost = false,
+    string? MatchText = null);
 
 public record UpdateRecurringTransactionRequest(
     string Payee,
@@ -30,4 +35,6 @@ public record UpdateRecurringTransactionRequest(
     string Frequency,
     DateTime NextOccurrence,
     DateTime? EndDate,
-    bool IsActive);
+    bool IsActive,
+    bool AutoPost = false,
+    string? MatchText = null);

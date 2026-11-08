@@ -100,6 +100,15 @@ namespace BBF.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<decimal?>("AvailableBalance")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<DateTime?>("BalanceAsOf")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("CountPurchasesInBudget")
+                        .HasColumnType("bit");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
@@ -148,6 +157,51 @@ namespace BBF.Migrations
                     b.HasKey("Key");
 
                     b.ToTable("AppSettings");
+                });
+
+            modelBuilder.Entity("BBF.Data.Entities.BillOccurrence", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("DueDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<decimal>("ExpectedAmount")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<int?>("GroupId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("PaidAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("RecurringTransactionId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int?>("TransactionId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TransactionId");
+
+                    b.HasIndex("GroupId", "DueDate");
+
+                    b.HasIndex("RecurringTransactionId", "DueDate")
+                        .IsUnique();
+
+                    b.ToTable("BillOccurrences");
                 });
 
             modelBuilder.Entity("BBF.Data.Entities.BudgetCategory", b =>
@@ -476,6 +530,29 @@ namespace BBF.Migrations
                     b.HasIndex("OccurredAtUtc");
 
                     b.ToTable("ErrorLog", (string)null);
+                });
+
+            modelBuilder.Entity("BBF.Data.Entities.FinanceSettings", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime?>("BudgetStartDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("GroupId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("GroupId")
+                        .IsUnique()
+                        .HasFilter("[GroupId] IS NOT NULL");
+
+                    b.ToTable("FinanceSettings");
                 });
 
             modelBuilder.Entity("BBF.Data.Entities.Goal", b =>
@@ -820,6 +897,9 @@ namespace BBF.Migrations
                     b.Property<DateTime?>("LastSynced")
                         .HasColumnType("datetime2");
 
+                    b.Property<string>("WebhookUrl")
+                        .HasColumnType("nvarchar(max)");
+
                     b.HasKey("Id");
 
                     b.HasIndex("GroupId");
@@ -911,6 +991,9 @@ namespace BBF.Migrations
                     b.Property<decimal>("Amount")
                         .HasColumnType("decimal(18,2)");
 
+                    b.Property<bool>("AutoPost")
+                        .HasColumnType("bit");
+
                     b.Property<int?>("CategoryId")
                         .HasColumnType("int");
 
@@ -929,6 +1012,9 @@ namespace BBF.Migrations
 
                     b.Property<bool>("IsActive")
                         .HasColumnType("bit");
+
+                    b.Property<string>("MatchText")
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<DateTime>("NextOccurrence")
                         .HasColumnType("datetime2");
@@ -1044,7 +1130,23 @@ namespace BBF.Migrations
                     b.Property<int?>("GroupId")
                         .HasColumnType("int");
 
+                    b.Property<bool>("IsPending")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)")
+                        .HasDefaultValue("Spending");
+
+                    b.Property<bool>("KindSetManually")
+                        .HasColumnType("bit");
+
                     b.Property<string>("MerchantName")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("PlaidCategory")
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("PlaidTransactionId")
@@ -1332,6 +1434,24 @@ namespace BBF.Migrations
                     b.Navigation("PlaidAccount");
                 });
 
+            modelBuilder.Entity("BBF.Data.Entities.BillOccurrence", b =>
+                {
+                    b.HasOne("BBF.Data.Entities.RecurringTransaction", "RecurringTransaction")
+                        .WithMany()
+                        .HasForeignKey("RecurringTransactionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("BBF.Data.Entities.Transaction", "Transaction")
+                        .WithMany()
+                        .HasForeignKey("TransactionId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.Navigation("RecurringTransaction");
+
+                    b.Navigation("Transaction");
+                });
+
             modelBuilder.Entity("BBF.Data.Entities.BudgetCategory", b =>
                 {
                     b.HasOne("BBF.Data.Entities.UserGroup", "Group")
@@ -1430,6 +1550,16 @@ namespace BBF.Migrations
                         .WithMany()
                         .HasForeignKey("GroupId")
                         .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Group");
+                });
+
+            modelBuilder.Entity("BBF.Data.Entities.FinanceSettings", b =>
+                {
+                    b.HasOne("BBF.Data.Entities.UserGroup", "Group")
+                        .WithMany()
+                        .HasForeignKey("GroupId")
+                        .OnDelete(DeleteBehavior.Cascade);
 
                     b.Navigation("Group");
                 });

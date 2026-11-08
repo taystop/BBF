@@ -18,7 +18,8 @@ public class TransactionsService(ITenantDbContextFactory tenantDb)
             .Select(t => new TransactionDto(
                 t.Id, t.Amount, t.Date, t.Description, t.MerchantName, t.Source,
                 t.CategoryId, t.Category != null ? t.Category.Name : null, t.Category != null ? t.Category.Color : null,
-                t.AccountId, t.Account != null ? t.Account.Name : null, t.RecurringTransactionId))
+                t.AccountId, t.Account != null ? t.Account.Name : null, t.RecurringTransactionId,
+                t.Kind, t.IsPending, t.PlaidCategory))
             .ToListAsync(ct);
     }
 
@@ -35,6 +36,8 @@ public class TransactionsService(ITenantDbContextFactory tenantDb)
             AccountId = request.AccountId,
             GroupId = groupId,
             Source = "Manual",
+            Kind = ValidKind(request.Kind),
+            KindSetManually = true,
             CreatedAt = DateTime.UtcNow,
         };
         db.Transactions.Add(transaction);
@@ -65,6 +68,12 @@ public class TransactionsService(ITenantDbContextFactory tenantDb)
         entity.MerchantName = request.MerchantName;
         entity.CategoryId = request.CategoryId;
         entity.AccountId = request.AccountId;
+        var kind = ValidKind(request.Kind);
+        if (kind != entity.Kind)
+        {
+            entity.Kind = kind;
+            entity.KindSetManually = true; // later bank syncs keep this choice
+        }
         await db.SaveChangesAsync(ct);
 
         if (previousAccountId is int oldAccountId)
@@ -81,6 +90,7 @@ public class TransactionsService(ITenantDbContextFactory tenantDb)
         if (entity is null) return;
 
         var accountId = entity.AccountId;
+        await BillMatching.UnlinkTransactionsAsync(db, [entity.Id], ct);
         db.Transactions.Remove(entity);
         await db.SaveChangesAsync(ct);
 
@@ -164,6 +174,7 @@ public class TransactionsService(ITenantDbContextFactory tenantDb)
                 GroupId = groupId,
                 AccountId = accountId,
                 Source = "CSV",
+                Kind = amount < 0 ? TransactionKinds.Income : TransactionKinds.Spending,
                 CreatedAt = DateTime.UtcNow
             });
             imported++;
@@ -207,8 +218,11 @@ public class TransactionsService(ITenantDbContextFactory tenantDb)
         return result;
     }
 
+    private static string ValidKind(string? kind) => TransactionKinds.IsValid(kind) ? kind! : TransactionKinds.Spending;
+
     private static TransactionDto ToDto(Transaction t) => new(
         t.Id, t.Amount, t.Date, t.Description, t.MerchantName, t.Source,
         t.CategoryId, t.Category?.Name, t.Category?.Color,
-        t.AccountId, t.Account?.Name, t.RecurringTransactionId);
+        t.AccountId, t.Account?.Name, t.RecurringTransactionId,
+        t.Kind, t.IsPending, t.PlaidCategory);
 }

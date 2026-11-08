@@ -8,6 +8,9 @@
     <DialogContent>
         <MudTextField @bind-Value="Payee" Label="Payee" Required
                       Variant="Variant.Outlined" Class="mb-3" />
+        <MudTextField @bind-Value="MatchText" Label="Bank description contains (optional)"
+                      Variant="Variant.Outlined" Class="mb-3"
+                      HelperText="Used to match the bank payment to this bill. Leave blank to use the payee name." />
         <MudNumericField @bind-Value="Amount" Label="Amount ($)" Required
                          Variant="Variant.Outlined" Class="mb-3" Format="N2" />
         <MudSelect T="int?" @bind-Value="CategoryId" Label="Category"
@@ -31,10 +34,14 @@
             <MudSelectItem Value="@("Monthly")">Monthly</MudSelectItem>
             <MudSelectItem Value="@("Yearly")">Yearly</MudSelectItem>
         </MudSelect>
-        <MudDatePicker @bind-Date="NextOccurrence" Label="Next Occurrence" Required
+        <MudDatePicker @bind-Date="NextOccurrence" Label="Next Due Date" Required
                        Variant="Variant.Outlined" Class="mb-3" />
         <MudDatePicker @bind-Date="EndDate" Label="End Date (optional)"
                        Variant="Variant.Outlined" Class="mb-3" Clearable />
+        <MudSwitch @bind-Value="AutoPost" Label="Post automatically on the due date" Color="Color.Primary" Class="mb-1" />
+        <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block mb-3">
+            Only for cash or manual items. Leave off for anything paid from a linked bank account, so it isn't counted twice.
+        </MudText>
         <MudSwitch @bind-Value="IsActive" Label="Active" Color="Color.Primary" />
     </DialogContent>
     <DialogActions>
@@ -61,6 +68,8 @@
     [Parameter] public DateTime? NextOccurrence { get; set; } = DateTime.Today;
     [Parameter] public DateTime? EndDate { get; set; }
     [Parameter] public bool IsActive { get; set; } = true;
+    [Parameter] public bool AutoPost { get; set; }
+    [Parameter] public string? MatchText { get; set; }
 
     private void Cancel() => MudDialog.Cancel();
     private void Submit() => MudDialog.Close(DialogResult.Ok(new RecurringTransactionResult
@@ -72,7 +81,9 @@
         Frequency = Frequency,
         NextOccurrence = NextOccurrence!.Value,
         EndDate = EndDate,
-        IsActive = IsActive
+        IsActive = IsActive,
+        AutoPost = AutoPost,
+        MatchText = MatchText
     }));
 
     public class RecurringTransactionResult
@@ -85,5 +96,7 @@
         public DateTime NextOccurrence { get; set; }
         public DateTime? EndDate { get; set; }
         public bool IsActive { get; set; } = true;
+        public bool AutoPost { get; set; }
+        public string? MatchText { get; set; }
     }
 }

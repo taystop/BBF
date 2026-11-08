@@ -7,8 +7,11 @@ public record AccountDto(
     decimal StartingBalance,
     decimal CurrentBalance,
     bool IsActive,
-    int? PlaidAccountId);
+    int? PlaidAccountId,
+    bool CountPurchasesInBudget = true,
+    decimal? AvailableBalance = null,
+    DateTime? BalanceAsOf = null);
 
-public record CreateAccountRequest(string Name, string AccountType, decimal StartingBalance);
+public record CreateAccountRequest(string Name, string AccountType, decimal StartingBalance, bool? CountPurchasesInBudget = null);
 
-public record UpdateAccountRequest(string Name, string AccountType, int? PlaidAccountId);
+public record UpdateAccountRequest(string Name, string AccountType, int? PlaidAccountId, bool? CountPurchasesInBudget = null);

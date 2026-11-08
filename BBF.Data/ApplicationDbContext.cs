@@ -31,6 +31,8 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
     public DbSet<BudgetPeriod> BudgetPeriods => Set<BudgetPeriod>();
     public DbSet<BudgetLineItem> BudgetLineItems => Set<BudgetLineItem>();
     public DbSet<RecurringTransaction> RecurringTransactions => Set<RecurringTransaction>();
+    public DbSet<BillOccurrence> BillOccurrences => Set<BillOccurrence>();
+    public DbSet<FinanceSettings> FinanceSettings => Set<FinanceSettings>();
     public DbSet<Goal> Goals => Set<Goal>();
     public DbSet<GoalContribution> GoalContributions => Set<GoalContribution>();
     public DbSet<UserGroup> UserGroups => Set<UserGroup>();
@@ -144,6 +146,7 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
             e.HasIndex(t => t.PlaidTransactionId).IsUnique().HasFilter("[PlaidTransactionId] IS NOT NULL");
             e.HasIndex(t => t.Date);
             e.HasIndex(t => t.AccountId);
+            e.Property(t => t.Kind).HasMaxLength(20).HasDefaultValue(TransactionKinds.Spending);
 
             e.HasOne(t => t.Group)
              .WithMany()
@@ -162,6 +165,7 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
             e.HasQueryFilter(a => CurrentGroupId == null || a.GroupId == CurrentGroupId);
             e.Property(a => a.StartingBalance).HasColumnType("decimal(18,2)");
             e.Property(a => a.CurrentBalance).HasColumnType("decimal(18,2)");
+            e.Property(a => a.AvailableBalance).HasColumnType("decimal(18,2)");
 
             e.HasOne(a => a.Group)
              .WithMany()
@@ -232,6 +236,37 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
              .WithMany()
              .HasForeignKey(r => r.AccountId)
              .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        builder.Entity<BillOccurrence>(e =>
+        {
+            e.HasQueryFilter(b => CurrentGroupId == null || b.GroupId == CurrentGroupId);
+            e.Property(b => b.ExpectedAmount).HasColumnType("decimal(18,2)");
+            e.HasIndex(b => new { b.RecurringTransactionId, b.DueDate }).IsUnique();
+            e.HasIndex(b => new { b.GroupId, b.DueDate });
+
+            e.HasOne(b => b.RecurringTransaction)
+             .WithMany()
+             .HasForeignKey(b => b.RecurringTransactionId)
+             .OnDelete(DeleteBehavior.Cascade);
+
+            // NoAction, not SetNull: avoids a second cascade path into this table. Code that deletes a
+            // transaction unlinks its bill first (see BillMatching.UnlinkTransactionsAsync).
+            e.HasOne(b => b.Transaction)
+             .WithMany()
+             .HasForeignKey(b => b.TransactionId)
+             .OnDelete(DeleteBehavior.NoAction);
+        });
+
+        builder.Entity<FinanceSettings>(e =>
+        {
+            e.HasQueryFilter(f => CurrentGroupId == null || f.GroupId == CurrentGroupId);
+            e.HasIndex(f => f.GroupId).IsUnique().HasFilter("[GroupId] IS NOT NULL");
+
+            e.HasOne(f => f.Group)
+             .WithMany()
+             .HasForeignKey(f => f.GroupId)
+             .OnDelete(DeleteBehavior.Cascade);
         });
 
         // Goal -> GoalContribution (cascade delete)

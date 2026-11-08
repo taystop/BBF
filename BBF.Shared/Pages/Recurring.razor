@@ -2,8 +2,10 @@
 @using BBF.Shared.Contracts.Accounts
 @using BBF.Shared.Contracts.Budget
 @using BBF.Shared.Contracts.Recurring
+@using BBF.Shared.Contracts.Bills
 @attribute [Authorize]
 @inject IRecurringTransactionService RecurringSvc
+@inject IBillService BillSvc
 @inject IAccountService AccountSvc
 @inject IBudgetCategoryService CategorySvc
 @inject ApiGroupContext GroupContext
@@ -34,6 +36,70 @@
             <MudIcon Icon="@Icons.Material.Filled.Autorenew" Size="Size.Large" Color="Color.Primary" />
             <MudText Typo="Typo.h4">Recurring Transactions</MudText>
         </MudStack>
+
+        <MudPaper Class="pa-4 mb-4" Elevation="2">
+            <MudStack Row AlignItems="AlignItems.Center" Style="flex-wrap: wrap; gap: 8px;" Class="mb-1">
+                <MudText Typo="Typo.h6">Bills</MudText>
+                <MudSpacer />
+                <MudChipSet T="string" @bind-SelectedValue="_billFilter" SelectionMode="SelectionMode.SingleSelection" CheckMark="false">
+                    <MudChip T="string" Value="@("upcoming")" Size="Size.Small">Upcoming</MudChip>
+                    <MudChip T="string" Value="@("recent")" Size="Size.Small">Recent</MudChip>
+                </MudChipSet>
+            </MudStack>
+            <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block mb-3">
+                Each bill is marked paid automatically when a matching bank transaction arrives.
+            </MudText>
+
+            @foreach (var bill in VisibleBills)
+            {
+                var status = BillStatusLabel(bill);
+                <MudPaper Class="pa-3 mb-2" Elevation="1">
+                    <div class="d-flex align-center flex-wrap" style="gap: 8px 12px;">
+                        <MudStack Spacing="0" Style="min-width: 64px;">
+                            <MudText Typo="Typo.subtitle2">@bill.DueDate.ToString("MMM d")</MudText>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">@bill.DueDate.ToString("ddd")</MudText>
+                        </MudStack>
+                        <MudStack Spacing="0" Style="flex: 1; min-width: 140px;">
+                            <MudText Typo="Typo.body2" Style="font-weight: 600;">@bill.Payee</MudText>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                @(bill.TransactionId is not null
+                                    ? $"Paid by \"{bill.TransactionDescription}\" {bill.TransactionAmount:C} on {bill.TransactionDate:MMM d}"
+                                    : bill.CategoryName ?? bill.AccountName)
+                            </MudText>
+                        </MudStack>
+                        <MudText Typo="Typo.body2" Style="min-width: 80px; text-align: right;">@bill.ExpectedAmount.ToString("C")</MudText>
+                        <MudChip T="string" Size="Size.Small" Color="@status.Color">@status.Text</MudChip>
+                        <div class="d-flex">
+                            @if (bill.Status == "Expected")
+                            {
+                                <MudTooltip Text="Mark paid">
+                                    <MudIconButton Icon="@Icons.Material.Filled.CheckCircle" Size="Size.Small" Color="Color.Success"
+                                                   OnClick="@(() => SetBillStatus(bill, "Paid"))" />
+                                </MudTooltip>
+                                <MudTooltip Text="Skip this one">
+                                    <MudIconButton Icon="@Icons.Material.Filled.SkipNext" Size="Size.Small"
+                                                   OnClick="@(() => SetBillStatus(bill, "Skipped"))" />
+                                </MudTooltip>
+                            }
+                            else
+                            {
+                                <MudTooltip Text="Undo (back to expected)">
+                                    <MudIconButton Icon="@Icons.Material.Filled.Undo" Size="Size.Small"
+                                                   OnClick="@(() => SetBillStatus(bill, "Expected"))" />
+                                </MudTooltip>
+                            }
+                        </div>
+                    </div>
+                </MudPaper>
+            }
+
+            @if (!VisibleBills.Any())
+            {
+                <MudText Typo="Typo.body2" Color="Color.Secondary" Class="pa-4 text-center">
+                    @(_billFilter == "upcoming" ? "No bills due in the next 45 days." : "No bills in the last 30 days.")
+                </MudText>
+            }
+        </MudPaper>
 
         <MudPaper Class="pa-4" Elevation="2">
             <MudStack Row AlignItems="AlignItems.Center" Style="flex-wrap: wrap; gap: 8px;" Class="mb-3">
@@ -71,8 +137,16 @@
                         </MudTd>
                         <MudTd DataLabel="Category">@(context.CategoryName ?? "—")</MudTd>
                         <MudTd DataLabel="Account">@context.AccountName</MudTd>
-                        <MudTd DataLabel="Frequency">@context.Frequency</MudTd>
-                        <MudTd DataLabel="Next">@context.NextOccurrence.ToString("MMM d, yyyy")</MudTd>
+                        <MudTd DataLabel="Frequency">
+                            @context.Frequency
+                            @if (context.AutoPost)
+                            {
+                                <MudTooltip Text="Posted automatically on each due date">
+                                    <MudIcon Icon="@Icons.Material.Filled.FlashOn" Size="Size.Small" Class="ml-1" />
+                                </MudTooltip>
+                            }
+                        </MudTd>
+                        <MudTd DataLabel="Next">@((context.NextDue ?? context.NextOccurrence).ToString("MMM d, yyyy"))</MudTd>
                         <MudTd DataLabel="Status">
                             <MudChip T="string" Size="Size.Small" Color="@(context.IsActive ? Color.Success : Color.Default)">
                                 @(context.IsActive ? "Active" : "Inactive")
@@ -110,6 +184,27 @@
     private List<RecurringTransactionDto> _rules = [];
     private List<BudgetCategoryDto> _categories = [];
     private List<AccountDto> _accounts = [];
+    private List<BillOccurrenceDto> _bills = [];
+    private string _billFilter = "upcoming";
+
+    private IEnumerable<BillOccurrenceDto> VisibleBills => _billFilter == "upcoming"
+        ? _bills.Where(b => b.DueDate >= DateTime.Today || b.Status == "Expected")
+        : _bills.Where(b => b.DueDate < DateTime.Today).Reverse();
+
+    private static (string Text, Color Color) BillStatusLabel(BillOccurrenceDto bill) => bill.Status switch
+    {
+        "Paid" => ("Paid", Color.Success),
+        "Skipped" => ("Skipped", Color.Default),
+        _ when bill.DueDate < DateTime.Today => ("Overdue", Color.Error),
+        _ when bill.DueDate <= DateTime.Today.AddDays(3) => ("Due soon", Color.Warning),
+        _ => ("Expected", Color.Info),
+    };
+
+    private async Task SetBillStatus(BillOccurrenceDto bill, string status)
+    {
+        await BillSvc.UpdateStatusAsync(GroupContext.ActiveGroupId!.Value, bill.Id, new UpdateBillStatusRequest(status));
+        await LoadData();
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -135,6 +230,7 @@
         _rules = await RecurringSvc.GetActiveAsync(groupId.Value);
         _accounts = await AccountSvc.GetAccountsAsync(groupId.Value);
         _categories = await CategorySvc.GetCategoriesAsync(groupId.Value);
+        _bills = await BillSvc.GetBillsAsync(groupId.Value, DateTime.Today.AddDays(-30), DateTime.Today.AddDays(45));
 
         StateHasChanged();
     }
@@ -154,7 +250,8 @@
         if (result is not null && !result.Canceled && result.Data is RecurringTransactionDialog.RecurringTransactionResult data)
         {
             await RecurringSvc.CreateAsync(GroupContext.ActiveGroupId!.Value, new CreateRecurringTransactionRequest(
-                data.Payee, data.Amount, data.CategoryId, data.AccountId, data.Frequency, data.NextOccurrence, data.EndDate));
+                data.Payee, data.Amount, data.CategoryId, data.AccountId, data.Frequency, data.NextOccurrence, data.EndDate,
+                data.AutoPost, data.MatchText));
             Snackbar.Add("Recurring rule created.", Severity.Success);
             await LoadData();
         }
@@ -172,7 +269,10 @@
             { x => x.AccountId, rule.AccountId },
             { x => x.Accounts, _accounts },
             { x => x.Frequency, rule.Frequency },
-            { x => x.NextOccurrence, rule.NextOccurrence },
+            // The next bill still due, not the rule's internal pointer (which runs ~60 days ahead).
+            { x => x.NextOccurrence, rule.NextDue ?? rule.NextOccurrence },
+            { x => x.AutoPost, rule.AutoPost },
+            { x => x.MatchText, rule.MatchText },
             { x => x.EndDate, rule.EndDate },
             { x => x.IsActive, rule.IsActive }
         };
@@ -182,7 +282,8 @@
         if (result is not null && !result.Canceled && result.Data is RecurringTransactionDialog.RecurringTransactionResult data)
         {
             await RecurringSvc.UpdateAsync(GroupContext.ActiveGroupId!.Value, rule.Id, new UpdateRecurringTransactionRequest(
-                data.Payee, data.Amount, data.CategoryId, data.AccountId, data.Frequency, data.NextOccurrence, data.EndDate, data.IsActive));
+                data.Payee, data.Amount, data.CategoryId, data.AccountId, data.Frequency, data.NextOccurrence, data.EndDate, data.IsActive,
+                data.AutoPost, data.MatchText));
             await LoadData();
         }
     }
