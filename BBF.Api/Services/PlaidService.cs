@@ -240,6 +240,7 @@ public class PlaidService
                 .ToDictionaryAsync(x => x.PlaidAccountId, ct);
 
             int? cardPaymentCategoryId = null;
+            List<BBF.Data.Entities.MerchantRule>? merchantRules = null; // loaded on first use
             async Task<int> CardPaymentCategoryAsync() =>
                 cardPaymentCategoryId ??= await EnsureCategoryAsync(db, connection.GroupId, CreditCardPaymentsCategory, ct);
 
@@ -304,7 +305,9 @@ public class PlaidService
                     {
                         row.CategoryId = isCardPayment
                             ? await CardPaymentCategoryAsync()
-                            : (await MatchCategoryAsync(db, txn, ct))?.Id;
+                            : MoneyService.FindRuleCategory(merchantRules ??= await db.MerchantRules.ToListAsync(ct),
+                                  row.Description, row.MerchantName, row.BankDescription)
+                              ?? (await MatchCategoryAsync(db, txn, ct))?.Id;
                     }
 
                     if (pending is null)

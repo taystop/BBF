@@ -49,7 +49,7 @@
         {
             var login = await AuthService.LoginAsync(new LoginRequest(_userName, _password));
             await AuthProvider.SignInAsync(login);
-            Nav.NavigateTo("/", replace: true);
+            Nav.NavigateTo("/money", replace: true);
         }
         catch (Exception)
         {

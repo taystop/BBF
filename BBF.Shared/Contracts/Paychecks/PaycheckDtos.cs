@@ -73,7 +73,10 @@ public record PayPeriodDto(
     decimal BillsTotal,
     decimal BillsPaid,
     decimal OtherSpending,
-    decimal Leftover);
+    decimal Leftover,
+    // Still to happen this period (private items included): paychecks not yet in, bills not yet paid.
+    decimal IncomeStillExpected = 0,
+    decimal BillsStillDue = 0);
 
 public record UpdatePaycheckStatusRequest(string Status);
 

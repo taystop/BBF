@@ -7,7 +7,7 @@ public class HttpFinanceSettingsService(HttpClient http) : IFinanceSettingsServi
 {
     public async Task<FinanceSettingsDto> GetAsync(int groupId, CancellationToken ct = default) =>
         await http.GetFromJsonAsync<FinanceSettingsDto>($"/api/groups/{groupId}/finance-settings", ct)
-        ?? new FinanceSettingsDto(null);
+        ?? new FinanceSettingsDto(null, null);
 
     public async Task UpdateAsync(int groupId, UpdateFinanceSettingsRequest request, CancellationToken ct = default)
     {

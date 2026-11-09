@@ -1,0 +1,277 @@
+@page "/money"
+@using BBF.Shared.Contracts.Money
+@attribute [Authorize]
+@inject IMoneyService MoneySvc
+@inject ApiGroupContext GroupContext
+@inject ISnackbar Snackbar
+@implements IDisposable
+
+<PageTitle>Money - BBF</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="py-4">
+    @if (!GroupContext.IsInitialized || GroupContext.ActiveGroupId is null)
+    {
+        <MudPaper Class="pa-6 text-center" Elevation="2">
+            <MudIcon Icon="@Icons.Material.Filled.Group" Size="Size.Large" Color="Color.Secondary" Class="mb-3" />
+            <MudText Typo="Typo.h5" Class="mb-2">No Budget Group</MudText>
+            <MudText Typo="Typo.body1" Color="Color.Secondary" Class="mb-4">
+                Create or join a group to start tracking your money.
+            </MudText>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" Href="/groups"
+                       StartIcon="@Icons.Material.Filled.GroupAdd">
+                Manage Groups
+            </MudButton>
+        </MudPaper>
+    }
+    else if (_loadFailed)
+    {
+        <MudAlert Severity="Severity.Error" Class="mb-4">
+            Couldn't load your money summary.
+            <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="LoadData" Class="ml-2">Try again</MudButton>
+        </MudAlert>
+    }
+    else if (_summary is null)
+    {
+        <div class="d-flex justify-center mt-8"><MudProgressCircular Indeterminate Color="Color.Primary" /></div>
+    }
+    else
+    {
+        var s = _summary;
+        <MudStack Row AlignItems="AlignItems.Center" Style="flex-wrap: wrap; gap: 8px;" Class="mb-4">
+            <MudIcon Icon="@Icons.Material.Filled.Savings" Size="Size.Large" Color="Color.Primary" />
+            <MudText Typo="Typo.h4">Money</MudText>
+        </MudStack>
+
+        @if (!s.HasCheckingAccounts)
+        {
+            <MudAlert Severity="Severity.Info" Class="mb-4">
+                Add a checking account on the <MudLink Href="/accounts">Accounts</MudLink> page to see what's safe to spend.
+            </MudAlert>
+        }
+
+        <MudGrid Spacing="3">
+            <MudItem xs="12" md="6">
+                <MudPaper Class="pa-4" Elevation="2" Style="height: 100%;">
+                    <MudText Typo="Typo.subtitle2" Color="Color.Secondary">Safe to spend</MudText>
+                    <MudText Typo="Typo.h3" Color="@(s.SafeToSpend >= 0 ? Color.Success : Color.Error)">@s.SafeToSpend.ToString("C")</MudText>
+                    <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block mb-3">
+                        @(s.NextPayday is DateTime next ? $"until payday on {next:dddd, MMM d}" : "after this pay period's bills")
+                    </MudText>
+                    <div class="d-flex justify-space-between"><MudText Typo="Typo.body2">Checking now</MudText><MudText Typo="Typo.body2">@s.CheckingBalance.ToString("C")</MudText></div>
+                    <div class="d-flex justify-space-between"><MudText Typo="Typo.body2">+ Paychecks still coming</MudText><MudText Typo="Typo.body2">@s.IncomeStillExpected.ToString("C")</MudText></div>
+                    <div class="d-flex justify-space-between"><MudText Typo="Typo.body2">− Bills still due</MudText><MudText Typo="Typo.body2">@s.BillsStillDue.ToString("C")</MudText></div>
+                    @if (s.BalanceAsOf is DateTime asOf)
+                    {
+                        <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block mt-2">Bank balance as of @asOf.ToLocalTime().ToString("MMM d, h:mm tt")</MudText>
+                    }
+                </MudPaper>
+            </MudItem>
+
+            <MudItem xs="12" md="6">
+                <MudPaper Class="pa-4" Elevation="2" Style="height: 100%;">
+                    <div class="d-flex align-center">
+                        <MudText Typo="Typo.subtitle2" Color="Color.Secondary">This paycheck</MudText>
+                        <MudSpacer />
+                        <MudButton Size="Size.Small" Variant="Variant.Text" Href="/paychecks" EndIcon="@Icons.Material.Filled.ChevronRight">Details</MudButton>
+                    </div>
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">@s.Period.Start.ToString("MMM d") – @s.Period.End.ToString("MMM d")</MudText>
+                    <MudText Typo="Typo.h4" Color="@(s.Period.Leftover >= 0 ? Color.Success : Color.Error)" Class="mt-1">@s.Period.Leftover.ToString("C")</MudText>
+                    <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block mb-3">left over after bills and spending</MudText>
+                    <div class="d-flex justify-space-between"><MudText Typo="Typo.body2">Income</MudText><MudText Typo="Typo.body2">@s.Period.Income.ToString("C")</MudText></div>
+                    <div class="d-flex justify-space-between"><MudText Typo="Typo.body2">Bills</MudText><MudText Typo="Typo.body2">@s.Period.BillsTotal.ToString("C")</MudText></div>
+                    <div class="d-flex justify-space-between"><MudText Typo="Typo.body2">Other spending so far</MudText><MudText Typo="Typo.body2">@s.Period.OtherSpending.ToString("C")</MudText></div>
+                    @if (!s.Period.HasPaySchedules)
+                    {
+                        <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block mt-2">
+                            Add your paychecks on the <MudLink Href="/paychecks" Typo="Typo.caption">Paychecks</MudLink> page to fill this in.
+                        </MudText>
+                    }
+                </MudPaper>
+            </MudItem>
+
+            <MudItem xs="12" md="6">
+                <MudPaper Class="pa-4" Elevation="2" Style="height: 100%;">
+                    <div class="d-flex align-center mb-2">
+                        <MudText Typo="Typo.subtitle2" Color="Color.Secondary">Next bills</MudText>
+                        <MudSpacer />
+                        <MudButton Size="Size.Small" Variant="Variant.Text" Href="/recurring" EndIcon="@Icons.Material.Filled.ChevronRight">All bills</MudButton>
+                    </div>
+                    @foreach (var bill in s.NextBills)
+                    {
+                        <div class="d-flex align-center py-1" style="gap: 12px;">
+                            <MudText Typo="Typo.body2" Style="min-width: 56px;">@bill.DueDate.ToString("MMM d")</MudText>
+                            <MudText Typo="Typo.body2" Style="flex: 1;">
+                                @if (bill.IsHidden)
+                                {
+                                    <MudIcon Icon="@Icons.Material.Filled.Lock" Size="Size.Small" Class="mr-1" Style="vertical-align: middle;" />
+                                }
+                                @bill.Payee
+                            </MudText>
+                            @if (bill.Amount is decimal amount)
+                            {
+                                <MudText Typo="Typo.body2">@amount.ToString("C")</MudText>
+                            }
+                        </div>
+                    }
+                    @if (s.NextBills.Count == 0)
+                    {
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">No bills coming up.</MudText>
+                    }
+                </MudPaper>
+            </MudItem>
+
+            <MudItem xs="12" md="6">
+                <MudPaper Class="pa-4" Elevation="2" Style="height: 100%;">
+                    <MudText Typo="Typo.subtitle2" Color="Color.Secondary">To categorize</MudText>
+                    @if (s.ToCategorize > 0)
+                    {
+                        <MudText Typo="Typo.h4" Color="Color.Warning">@s.ToCategorize</MudText>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block mb-3">
+                            transaction@(s.ToCategorize == 1 ? "" : "s") without a category don't count toward any budget yet.
+                        </MudText>
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" Href="/review" StartIcon="@Icons.Material.Filled.FactCheck">Review now</MudButton>
+                    }
+                    else
+                    {
+                        <MudText Typo="Typo.h4" Color="Color.Success">All set</MudText>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">Every transaction has a category.</MudText>
+                    }
+                </MudPaper>
+            </MudItem>
+
+            <MudItem xs="12">
+                <MudPaper Class="pa-4" Elevation="2">
+                    <div class="d-flex align-center flex-wrap" style="gap: 8px;">
+                        <MudText Typo="Typo.h6">Upcoming</MudText>
+                        <MudSpacer />
+                        <MudChipSet T="int" SelectedValue="_forecastDays" SelectedValueChanged="ChangeForecastDays"
+                                    SelectionMode="SelectionMode.SingleSelection" CheckMark="false">
+                            <MudChip T="int" Value="14" Size="Size.Small">2 weeks</MudChip>
+                            <MudChip T="int" Value="45" Size="Size.Small">45 days</MudChip>
+                        </MudChipSet>
+                    </div>
+                    @if (_forecast is not null)
+                    {
+                        var lowest = _forecast.Days.MinBy(d => d.EndBalance);
+                        <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block mb-3">
+                            Checking balance with expected paychecks and bills, minus about @_forecast.DailySpending.ToString("C") a day of everyday spending (your last 4 weeks).
+                            @if (lowest is not null)
+                            {
+                                <span> Lowest: <b>@lowest.EndBalance.ToString("C")</b> on @lowest.Date.ToString("MMM d").</span>
+                            }
+                        </MudText>
+
+                        @foreach (var day in VisibleDays)
+                        {
+                            <div class="d-flex align-start py-2" style="gap: 12px; border-top: 1px solid var(--mud-palette-lines-default);">
+                                <MudStack Spacing="0" Style="min-width: 64px;">
+                                    <MudText Typo="Typo.subtitle2">@day.Date.ToString("MMM d")</MudText>
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary">@(day.Date == DateTime.Today ? "Today" : day.Date.ToString("ddd"))</MudText>
+                                </MudStack>
+                                <div style="flex: 1; min-width: 0;">
+                                    @foreach (var item in day.Items)
+                                    {
+                                        <div class="d-flex" style="gap: 8px;">
+                                            <MudIcon Icon="@(item.Kind == "Paycheck" ? Icons.Material.Filled.Payments : Icons.Material.Filled.Receipt)"
+                                                     Size="Size.Small" Color="@(item.Kind == "Paycheck" ? Color.Success : Color.Default)" />
+                                            <MudText Typo="Typo.body2" Style="flex: 1; overflow: hidden; text-overflow: ellipsis;">@item.Name</MudText>
+                                            @if (item.Amount is decimal amount)
+                                            {
+                                                <MudText Typo="Typo.body2" Color="@(amount >= 0 ? Color.Success : Color.Default)">@(amount >= 0 ? "+" : "")@amount.ToString("C")</MudText>
+                                            }
+                                        </div>
+                                    }
+                                    @if (day.Items.Count == 0)
+                                    {
+                                        <MudText Typo="Typo.body2" Color="Color.Secondary">Everyday spending only</MudText>
+                                    }
+                                </div>
+                                <MudStack Spacing="0" AlignItems="AlignItems.End" Style="min-width: 90px;">
+                                    <MudText Typo="Typo.body2" Color="@(day.IsTight ? Color.Error : Color.Default)" Style="font-weight: 600;">@day.EndBalance.ToString("C")</MudText>
+                                    @if (day.IsTight)
+                                    {
+                                        <MudText Typo="Typo.caption" Color="Color.Error">tight</MudText>
+                                    }
+                                </MudStack>
+                            </div>
+                        }
+                    }
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
+    }
+</MudContainer>
+
+@code {
+    private MoneySummaryDto? _summary;
+    private ForecastDto? _forecast;
+    private int _forecastDays = 14;
+    private bool _loadFailed;
+
+    /// <summary>Days worth showing: today, any day with a paycheck or bill, and the first day of each tight stretch.</summary>
+    private IEnumerable<ForecastDayDto> VisibleDays
+    {
+        get
+        {
+            if (_forecast is null) yield break;
+            var wasTight = false;
+            foreach (var day in _forecast.Days)
+            {
+                if (day.Date == DateTime.Today || day.Items.Count > 0 || (day.IsTight && !wasTight))
+                    yield return day;
+                wasTight = day.IsTight;
+            }
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        GroupContext.OnGroupChanged += OnGroupChanged;
+        if (GroupContext.ActiveGroupId is not null)
+            await LoadData();
+    }
+
+    private async void OnGroupChanged()
+    {
+        await InvokeAsync(async () =>
+        {
+            await LoadData();
+            StateHasChanged();
+        });
+    }
+
+    private async Task LoadData()
+    {
+        var groupId = GroupContext.ActiveGroupId;
+        if (groupId is null) return;
+
+        try
+        {
+            _loadFailed = false;
+            _summary = await MoneySvc.GetSummaryAsync(groupId.Value);
+            _forecast = await MoneySvc.GetForecastAsync(groupId.Value, _forecastDays);
+        }
+        catch (Exception)
+        {
+            _loadFailed = true;
+        }
+        StateHasChanged();
+    }
+
+    private async Task ChangeForecastDays(int days)
+    {
+        _forecastDays = days;
+        var groupId = GroupContext.ActiveGroupId;
+        if (groupId is null) return;
+        try
+        {
+            _forecast = await MoneySvc.GetForecastAsync(groupId.Value, days);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Couldn't load the forecast: {ex.Message}", Severity.Error);
+        }
+    }
+
+    public void Dispose() => GroupContext.OnGroupChanged -= OnGroupChanged;
+}

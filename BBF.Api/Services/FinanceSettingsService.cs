@@ -11,7 +11,8 @@ public class FinanceSettingsService(ITenantDbContextFactory tenantDb)
     public async Task<FinanceSettingsDto> GetAsync(int groupId, CancellationToken ct = default)
     {
         await using var db = await tenantDb.CreateForGroupAsync(groupId, ct);
-        return new FinanceSettingsDto(await GetBudgetStartAsync(db, ct));
+        var settings = await db.FinanceSettings.FirstOrDefaultAsync(ct);
+        return new FinanceSettingsDto(settings?.BudgetStartDate, settings?.LowBalanceThreshold);
     }
 
     public async Task UpdateAsync(int groupId, UpdateFinanceSettingsRequest request, CancellationToken ct = default)
@@ -24,6 +25,7 @@ public class FinanceSettingsService(ITenantDbContextFactory tenantDb)
             db.FinanceSettings.Add(settings);
         }
         settings.BudgetStartDate = request.BudgetStartDate?.Date;
+        settings.LowBalanceThreshold = request.LowBalanceThreshold is decimal t && t >= 0 ? t : null;
         await db.SaveChangesAsync(ct);
     }
 

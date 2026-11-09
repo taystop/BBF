@@ -213,13 +213,17 @@
         if (groupId is null) return;
 
         var settings = await FinanceSettingsSvc.GetAsync(groupId.Value);
-        var parameters = new DialogParameters<FinanceSettingsDialog> { { x => x.BudgetStartDate, settings.BudgetStartDate } };
+        var parameters = new DialogParameters<FinanceSettingsDialog>
+        {
+            { x => x.BudgetStartDate, settings.BudgetStartDate },
+            { x => x.LowBalanceThreshold, settings.LowBalanceThreshold },
+        };
         var dialog = await DialogService.ShowAsync<FinanceSettingsDialog>("Budget Settings", parameters);
         var result = await dialog.Result;
 
         if (result is not null && !result.Canceled && result.Data is FinanceSettingsDialog.SettingsResult data)
         {
-            await FinanceSettingsSvc.UpdateAsync(groupId.Value, new UpdateFinanceSettingsRequest(data.BudgetStartDate));
+            await FinanceSettingsSvc.UpdateAsync(groupId.Value, new UpdateFinanceSettingsRequest(data.BudgetStartDate, data.LowBalanceThreshold));
             Snackbar.Add("Budget settings saved.", Severity.Success);
             await LoadData();
         }

@@ -35,6 +35,8 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
     public DbSet<FinanceSettings> FinanceSettings => Set<FinanceSettings>();
     public DbSet<PaySchedule> PaySchedules => Set<PaySchedule>();
     public DbSet<Paycheck> Paychecks => Set<Paycheck>();
+    public DbSet<MerchantRule> MerchantRules => Set<MerchantRule>();
+    public DbSet<SuggestionDismissal> SuggestionDismissals => Set<SuggestionDismissal>();
     public DbSet<Goal> Goals => Set<Goal>();
     public DbSet<GoalContribution> GoalContributions => Set<GoalContribution>();
     public DbSet<UserGroup> UserGroups => Set<UserGroup>();
@@ -300,9 +302,41 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
              .OnDelete(DeleteBehavior.NoAction);
         });
 
+        builder.Entity<MerchantRule>(e =>
+        {
+            e.HasQueryFilter(r => CurrentGroupId == null || r.GroupId == CurrentGroupId);
+            e.Property(r => r.MatchText).HasMaxLength(200);
+            e.Property(r => r.DisplayText).HasMaxLength(200);
+            e.HasIndex(r => new { r.GroupId, r.MatchText }).IsUnique().HasFilter("[GroupId] IS NOT NULL");
+
+            e.HasOne(r => r.Group)
+             .WithMany()
+             .HasForeignKey(r => r.GroupId)
+             .OnDelete(DeleteBehavior.Cascade);
+
+            // Categories are deactivated rather than deleted; NoAction avoids a second cascade path.
+            e.HasOne(r => r.Category)
+             .WithMany()
+             .HasForeignKey(r => r.CategoryId)
+             .OnDelete(DeleteBehavior.NoAction);
+        });
+
+        builder.Entity<SuggestionDismissal>(e =>
+        {
+            e.HasQueryFilter(d => CurrentGroupId == null || d.GroupId == CurrentGroupId);
+            e.Property(d => d.Key).HasMaxLength(300);
+            e.HasIndex(d => new { d.GroupId, d.Key }).IsUnique().HasFilter("[GroupId] IS NOT NULL");
+
+            e.HasOne(d => d.Group)
+             .WithMany()
+             .HasForeignKey(d => d.GroupId)
+             .OnDelete(DeleteBehavior.Cascade);
+        });
+
         builder.Entity<FinanceSettings>(e =>
         {
             e.HasQueryFilter(f => CurrentGroupId == null || f.GroupId == CurrentGroupId);
+            e.Property(f => f.LowBalanceThreshold).HasColumnType("decimal(18,2)");
             e.HasIndex(f => f.GroupId).IsUnique().HasFilter("[GroupId] IS NOT NULL");
 
             e.HasOne(f => f.Group)

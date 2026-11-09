@@ -160,13 +160,15 @@ public class PaychecksService(ITenantDbContextFactory tenantDb, ICurrentUserCont
         }).ToList();
 
         // Bills paid from this period: moved here by hand, or due after this payday and no later than the
-        // next one (so this is the last payday before the due date). Income-type rules are left out;
-        // paychecks cover income.
+        // next one (so this is the last payday before the due date). Income-type rules are left out
+        // (paychecks cover income), and so are bills on cards whose purchases don't count: the card
+        // payment from checking is what's budgeted.
         var nextPayday = end.AddDays(1);
         var bills = await db.BillOccurrences
             .Include(b => b.RecurringTransaction).ThenInclude(r => r.Account)
             .Include(b => b.Transaction)
             .Where(b => b.ExpectedAmount > 0
+                && b.RecurringTransaction.Account.CountPurchasesInBudget
                 && (b.AssignedPayDate != null
                     ? b.AssignedPayDate >= start && b.AssignedPayDate <= end
                     : b.DueDate > start && b.DueDate <= nextPayday))
@@ -202,10 +204,14 @@ public class PaychecksService(ITenantDbContextFactory tenantDb, ICurrentUserCont
         var billsTotal = billsCounted.Sum(BillAmount);
         var billsPaid = billsCounted.Where(b => b.Status == BillStatuses.Paid).Sum(BillAmount);
 
+        var incomeStillExpected = counted.Where(p => p.Status == PaycheckStatuses.Expected).Sum(p => p.ExpectedAmount);
+        var billsStillDue = billsCounted.Where(b => b.Status == BillStatuses.Expected).Sum(b => b.ExpectedAmount);
+
         return new PayPeriodDto(
             start, end, hasSchedules, paycheckDtos, billDtos,
             income, incomeReceived, billsTotal, billsPaid, otherSpending,
-            income - billsTotal - otherSpending);
+            income - billsTotal - otherSpending,
+            incomeStillExpected, billsStillDue);
     }
 
     // --- helpers ---

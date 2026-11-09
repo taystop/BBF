@@ -4,7 +4,9 @@
 @using BBF.Shared.Contracts.Auth
 @using BBF.Shared.Contracts.Groups
 @using BBF.Shared.Contracts.Paychecks
+@using BBF.Shared.Contracts.Money
 @attribute [Authorize]
+@inject IMoneyService MoneySvc
 @inject IPaycheckService PaycheckSvc
 @inject IAccountService AccountSvc
 @inject IGroupService GroupSvc
@@ -207,6 +209,36 @@
             </MudPaper>
         }
 
+
+        @if (_suggestions.Count > 0)
+        {
+            <MudPaper Class="pa-4 mb-4" Elevation="2">
+                <MudText Typo="Typo.h6" Class="mb-1">Suggested paychecks</MudText>
+                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block mb-3">
+                    Regular deposits found in your recent transactions. Add one to track it as a paycheck.
+                </MudText>
+                @foreach (var sug in _suggestions)
+                {
+                    <MudPaper Class="pa-3 mb-2" Elevation="1" @key="sug.Key">
+                        <div class="d-flex align-center flex-wrap" style="gap: 8px 12px;">
+                            <MudStack Spacing="0" Style="flex: 1; min-width: 160px;">
+                                <MudText Typo="Typo.body2" Style="font-weight: 600;">@sug.Payee</MudText>
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                    @SuggestionScheduleText(sug) · seen @string.Join(", ", sug.Dates.Select(d => d.ToString("MMM d")))
+                                </MudText>
+                            </MudStack>
+                            <MudText Typo="Typo.body2" Style="min-width: 80px; text-align: right;">@sug.Amount.ToString("C")</MudText>
+                            <div class="d-flex" style="gap: 4px;">
+                                <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary"
+                                           StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => AcceptSuggestion(sug))">Add</MudButton>
+                                <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="@(() => DismissSuggestion(sug))">Not recurring</MudButton>
+                            </div>
+                        </div>
+                    </MudPaper>
+                }
+            </MudPaper>
+        }
+
         <MudPaper Class="pa-4" Elevation="2">
             <MudStack Row AlignItems="AlignItems.Center" Style="flex-wrap: wrap; gap: 8px;" Class="mb-3">
                 <MudText Typo="Typo.h6">Pay schedules</MudText>
@@ -279,6 +311,7 @@
     private List<GroupMemberDto> _members = [];
     private List<AccountDto> _accounts = [];
     private string? _currentUserId;
+    private List<RecurringSuggestionDto> _suggestions = [];
 
     private bool IsCurrentPeriod => _period is not null && _period.Start <= DateTime.Today && DateTime.Today <= _period.End;
 
@@ -313,6 +346,7 @@
         _schedules = await PaycheckSvc.GetSchedulesAsync(groupId.Value);
         _members = await GroupSvc.GetMembersAsync(groupId.Value);
         _accounts = (await AccountSvc.GetAccountsAsync(groupId.Value)).Where(a => a.IsActive && !a.IsHidden).ToList();
+        await LoadSuggestions(groupId.Value, income: true);
         await LoadPeriod();
     }
 
@@ -484,6 +518,60 @@
         _ when bill.DueDate < DateTime.Today => ("Overdue", Color.Error),
         _ => ("Expected", Color.Info),
     };
+
+    private static string SuggestionScheduleText(RecurringSuggestionDto sug) => sug.Frequency switch
+    {
+        "Weekly" => $"every week, next {sug.NextDue:ddd MMM d}",
+        "BiWeekly" => $"every two weeks, next {sug.NextDue:ddd MMM d}",
+        _ => $"monthly around the {Ordinal(sug.NextDue.Day)}",
+    };
+
+    private static string Ordinal(int day) => day + (day % 100 is 11 or 12 or 13 ? "th" : (day % 10) switch { 1 => "st", 2 => "nd", 3 => "rd", _ => "th" });
+
+    private async Task DismissSuggestion(RecurringSuggestionDto sug)
+    {
+        try
+        {
+            await MoneySvc.DismissSuggestionAsync(GroupContext.ActiveGroupId!.Value, new DismissSuggestionRequest(sug.Key));
+            _suggestions.Remove(sug);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Couldn't dismiss it: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task LoadSuggestions(int groupId, bool income)
+    {
+        try
+        {
+            _suggestions = (await MoneySvc.GetSuggestionsAsync(groupId)).Where(s => s.IsIncome == income).ToList();
+        }
+        catch (Exception)
+        {
+            _suggestions = []; // suggestions are a nice-to-have; never block the page on them
+        }
+    }
+
+    private async Task AcceptSuggestion(RecurringSuggestionDto sug)
+    {
+        if (_members.Count == 0) return;
+        var parameters = new DialogParameters<PayScheduleDialog>
+        {
+            { x => x.IsNew, true },
+            { x => x.Members, _members },
+            { x => x.Accounts, _accounts },
+            { x => x.CurrentUserId, _currentUserId },
+            { x => x.UserId, _members.Any(m => m.UserId == _currentUserId) ? _currentUserId! : _members[0].UserId },
+            { x => x.Name, sug.Payee },
+            { x => x.ExpectedAmount, sug.Amount },
+            { x => x.Frequency, sug.Frequency },
+            { x => x.FirstPayday, sug.NextDue },
+            { x => x.DepositAccountId, _accounts.Any(a => a.Id == sug.AccountId) ? sug.AccountId : null },
+            { x => x.MatchText, sug.MatchText },
+        };
+        await SaveScheduleFromDialog(parameters, null);
+    }
 
     public void Dispose() => GroupContext.OnGroupChanged -= OnGroupChanged;
 }

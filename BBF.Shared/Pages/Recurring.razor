@@ -3,7 +3,9 @@
 @using BBF.Shared.Contracts.Budget
 @using BBF.Shared.Contracts.Recurring
 @using BBF.Shared.Contracts.Bills
+@using BBF.Shared.Contracts.Money
 @attribute [Authorize]
+@inject IMoneyService MoneySvc
 @inject IRecurringTransactionService RecurringSvc
 @inject IBillService BillSvc
 @inject IAccountService AccountSvc
@@ -36,6 +38,36 @@
             <MudIcon Icon="@Icons.Material.Filled.Autorenew" Size="Size.Large" Color="Color.Primary" />
             <MudText Typo="Typo.h4">Recurring Transactions</MudText>
         </MudStack>
+
+
+        @if (_suggestions.Count > 0)
+        {
+            <MudPaper Class="pa-4 mb-4" Elevation="2">
+                <MudText Typo="Typo.h6" Class="mb-1">Suggested bills</MudText>
+                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block mb-3">
+                    These showed up on a steady schedule in your recent transactions. Add one to track it as a bill.
+                </MudText>
+                @foreach (var sug in _suggestions)
+                {
+                    <MudPaper Class="pa-3 mb-2" Elevation="1" @key="sug.Key">
+                        <div class="d-flex align-center flex-wrap" style="gap: 8px 12px;">
+                            <MudStack Spacing="0" Style="flex: 1; min-width: 160px;">
+                                <MudText Typo="Typo.body2" Style="font-weight: 600;">@sug.Payee</MudText>
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                    @SuggestionScheduleText(sug) · seen @string.Join(", ", sug.Dates.Select(d => d.ToString("MMM d")))
+                                </MudText>
+                            </MudStack>
+                            <MudText Typo="Typo.body2" Style="min-width: 80px; text-align: right;">@sug.Amount.ToString("C")</MudText>
+                            <div class="d-flex" style="gap: 4px;">
+                                <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary"
+                                           StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => AcceptSuggestion(sug))">Add</MudButton>
+                                <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="@(() => DismissSuggestion(sug))">Not recurring</MudButton>
+                            </div>
+                        </div>
+                    </MudPaper>
+                }
+            </MudPaper>
+        }
 
         <MudPaper Class="pa-4 mb-4" Elevation="2">
             <MudStack Row AlignItems="AlignItems.Center" Style="flex-wrap: wrap; gap: 8px;" Class="mb-1">
@@ -185,6 +217,7 @@
     private List<BudgetCategoryDto> _categories = [];
     private List<AccountDto> _accounts = [];
     private List<BillOccurrenceDto> _bills = [];
+    private List<RecurringSuggestionDto> _suggestions = [];
     private string _billFilter = "upcoming";
 
     private IEnumerable<BillOccurrenceDto> VisibleBills => _billFilter == "upcoming"
@@ -231,6 +264,7 @@
         _accounts = (await AccountSvc.GetAccountsAsync(groupId.Value)).Where(a => !a.IsHidden).ToList();
         _categories = await CategorySvc.GetCategoriesAsync(groupId.Value);
         _bills = await BillSvc.GetBillsAsync(groupId.Value, DateTime.Today.AddDays(-30), DateTime.Today.AddDays(45));
+        await LoadSuggestions(groupId.Value, income: false);
 
         StateHasChanged();
     }
@@ -302,6 +336,73 @@
         if (result is not null && !result.Canceled)
         {
             await RecurringSvc.DeleteAsync(GroupContext.ActiveGroupId!.Value, rule.Id);
+            await LoadData();
+        }
+    }
+
+    private static string SuggestionScheduleText(RecurringSuggestionDto sug) => sug.Frequency switch
+    {
+        "Weekly" => $"every week, next {sug.NextDue:ddd MMM d}",
+        "BiWeekly" => $"every two weeks, next {sug.NextDue:ddd MMM d}",
+        _ => $"monthly around the {Ordinal(sug.NextDue.Day)}",
+    };
+
+    private static string Ordinal(int day) => day + (day % 100 is 11 or 12 or 13 ? "th" : (day % 10) switch { 1 => "st", 2 => "nd", 3 => "rd", _ => "th" });
+
+    private async Task DismissSuggestion(RecurringSuggestionDto sug)
+    {
+        try
+        {
+            await MoneySvc.DismissSuggestionAsync(GroupContext.ActiveGroupId!.Value, new DismissSuggestionRequest(sug.Key));
+            _suggestions.Remove(sug);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Couldn't dismiss it: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task LoadSuggestions(int groupId, bool income)
+    {
+        try
+        {
+            _suggestions = (await MoneySvc.GetSuggestionsAsync(groupId)).Where(s => s.IsIncome == income).ToList();
+        }
+        catch (Exception)
+        {
+            _suggestions = []; // suggestions are a nice-to-have; never block the page on them
+        }
+    }
+
+    private async Task AcceptSuggestion(RecurringSuggestionDto sug)
+    {
+        if (_accounts.Count == 0)
+        {
+            Snackbar.Add("Add an account first.", Severity.Warning);
+            return;
+        }
+        var parameters = new DialogParameters<RecurringTransactionDialog>
+        {
+            { x => x.IsNew, true },
+            { x => x.Payee, sug.Payee },
+            { x => x.MatchText, sug.MatchText },
+            { x => x.Amount, sug.Amount },
+            { x => x.CategoryId, sug.CategoryId },
+            { x => x.Categories, _categories },
+            { x => x.Accounts, _accounts },
+            { x => x.AccountId, _accounts.Any(a => a.Id == sug.AccountId) ? sug.AccountId!.Value : _accounts[0].Id },
+            { x => x.Frequency, sug.Frequency },
+            { x => x.NextOccurrence, sug.NextDue },
+        };
+        var dialog = await DialogService.ShowAsync<RecurringTransactionDialog>("Add Recurring Transaction", parameters);
+        var result = await dialog.Result;
+
+        if (result is not null && !result.Canceled && result.Data is RecurringTransactionDialog.RecurringTransactionResult data)
+        {
+            await RecurringSvc.CreateAsync(GroupContext.ActiveGroupId!.Value, new CreateRecurringTransactionRequest(
+                data.Payee, data.Amount, data.CategoryId, data.AccountId, data.Frequency, data.NextOccurrence, data.EndDate,
+                data.AutoPost, data.MatchText));
+            Snackbar.Add($"{data.Payee} is now tracked as a bill.", Severity.Success);
             await LoadData();
         }
     }

@@ -5,9 +5,15 @@
     <DialogContent>
         <MudDatePicker @bind-Date="BudgetStartDate" Label="Budget start date"
                        Variant="Variant.Outlined" Clearable Class="mb-2" />
-        <MudText Typo="Typo.caption" Color="Color.Secondary">
+        <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block mb-4">
             Transactions before this date are left out of all budget totals. Useful for a fresh start;
             nothing is deleted.
+        </MudText>
+        <MudNumericField T="decimal?" @bind-Value="LowBalanceThreshold" Label="Low balance warning ($)"
+                         Variant="Variant.Outlined" Format="N2" Min="0" Clearable Class="mb-2"
+                         Placeholder="200" />
+        <MudText Typo="Typo.caption" Color="Color.Secondary">
+            Days when checking is forecast to drop below this are flagged. Leave blank for $200.
         </MudText>
     </DialogContent>
     <DialogActions>
@@ -21,12 +27,14 @@
     private IMudDialogInstance MudDialog { get; set; } = null!;
 
     [Parameter] public DateTime? BudgetStartDate { get; set; }
+    [Parameter] public decimal? LowBalanceThreshold { get; set; }
 
     private void Cancel() => MudDialog.Cancel();
-    private void Submit() => MudDialog.Close(DialogResult.Ok(new SettingsResult { BudgetStartDate = BudgetStartDate }));
+    private void Submit() => MudDialog.Close(DialogResult.Ok(new SettingsResult { BudgetStartDate = BudgetStartDate, LowBalanceThreshold = LowBalanceThreshold }));
 
     public class SettingsResult
     {
         public DateTime? BudgetStartDate { get; set; }
+        public decimal? LowBalanceThreshold { get; set; }
     }
 }

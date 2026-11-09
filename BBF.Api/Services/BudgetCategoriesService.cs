@@ -72,6 +72,8 @@ public class BudgetCategoriesService(ITenantDbContextFactory tenantDb)
         if (hasSubcategories)
             return new DeleteBudgetCategoryResult(false, $"'{entity.Name}' has subcategories. Reassign or delete them first.");
 
+        // Merchant rules point at the category with no database cascade.
+        db.MerchantRules.RemoveRange(await db.MerchantRules.Where(r => r.CategoryId == categoryId).ToListAsync(ct));
         db.BudgetCategories.Remove(entity);
         await db.SaveChangesAsync(ct);
         return new DeleteBudgetCategoryResult(true, null);

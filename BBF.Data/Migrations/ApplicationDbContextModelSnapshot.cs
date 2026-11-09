@@ -553,6 +553,9 @@ namespace BBF.Migrations
                     b.Property<int?>("GroupId")
                         .HasColumnType("int");
 
+                    b.Property<decimal?>("LowBalanceThreshold")
+                        .HasColumnType("decimal(18,2)");
+
                     b.HasKey("Id");
 
                     b.HasIndex("GroupId")
@@ -816,6 +819,44 @@ namespace BBF.Migrations
                         .HasFilter("[GroupId] IS NOT NULL");
 
                     b.ToTable("MealPlanWeeks");
+                });
+
+            modelBuilder.Entity("BBF.Data.Entities.MerchantRule", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("CategoryId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("DisplayText")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<int?>("GroupId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("MatchText")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CategoryId");
+
+                    b.HasIndex("GroupId", "MatchText")
+                        .IsUnique()
+                        .HasFilter("[GroupId] IS NOT NULL");
+
+                    b.ToTable("MerchantRules");
                 });
 
             modelBuilder.Entity("BBF.Data.Entities.PaySchedule", b =>
@@ -1210,6 +1251,34 @@ namespace BBF.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("ServiceLinks");
+                });
+
+            modelBuilder.Entity("BBF.Data.Entities.SuggestionDismissal", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("GroupId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Key")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("GroupId", "Key")
+                        .IsUnique()
+                        .HasFilter("[GroupId] IS NOT NULL");
+
+                    b.ToTable("SuggestionDismissals");
                 });
 
             modelBuilder.Entity("BBF.Data.Entities.Transaction", b =>
@@ -1806,6 +1875,24 @@ namespace BBF.Migrations
                     b.Navigation("Group");
                 });
 
+            modelBuilder.Entity("BBF.Data.Entities.MerchantRule", b =>
+                {
+                    b.HasOne("BBF.Data.Entities.BudgetCategory", "Category")
+                        .WithMany()
+                        .HasForeignKey("CategoryId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("BBF.Data.Entities.UserGroup", "Group")
+                        .WithMany()
+                        .HasForeignKey("GroupId")
+                        .OnDelete(DeleteBehavior.Cascade);
+
+                    b.Navigation("Category");
+
+                    b.Navigation("Group");
+                });
+
             modelBuilder.Entity("BBF.Data.Entities.PaySchedule", b =>
                 {
                     b.HasOne("BBF.Data.Entities.Account", "DepositAccount")
@@ -1925,6 +2012,16 @@ namespace BBF.Migrations
                         .IsRequired();
 
                     b.Navigation("ServiceLink");
+                });
+
+            modelBuilder.Entity("BBF.Data.Entities.SuggestionDismissal", b =>
+                {
+                    b.HasOne("BBF.Data.Entities.UserGroup", "Group")
+                        .WithMany()
+                        .HasForeignKey("GroupId")
+                        .OnDelete(DeleteBehavior.Cascade);
+
+                    b.Navigation("Group");
                 });
 
             modelBuilder.Entity("BBF.Data.Entities.Transaction", b =>

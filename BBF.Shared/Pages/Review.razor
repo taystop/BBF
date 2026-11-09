@@ -1,0 +1,197 @@
+@page "/review"
+@using BBF.Shared.Contracts.Budget
+@using BBF.Shared.Contracts.Money
+@using BBF.Shared.Contracts.Transactions
+@attribute [Authorize]
+@inject IMoneyService MoneySvc
+@inject IBudgetCategoryService CategorySvc
+@inject ApiGroupContext GroupContext
+@inject ISnackbar Snackbar
+@implements IDisposable
+
+<PageTitle>Review - BBF</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="py-4">
+    @if (!GroupContext.IsInitialized || GroupContext.ActiveGroupId is null)
+    {
+        <MudPaper Class="pa-6 text-center" Elevation="2">
+            <MudText Typo="Typo.h5" Class="mb-2">No Budget Group</MudText>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" Href="/groups">Manage Groups</MudButton>
+        </MudPaper>
+    }
+    else
+    {
+        <MudStack Row AlignItems="AlignItems.Center" Style="flex-wrap: wrap; gap: 8px;" Class="mb-2">
+            <MudIcon Icon="@Icons.Material.Filled.FactCheck" Size="Size.Large" Color="Color.Primary" />
+            <MudText Typo="Typo.h4">Review</MudText>
+        </MudStack>
+        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-3">
+            Spending without a category doesn't count toward any budget. Tap a category to file it.
+        </MudText>
+        <MudSwitch T="bool" @bind-Value="_remember" Color="Color.Primary" Class="mb-3"
+                   Label="Remember the store: file its other and future transactions the same way" />
+
+        @if (_loading)
+        {
+            <div class="d-flex justify-center mt-8"><MudProgressCircular Indeterminate Color="Color.Primary" /></div>
+        }
+        else
+        {
+            @foreach (var t in _items)
+            {
+                <MudPaper Class="pa-3 mb-2" Elevation="1" @key="t.Id">
+                    <div class="d-flex align-center flex-wrap" style="gap: 4px 12px;">
+                        <MudText Typo="Typo.subtitle2" Style="min-width: 56px;">@t.Date.ToString("MMM d")</MudText>
+                        <MudStack Spacing="0" Style="flex: 1; min-width: 140px;">
+                            <MudText Typo="Typo.body2" Style="font-weight: 600;">@t.Description</MudText>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                @(t.AccountName ?? "No account")@(t.IsPending ? " · pending" : "")
+                            </MudText>
+                        </MudStack>
+                        <MudText Typo="Typo.body2" Color="@(t.Amount < 0 ? Color.Success : Color.Default)">
+                            @(t.Amount < 0 ? $"{-t.Amount:C} refund" : t.Amount.ToString("C"))
+                        </MudText>
+                    </div>
+                    <div class="d-flex flex-wrap align-center mt-2" style="gap: 4px;">
+                        @foreach (var cat in QuickCategories)
+                        {
+                            <MudChip T="int" Size="Size.Small" Variant="Variant.Outlined" Disabled="@_busy"
+                                     Style="@($"border-color: {cat.Color};")"
+                                     OnClick="@(() => Categorize(t, cat.Id))">@cat.Name</MudChip>
+                        }
+                        @if (_categories.Count > QuickCategories.Count())
+                        {
+                            <MudSelect T="int?" Value="null" ValueChanged="@(id => id is int c ? Categorize(t, c) : Task.CompletedTask)"
+                                       Placeholder="More…" Dense Margin="Margin.Dense" Variant="Variant.Outlined"
+                                       Style="max-width: 180px;" Disabled="@_busy">
+                                @foreach (var cat in _categories)
+                                {
+                                    <MudSelectItem T="int?" Value="@cat.Id">@cat.Name</MudSelectItem>
+                                }
+                            </MudSelect>
+                        }
+                    </div>
+                </MudPaper>
+            }
+
+            @if (_items.Count == 0)
+            {
+                <MudPaper Class="pa-6 text-center mb-4" Elevation="1">
+                    <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Success" Size="Size.Large" />
+                    <MudText Typo="Typo.h6">All caught up</MudText>
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">Every transaction has a category.</MudText>
+                </MudPaper>
+            }
+
+            <MudPaper Class="pa-4 mt-4" Elevation="2">
+                <MudText Typo="Typo.h6" Class="mb-1">Store rules</MudText>
+                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block mb-2">
+                    New bank transactions from these stores are filed automatically.
+                </MudText>
+                @foreach (var rule in _rules)
+                {
+                    <div class="d-flex align-center py-1" style="gap: 8px;">
+                        <MudText Typo="Typo.body2" Style="flex: 1;">@rule.DisplayText → <b>@rule.CategoryName</b></MudText>
+                        <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error"
+                                       OnClick="@(() => DeleteRule(rule))" aria-label="Delete store rule" />
+                    </div>
+                }
+                @if (_rules.Count == 0)
+                {
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">None yet. They're made when you file a transaction with "Remember the store" on.</MudText>
+                }
+            </MudPaper>
+        }
+    }
+</MudContainer>
+
+@code {
+    private List<TransactionDto> _items = [];
+    private List<BudgetCategoryDto> _categories = [];
+    private List<MerchantRuleDto> _rules = [];
+    private bool _remember = true;
+    private bool _loading = true;
+    private bool _busy;
+
+    // The categories shown as one-tap chips: top-level ones first, in budget order.
+    private IEnumerable<BudgetCategoryDto> QuickCategories =>
+        _categories.OrderBy(c => c.ParentCategoryId is null ? 0 : 1).ThenBy(c => c.SortOrder).Take(8);
+
+    protected override async Task OnInitializedAsync()
+    {
+        GroupContext.OnGroupChanged += OnGroupChanged;
+        if (GroupContext.ActiveGroupId is not null)
+            await LoadData();
+    }
+
+    private async void OnGroupChanged()
+    {
+        await InvokeAsync(async () =>
+        {
+            await LoadData();
+            StateHasChanged();
+        });
+    }
+
+    private async Task LoadData()
+    {
+        var groupId = GroupContext.ActiveGroupId;
+        if (groupId is null) return;
+        _loading = true;
+        try
+        {
+            _items = await MoneySvc.GetToReviewAsync(groupId.Value);
+            _categories = (await CategorySvc.GetCategoriesAsync(groupId.Value)).Where(c => c.IsActive).OrderBy(c => c.SortOrder).ThenBy(c => c.Name).ToList();
+            _rules = await MoneySvc.GetMerchantRulesAsync(groupId.Value);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Couldn't load transactions to review: {ex.Message}", Severity.Error);
+        }
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private async Task Categorize(TransactionDto t, int categoryId)
+    {
+        if (_busy) return;
+        _busy = true;
+        try
+        {
+            var groupId = GroupContext.ActiveGroupId!.Value;
+            var result = await MoneySvc.CategorizeAsync(groupId, t.Id, new CategorizeRequest(categoryId, _remember));
+            var name = _categories.FirstOrDefault(c => c.Id == categoryId)?.Name ?? "category";
+            if (result.AlsoCategorized > 0)
+            {
+                Snackbar.Add($"Filed under {name}, plus {result.AlsoCategorized} more from {result.RuleText}.", Severity.Success);
+                await LoadData();
+            }
+            else
+            {
+                _items.Remove(t);
+                if (result.RuleText is not null)
+                    _rules = await MoneySvc.GetMerchantRulesAsync(groupId);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Couldn't file it: {ex.Message}", Severity.Error);
+        }
+        _busy = false;
+    }
+
+    private async Task DeleteRule(MerchantRuleDto rule)
+    {
+        try
+        {
+            await MoneySvc.DeleteMerchantRuleAsync(GroupContext.ActiveGroupId!.Value, rule.Id);
+            _rules.Remove(rule);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Couldn't delete the rule: {ex.Message}", Severity.Error);
+        }
+    }
+
+    public void Dispose() => GroupContext.OnGroupChanged -= OnGroupChanged;
+}
