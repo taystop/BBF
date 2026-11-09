@@ -11,10 +11,11 @@ public record GoalDto(
     DateTime? TargetDate,
     bool IsActive,
     decimal ProgressAmount,
-    List<GoalContributionDto> Contributions);
+    List<GoalContributionDto> Contributions,
+    decimal PerPaycheckAmount = 0);
 
-public record CreateGoalRequest(string Name, decimal TargetAmount, DateTime? TargetDate, int? AccountId);
+public record CreateGoalRequest(string Name, decimal TargetAmount, DateTime? TargetDate, int? AccountId, decimal PerPaycheckAmount = 0);
 
-public record UpdateGoalRequest(string Name, decimal TargetAmount, DateTime? TargetDate, int? AccountId);
+public record UpdateGoalRequest(string Name, decimal TargetAmount, DateTime? TargetDate, int? AccountId, decimal PerPaycheckAmount = 0);
 
 public record AddGoalContributionRequest(decimal Amount, DateTime ContributedAt, int? TransactionId);

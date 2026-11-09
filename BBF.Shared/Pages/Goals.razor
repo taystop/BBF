@@ -75,6 +75,13 @@
                                 Target: @goal.TargetDate.Value.ToString("MMM d, yyyy")
                             </MudText>
                         }
+                        @if (goal.PerPaycheckAmount > 0 && goal.ProgressAmount < goal.TargetAmount)
+                        {
+                            <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block mb-2">
+                                Sets aside @goal.PerPaycheckAmount.ToString("C") each payday
+                                (about @Math.Ceiling((goal.TargetAmount - goal.ProgressAmount) / goal.PerPaycheckAmount) more paydays)
+                            </MudText>
+                        }
                         <MudButton Variant="Variant.Outlined" Color="Color.Primary" FullWidth
                                    StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => AddContribution(goal))">
                             Add Contribution
@@ -139,7 +146,7 @@
         if (result is not null && !result.Canceled && result.Data is GoalDialog.GoalResult data)
         {
             await GoalSvc.CreateAsync(GroupContext.ActiveGroupId!.Value, new CreateGoalRequest(
-                data.Name, data.TargetAmount, data.TargetDate, data.AccountId));
+                data.Name, data.TargetAmount, data.TargetDate, data.AccountId, data.PerPaycheckAmount));
             Snackbar.Add($"Goal '{data.Name}' created.", Severity.Success);
             await LoadData();
         }
@@ -155,6 +162,7 @@
             { x => x.TargetDate, goal.TargetDate },
             { x => x.AccountId, goal.AccountId },
             { x => x.IsActive, goal.IsActive },
+            { x => x.PerPaycheckAmount, goal.PerPaycheckAmount },
             { x => x.Accounts, _accounts }
         };
         var dialog = await DialogService.ShowAsync<GoalDialog>("Edit Goal", parameters);
@@ -163,7 +171,7 @@
         if (result is not null && !result.Canceled && result.Data is GoalDialog.GoalResult data)
         {
             var groupId = GroupContext.ActiveGroupId!.Value;
-            await GoalSvc.UpdateAsync(groupId, goal.Id, new UpdateGoalRequest(data.Name, data.TargetAmount, data.TargetDate, data.AccountId));
+            await GoalSvc.UpdateAsync(groupId, goal.Id, new UpdateGoalRequest(data.Name, data.TargetAmount, data.TargetDate, data.AccountId, data.PerPaycheckAmount));
             if (data.IsActive != goal.IsActive)
                 await GoalSvc.SetActiveAsync(groupId, goal.Id, data.IsActive);
             await LoadData();

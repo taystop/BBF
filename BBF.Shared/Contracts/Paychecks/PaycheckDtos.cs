@@ -78,7 +78,9 @@ public record PayPeriodDto(
     decimal IncomeStillExpected = 0,
     decimal BillsStillDue = 0,
     // Left over from the previous pay period and not moved to savings (negative = overspent). Included in Leftover.
-    decimal CarriedIn = 0);
+    decimal CarriedIn = 0,
+    // Set aside for goals: each active goal's per-payday amount, once per payday in the period. Included in Leftover.
+    decimal GoalsFunding = 0);
 
 public record UpdatePaycheckStatusRequest(string Status);
 

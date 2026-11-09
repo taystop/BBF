@@ -11,6 +11,9 @@
                          Variant="Variant.Outlined" Class="mb-3" Min="0" Format="N2" />
         <MudDatePicker @bind-Date="TargetDate" Label="Target Date (optional)"
                        Variant="Variant.Outlined" Class="mb-3" Clearable />
+        <MudNumericField @bind-Value="PerPaycheckAmount" Label="Set aside each payday ($)"
+                         Variant="Variant.Outlined" Class="mb-3" Min="0" Format="N2"
+                         HelperText="Planned out of every paycheck until the goal is reached. 0 = not planned." />
         @if (Accounts.Count > 0)
         {
             <MudSelect T="int?" @bind-Value="AccountId" Label="Account (optional)"
@@ -42,6 +45,7 @@
     [Parameter] public DateTime? TargetDate { get; set; }
     [Parameter] public int? AccountId { get; set; }
     [Parameter] public bool IsActive { get; set; } = true;
+    [Parameter] public decimal PerPaycheckAmount { get; set; }
     [Parameter] public List<AccountDto> Accounts { get; set; } = [];
 
     private void Cancel() => MudDialog.Cancel();
@@ -51,7 +55,8 @@
         TargetAmount = TargetAmount,
         TargetDate = TargetDate,
         AccountId = AccountId,
-        IsActive = IsActive
+        IsActive = IsActive,
+        PerPaycheckAmount = PerPaycheckAmount
     }));
 
     public class GoalResult
@@ -61,5 +66,6 @@
         public DateTime? TargetDate { get; set; }
         public int? AccountId { get; set; }
         public bool IsActive { get; set; } = true;
+        public decimal PerPaycheckAmount { get; set; }
     }
 }

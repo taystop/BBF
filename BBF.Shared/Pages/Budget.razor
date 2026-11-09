@@ -1,7 +1,9 @@
 @page "/budget"
 @using BBF.Shared.Contracts.Budget
 @using BBF.Shared.Contracts.Finance
+@using BBF.Shared.Contracts.Planning
 @attribute [Authorize]
+@inject IPlanningService PlanningSvc
 @inject IBudgetPeriodService BudgetPeriodSvc
 @inject IBudgetCategoryService CategorySvc
 @inject IFinanceSettingsService FinanceSettingsSvc
@@ -48,10 +50,83 @@
             {
                 <MudChip T="string" Size="Size.Small" Color="Color.Default">Closed</MudChip>
             }
+            <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Filled.Insights"
+                       Href="@($"/budget/review?month={_selectedMonth:yyyy-MM-dd}")">
+                Month in review
+            </MudButton>
             <MudTooltip Text="Budget settings">
                 <MudIconButton Icon="@Icons.Material.Filled.Settings" OnClick="OpenSettings" />
             </MudTooltip>
         </MudStack>
+
+        @if (_plan is not null && _plan.HasPaySchedules)
+        {
+            <MudPaper Class="pa-4 mb-4" Elevation="2">
+                <MudText Typo="Typo.h6" Class="mb-2">Plan for @_plan.Month.ToString("MMMM")</MudText>
+                <MudGrid Spacing="2">
+                    <MudItem xs="6" sm="3">
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">Expected income</MudText>
+                        <MudText Typo="Typo.h6">@_plan.ExpectedIncome.ToString("C")</MudText>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">@_plan.ReceivedIncome.ToString("C") received</MudText>
+                    </MudItem>
+                    <MudItem xs="6" sm="3">
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">Budgeted</MudText>
+                        <MudText Typo="Typo.h6">@_plan.Budgeted.ToString("C")</MudText>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">across categories</MudText>
+                    </MudItem>
+                    <MudItem xs="6" sm="3">
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">Goals</MudText>
+                        <MudText Typo="Typo.h6">@_plan.GoalsFunding.ToString("C")</MudText>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">set aside on paydays</MudText>
+                    </MudItem>
+                    <MudItem xs="6" sm="3">
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">Left to assign</MudText>
+                        <MudText Typo="Typo.h6" Color="@(_plan.LeftToAssign >= 0 ? Color.Success : Color.Error)">@_plan.LeftToAssign.ToString("C")</MudText>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">
+                            @(_plan.LeftToAssign >= 0 ? "not given a job yet" : "budgeted more than will come in")
+                        </MudText>
+                    </MudItem>
+                </MudGrid>
+
+                <MudText Typo="Typo.subtitle2" Class="mt-3 mb-1">@_plan.Paydays.Count(p => p.Status != "Skipped") paydays this month</MudText>
+                @foreach (var payday in _plan.Paydays)
+                {
+                    <div class="d-flex align-center py-1" style="gap: 8px 12px; flex-wrap: wrap;">
+                        <MudText Typo="Typo.body2" Style="min-width: 72px;">@payday.Date.ToString("ddd MMM d")</MudText>
+                        <MudText Typo="Typo.body2" Style="flex: 1; min-width: 120px;">
+                            @if (payday.IsHidden)
+                            {
+                                <MudIcon Icon="@Icons.Material.Filled.Lock" Size="Size.Small" Class="mr-1" Style="vertical-align: middle;" />
+                            }
+                            @payday.Name
+                        </MudText>
+                        @if (payday.Amount is decimal amount)
+                        {
+                            <MudText Typo="Typo.body2">@amount.ToString("C")</MudText>
+                        }
+                        @if (payday.IsExtra)
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Success">Extra</MudChip>
+                        }
+                        <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">@(payday.Status == "Projected" ? "Expected" : payday.Status)</MudChip>
+                    </div>
+                }
+
+                @if (_plan.UpcomingExtraPaychecks.Count > 0)
+                {
+                    <MudAlert Severity="Severity.Success" Dense Class="mt-3" Icon="@Icons.Material.Filled.Celebration">
+                        <b>Extra paychecks ahead:</b>
+                        @foreach (var extra in _plan.UpcomingExtraPaychecks.Take(4))
+                        {
+                            <div>
+                                @extra.Month.ToString("MMMM yyyy"): @string.Join(", ", extra.Names)@(extra.ExtraAmount is decimal x && x > 0 ? $" (about {x:C} extra)" : "")
+                            </div>
+                        }
+                        <div class="mt-1">A good month to fund a goal or catch up on savings.</div>
+                    </MudAlert>
+                }
+            </MudPaper>
+        }
 
         @if (_period is null)
         {
@@ -144,6 +219,7 @@
     private List<LineItemSpending> _lineItems = [];
     private decimal _totalBudget;
     private decimal _totalSpent;
+    private MonthPlanDto? _plan;
 
     protected override async Task OnInitializedAsync()
     {
@@ -167,6 +243,15 @@
         if (groupId is null) return;
 
         _categories = await CategorySvc.GetCategoriesAsync(groupId.Value);
+
+        try
+        {
+            _plan = await PlanningSvc.GetMonthPlanAsync(groupId.Value, _selectedMonth);
+        }
+        catch (Exception)
+        {
+            _plan = null; // the plan is extra information; the budget still works without it
+        }
 
         var isCurrentMonth = _selectedMonth == new DateTime(DateTime.Now.Year, DateTime.Now.Month, 1);
         _period = isCurrentMonth

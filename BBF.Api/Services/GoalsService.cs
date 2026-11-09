@@ -29,6 +29,7 @@ public class GoalsService(ITenantDbContextFactory tenantDb)
             TargetAmount = request.TargetAmount,
             TargetDate = request.TargetDate,
             AccountId = request.AccountId,
+            PerPaycheckAmount = Math.Max(0, request.PerPaycheckAmount),
         };
         db.Goals.Add(goal);
         await db.SaveChangesAsync(ct);
@@ -47,6 +48,7 @@ public class GoalsService(ITenantDbContextFactory tenantDb)
         entity.TargetAmount = request.TargetAmount;
         entity.TargetDate = request.TargetDate;
         entity.AccountId = request.AccountId;
+        entity.PerPaycheckAmount = Math.Max(0, request.PerPaycheckAmount);
         await db.SaveChangesAsync(ct);
     }
 
@@ -82,5 +84,6 @@ public class GoalsService(ITenantDbContextFactory tenantDb)
     private static GoalDto ToDto(Goal g) => new(
         g.Id, g.Name, g.AccountId, g.Account?.Name, g.TargetAmount, g.TargetDate, g.IsActive,
         g.Contributions.Sum(c => c.Amount),
-        g.Contributions.Select(c => new GoalContributionDto(c.Id, c.Amount, c.ContributedAt, c.TransactionId)).ToList());
+        g.Contributions.Select(c => new GoalContributionDto(c.Id, c.Amount, c.ContributedAt, c.TransactionId)).ToList(),
+        g.PerPaycheckAmount);
 }

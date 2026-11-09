@@ -13,6 +13,9 @@ public class Goal
 
     public decimal TargetAmount { get; set; }
     public DateTime? TargetDate { get; set; }
+
+    /// <summary>Set aside from every payday (any earner) until the goal is reached. 0 = not planned per paycheck.</summary>
+    public decimal PerPaycheckAmount { get; set; }
     public bool IsActive { get; set; } = true;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 

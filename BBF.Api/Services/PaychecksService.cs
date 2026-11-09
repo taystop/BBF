@@ -221,11 +221,24 @@ public class PaychecksService(ITenantDbContextFactory tenantDb, ICurrentUserCont
             .Where(d => d.NextPeriodStart == start && d.Decision != LeftoverDecisions.Saved)
             .SumAsync(d => (decimal?)d.Amount, ct) ?? 0m;
 
+        var paydayCount = counted.Select(p => p.PayDate).Distinct().Count();
+        var goalsFunding = paydayCount * await GoalsPerPaydayAsync(db, ct);
+
         return new PayPeriodDto(
             start, end, hasSchedules, paycheckDtos, billDtos,
             income, incomeReceived, billsTotal, billsPaid, otherSpending,
-            carriedIn + income - billsTotal - otherSpending,
-            incomeStillExpected, billsStillDue, carriedIn);
+            carriedIn + income - billsTotal - goalsFunding - otherSpending,
+            incomeStillExpected, billsStillDue, carriedIn, goalsFunding);
+    }
+
+    /// <summary>What every payday sets aside for goals: active goals not yet reached, capped at what each still needs.</summary>
+    public static async Task<decimal> GoalsPerPaydayAsync(ApplicationDbContext db, CancellationToken ct)
+    {
+        var goals = await db.Goals
+            .Where(g => g.IsActive && g.PerPaycheckAmount > 0)
+            .Select(g => new { g.PerPaycheckAmount, g.TargetAmount, Saved = g.Contributions.Sum(c => (decimal?)c.Amount) ?? 0m })
+            .ToListAsync(ct);
+        return goals.Sum(g => Math.Min(g.PerPaycheckAmount, Math.Max(0, g.TargetAmount - g.Saved)));
     }
 
     // --- helpers ---
@@ -252,7 +265,7 @@ public class PaychecksService(ITenantDbContextFactory tenantDb, ICurrentUserCont
     }
 
     /// <summary>UserGroupMember has no tenancy filter, so this filters by group explicitly.</summary>
-    private static async Task<Dictionary<string, string>> MemberNamesAsync(ApplicationDbContext db, int groupId, CancellationToken ct)
+    internal static async Task<Dictionary<string, string>> MemberNamesAsync(ApplicationDbContext db, int groupId, CancellationToken ct)
     {
         var members = await db.UserGroupMembers
             .Where(m => m.GroupId == groupId)

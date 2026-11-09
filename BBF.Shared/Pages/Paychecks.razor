@@ -89,7 +89,9 @@
                     <MudItem xs="6" sm="3">
                         <MudText Typo="Typo.caption" Color="Color.Secondary">Left over</MudText>
                         <MudText Typo="Typo.h6" Color="@(_period.Leftover >= 0 ? Color.Success : Color.Error)">@_period.Leftover.ToString("C")</MudText>
-                        <MudText Typo="Typo.caption" Color="Color.Secondary">after bills@(_period.CarriedIn != 0 ? ", incl. carried over" : "")</MudText>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">
+                            after bills@(_period.GoalsFunding > 0 ? $" and {_period.GoalsFunding:C} for goals" : "")@(_period.CarriedIn != 0 ? ", incl. carried over" : "")
+                        </MudText>
                     </MudItem>
                 </MudGrid>
 

@@ -396,6 +396,7 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
         {
             e.HasQueryFilter(g => CurrentGroupId == null || g.GroupId == CurrentGroupId);
             e.Property(g => g.TargetAmount).HasColumnType("decimal(18,2)");
+            e.Property(g => g.PerPaycheckAmount).HasColumnType("decimal(18,2)");
 
             e.HasOne(g => g.Group)
              .WithMany()

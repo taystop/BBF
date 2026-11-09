@@ -1,0 +1,206 @@
+@page "/budget/review"
+@using BBF.Shared.Contracts.Planning
+@attribute [Authorize]
+@inject IPlanningService PlanningSvc
+@inject ApiGroupContext GroupContext
+@inject ISnackbar Snackbar
+@implements IDisposable
+
+<PageTitle>Month in Review - BBF</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="py-4">
+    @if (!GroupContext.IsInitialized || GroupContext.ActiveGroupId is null)
+    {
+        <MudPaper Class="pa-6 text-center" Elevation="2">
+            <MudText Typo="Typo.h5" Class="mb-2">No Budget Group</MudText>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" Href="/groups">Manage Groups</MudButton>
+        </MudPaper>
+    }
+    else
+    {
+        <div class="d-flex align-center flex-wrap mb-4" style="gap: 8px;">
+            <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" Href="/budget" aria-label="Back to budget" />
+            <MudText Typo="Typo.h4">Month in review</MudText>
+            <MudSpacer />
+            <MudIconButton Icon="@Icons.Material.Filled.ChevronLeft" OnClick="@(() => ChangeMonth(-1))" aria-label="Previous month" />
+            <MudText Typo="Typo.h6">@_month.ToString("MMMM yyyy")</MudText>
+            <MudIconButton Icon="@Icons.Material.Filled.ChevronRight" OnClick="@(() => ChangeMonth(1))"
+                           Disabled="@(_month >= ThisMonth)" aria-label="Next month" />
+        </div>
+
+        @if (_review is null)
+        {
+            <div class="d-flex justify-center mt-8"><MudProgressCircular Indeterminate Color="Color.Primary" /></div>
+        }
+        else if (_review.BeforeBudgetStart)
+        {
+            <MudAlert Severity="Severity.Info">This month is before your budget start date, so there's nothing to review.</MudAlert>
+        }
+        else
+        {
+            var r = _review;
+            <MudGrid Spacing="2" Class="mb-4">
+                <MudItem xs="6" sm="3">
+                    <MudPaper Class="pa-3" Elevation="2">
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">Income</MudText>
+                        <MudText Typo="Typo.h6">@r.Income.ToString("C")</MudText>
+                    </MudPaper>
+                </MudItem>
+                <MudItem xs="6" sm="3">
+                    <MudPaper Class="pa-3" Elevation="2">
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">Spending</MudText>
+                        <MudText Typo="Typo.h6">@r.Spending.ToString("C")</MudText>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">of @r.Budgeted.ToString("C") budgeted</MudText>
+                    </MudPaper>
+                </MudItem>
+                <MudItem xs="6" sm="3">
+                    <MudPaper Class="pa-3" Elevation="2">
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">Income − spending</MudText>
+                        <MudText Typo="Typo.h6" Color="@(r.Net >= 0 ? Color.Success : Color.Error)">@r.Net.ToString("C")</MudText>
+                    </MudPaper>
+                </MudItem>
+                <MudItem xs="6" sm="3">
+                    <MudPaper Class="pa-3" Elevation="2">
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">Moved to savings</MudText>
+                        <MudText Typo="Typo.h6">@r.MovedToSavings.ToString("C")</MudText>
+                    </MudPaper>
+                </MudItem>
+            </MudGrid>
+
+            @if (r.UncategorizedSpent != 0)
+            {
+                <MudAlert Severity="Severity.Info" Dense Class="mb-4">
+                    @r.UncategorizedSpent.ToString("C") of this month's spending has no category.
+                    <MudLink Href="/review" Class="ml-1">Review it</MudLink>
+                </MudAlert>
+            }
+
+            <MudPaper Class="pa-4 mb-4" Elevation="2">
+                <MudText Typo="Typo.h6" Class="mb-2">Last @r.Trend.Count months</MudText>
+                @{ var max = Math.Max(1, r.Trend.Max(t => Math.Max(t.Income, t.Spending))); }
+                @foreach (var m in r.Trend)
+                {
+                    <div class="d-flex align-center py-1" style="gap: 12px;">
+                        <MudText Typo="Typo.body2" Style="@($"min-width: 40px; font-weight: {(m.Month == r.Month ? 700 : 400)};")">@m.Month.ToString("MMM")</MudText>
+                        <div style="flex: 1;">
+                            <MudProgressLinear Color="Color.Success" Value="@((double)(m.Income / max * 100))" Size="Size.Small" Class="mb-1" />
+                            <MudProgressLinear Color="Color.Warning" Value="@((double)(Math.Max(0, m.Spending) / max * 100))" Size="Size.Small" />
+                        </div>
+                        <MudStack Spacing="0" AlignItems="AlignItems.End" Style="min-width: 110px;">
+                            <MudText Typo="Typo.caption" Color="Color.Success">in @m.Income.ToString("C0")</MudText>
+                            <MudText Typo="Typo.caption" Color="Color.Warning">out @m.Spending.ToString("C0")</MudText>
+                        </MudStack>
+                    </div>
+                }
+            </MudPaper>
+
+            <MudPaper Class="pa-4 mb-4" Elevation="2">
+                <MudText Typo="Typo.h6" Class="mb-1">Categories</MudText>
+                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block mb-2">Compared with the budget and your average for the three months before.</MudText>
+                @foreach (var c in r.Categories)
+                {
+                    var over = c.Budgeted > 0 && c.Spent > c.Budgeted;
+                    <div class="py-2" style="border-top: 1px solid var(--mud-palette-lines-default);">
+                        <div class="d-flex align-center flex-wrap" style="gap: 4px 12px;">
+                            <div style="width: 10px; height: 10px; border-radius: 50%; background: @c.Color;"></div>
+                            <MudText Typo="Typo.body2" Style="flex: 1; min-width: 120px; font-weight: 600;">@c.Name</MudText>
+                            <MudText Typo="Typo.body2" Color="@(over ? Color.Error : Color.Default)">
+                                @c.Spent.ToString("C")@(c.Budgeted > 0 ? $" of {c.Budgeted:C}" : "")
+                            </MudText>
+                        </div>
+                        @if (c.Budgeted > 0)
+                        {
+                            <MudProgressLinear Color="@(over ? Color.Error : Color.Primary)" Size="Size.Small" Class="mt-1"
+                                               Value="@((double)Math.Min(100, c.Spent / c.Budgeted * 100))" />
+                        }
+                        @if (c.Average is decimal avg)
+                        {
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">@VersusAverage(c.Spent, avg)</MudText>
+                        }
+                    </div>
+                }
+                @if (r.Categories.Count == 0)
+                {
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">No categorized spending this month.</MudText>
+                }
+            </MudPaper>
+
+            @if (r.TopMerchants.Count > 0)
+            {
+                <MudPaper Class="pa-4" Elevation="2">
+                    <MudText Typo="Typo.h6" Class="mb-2">Where it went</MudText>
+                    @foreach (var merchant in r.TopMerchants)
+                    {
+                        <div class="d-flex align-center py-1" style="gap: 12px;">
+                            <MudText Typo="Typo.body2" Style="flex: 1;">@merchant.Name</MudText>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">@merchant.Count×</MudText>
+                            <MudText Typo="Typo.body2" Style="min-width: 80px; text-align: right;">@merchant.Spent.ToString("C")</MudText>
+                        </div>
+                    }
+                </MudPaper>
+            }
+        }
+    }
+</MudContainer>
+
+@code {
+    /// <summary>Month to open, as yyyy-MM-dd (any day in the month). Defaults to this month.</summary>
+    [SupplyParameterFromQuery] public string? Month { get; set; }
+
+    private static DateTime ThisMonth => new(DateTime.Today.Year, DateTime.Today.Month, 1);
+    private DateTime _month = ThisMonth;
+    private MonthReviewDto? _review;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (DateTime.TryParse(Month, out var requested))
+            _month = new DateTime(requested.Year, requested.Month, 1) > ThisMonth ? ThisMonth : new DateTime(requested.Year, requested.Month, 1);
+
+        GroupContext.OnGroupChanged += OnGroupChanged;
+        if (GroupContext.ActiveGroupId is not null)
+            await LoadData();
+    }
+
+    private async void OnGroupChanged()
+    {
+        await InvokeAsync(async () =>
+        {
+            await LoadData();
+            StateHasChanged();
+        });
+    }
+
+    private async Task ChangeMonth(int delta)
+    {
+        _month = _month.AddMonths(delta);
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        var groupId = GroupContext.ActiveGroupId;
+        if (groupId is null) return;
+        _review = null;
+        try
+        {
+            _review = await PlanningSvc.GetMonthReviewAsync(groupId.Value, _month);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Couldn't load the month: {ex.Message}", Severity.Error);
+        }
+        StateHasChanged();
+    }
+
+    private static string VersusAverage(decimal spent, decimal average)
+    {
+        if (average <= 0) return spent > 0 ? "New this month" : "";
+        var change = (spent - average) / average;
+        if (Math.Abs(change) < 0.05m) return $"About your usual {average:C}";
+        return change > 0
+            ? $"{change:P0} more than your usual {average:C}"
+            : $"{-change:P0} less than your usual {average:C}";
+    }
+
+    public void Dispose() => GroupContext.OnGroupChanged -= OnGroupChanged;
+}

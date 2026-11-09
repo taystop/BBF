@@ -132,13 +132,17 @@
                     </div>
                     <MudText Typo="Typo.body2" Color="Color.Secondary">@s.Period.Start.ToString("MMM d") – @s.Period.End.ToString("MMM d")</MudText>
                     <MudText Typo="Typo.h4" Color="@(s.Period.Leftover >= 0 ? Color.Success : Color.Error)" Class="mt-1">@s.Period.Leftover.ToString("C")</MudText>
-                    <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block mb-3">left over after bills and spending</MudText>
+                    <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block mb-3">left over after bills, goals and spending</MudText>
                     @if (s.Period.CarriedIn != 0)
                     {
                         <div class="d-flex justify-space-between"><MudText Typo="Typo.body2">Carried over</MudText><MudText Typo="Typo.body2">@s.Period.CarriedIn.ToString("C")</MudText></div>
                     }
                     <div class="d-flex justify-space-between"><MudText Typo="Typo.body2">Income</MudText><MudText Typo="Typo.body2">@s.Period.Income.ToString("C")</MudText></div>
                     <div class="d-flex justify-space-between"><MudText Typo="Typo.body2">Bills</MudText><MudText Typo="Typo.body2">@s.Period.BillsTotal.ToString("C")</MudText></div>
+                    @if (s.Period.GoalsFunding > 0)
+                    {
+                        <div class="d-flex justify-space-between"><MudText Typo="Typo.body2">Set aside for goals</MudText><MudText Typo="Typo.body2">@s.Period.GoalsFunding.ToString("C")</MudText></div>
+                    }
                     <div class="d-flex justify-space-between"><MudText Typo="Typo.body2">Other spending so far</MudText><MudText Typo="Typo.body2">@s.Period.OtherSpending.ToString("C")</MudText></div>
                     @if (!s.Period.HasPaySchedules)
                     {
