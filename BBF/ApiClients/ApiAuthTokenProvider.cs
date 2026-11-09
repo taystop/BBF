@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Net.Http.Json;
 using System.Security.Claims;
 using BBF.Shared.ApiClients;
@@ -16,6 +17,11 @@ public class ApiAuthTokenProvider(
     IHttpClientFactory httpClientFactory,
     IConfiguration config) : IApiAuthTokenProvider
 {
+    // Shared by every circuit, so opening tabs or reloading pages reuses a recent token instead of
+    // asking BBF.Api for a new one each time. Kept short so role changes still show up within the hour.
+    private static readonly TimeSpan SharedReuse = TimeSpan.FromHours(1);
+    private static readonly ConcurrentDictionary<string, (string Token, DateTime ExpiresAtUtc, DateTime IssuedAtUtc)> SharedTokens = new();
+
     private readonly SemaphoreSlim _lock = new(1, 1);
     private string? _cachedToken;
     private DateTime _expiresAtUtc;
@@ -32,6 +38,15 @@ public class ApiAuthTokenProvider(
             var authState = await CircuitAuthStateAccessor.StateTask;
             var userId = authState.User.FindFirst(ClaimTypes.NameIdentifier)?.Value
                 ?? throw new InvalidOperationException("No authenticated user on this circuit.");
+
+            if (SharedTokens.TryGetValue(userId, out var shared)
+                && DateTime.UtcNow - shared.IssuedAtUtc < SharedReuse
+                && DateTime.UtcNow < shared.ExpiresAtUtc.AddMinutes(-5))
+            {
+                _cachedToken = shared.Token;
+                _expiresAtUtc = shared.ExpiresAtUtc;
+                return _cachedToken;
+            }
 
             var internalKey = config["Jwt:InternalServiceKey"];
             if (string.IsNullOrEmpty(internalKey))
@@ -52,6 +67,7 @@ public class ApiAuthTokenProvider(
 
             _cachedToken = login.AccessToken;
             _expiresAtUtc = login.ExpiresAtUtc;
+            SharedTokens[userId] = (login.AccessToken, login.ExpiresAtUtc, DateTime.UtcNow);
             return _cachedToken;
         }
         finally

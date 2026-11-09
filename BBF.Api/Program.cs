@@ -21,6 +21,11 @@ using Microsoft.IdentityModel.Tokens;
 // rate limiting by RemoteIpAddress alone would bucket every real client together. Fall back to it only
 // when CF-Connecting-IP is absent (local/dev/direct LAN calls), the same trust model AuthEndpoints
 // already uses for the internal-token block.
+static bool IsLocalServerCall(HttpContext context) =>
+    !context.Request.Headers.ContainsKey("CF-Connecting-IP")
+    && context.Connection.RemoteIpAddress is { } ip
+    && System.Net.IPAddress.IsLoopback(ip);
+
 static string GetClientIp(HttpContext context) =>
     context.Request.Headers["CF-Connecting-IP"].FirstOrDefault()
     ?? context.Connection.RemoteIpAddress?.ToString()
@@ -72,13 +77,17 @@ builder.Services.AddRateLimiter(options =>
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
 
     // Loose, per-IP safety net across the whole API now that it's reachable from the open internet.
+    // BBF.Web calls from this same machine (loopback, no Cloudflare header) on behalf of every website
+    // visitor, so it isn't one client and isn't limited; internet traffic still is, per visitor IP.
     options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
-        RateLimitPartition.GetFixedWindowLimiter(GetClientIp(context), _ => new FixedWindowRateLimiterOptions
-        {
-            Window = TimeSpan.FromMinutes(1),
-            PermitLimit = 300,
-            QueueLimit = 0,
-        }));
+        IsLocalServerCall(context)
+            ? RateLimitPartition.GetNoLimiter("local-server")
+            : RateLimitPartition.GetFixedWindowLimiter(GetClientIp(context), _ => new FixedWindowRateLimiterOptions
+            {
+                Window = TimeSpan.FromMinutes(1),
+                PermitLimit = 300,
+                QueueLimit = 0,
+            }));
 
     // Tighter policy for /api/auth — this is the actual brute-force/credential-stuffing target.
     // Identity's per-account lockout (5 attempts/5 min) only slows guessing one account at a time;

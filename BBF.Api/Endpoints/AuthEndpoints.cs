@@ -60,6 +60,10 @@ public static class AuthEndpoints
             var roles = await userManager.GetRolesAsync(user);
             var issued = tokenService.IssueToken(user, roles);
             return Results.Ok(new LoginResponse(issued.AccessToken, issued.ExpiresAtUtc, user.Id, user.UserName ?? user.Id));
-        });
+        })
+        // Not a password check (it needs the shared key and is blocked from the internet), and every
+        // website visitor's exchange comes from the same loopback address, so the login limit of 10 a
+        // minute would be shared by the whole site and trip on normal browsing.
+        .DisableRateLimiting();
     }
 }
