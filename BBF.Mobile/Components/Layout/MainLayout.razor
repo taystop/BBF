@@ -4,6 +4,9 @@
 @inject BBF.Shared.ApiGroupContext ApiGroupContext
 @inject IPushTokenProvider PushTokenProvider
 @inject IDeviceService DeviceService
+@inject BBF.Mobile.Auth.MobileAuthenticationStateProvider AuthProvider
+@inject NavigationManager Nav
+@implements IDisposable
 
 <MudLayout>
     <MudAppBar Elevation="1">
@@ -33,7 +36,38 @@
     </MudDrawer>
 
     <MudMainContent Class="px-2 px-sm-4">
-        @Body
+        <AuthorizeView>
+            <Authorized>
+                @if (ApiGroupContext.IsInitialized)
+                {
+                    @Body
+                }
+                else if (_groupLoadFailed)
+                {
+                    @* Without this, every page shows "No Budget Group" when the load simply failed. *@
+                    <MudPaper Class="pa-6 mt-4 text-center" Elevation="2">
+                        <MudIcon Icon="@Icons.Material.Filled.CloudOff" Size="Size.Large" Color="Color.Secondary" Class="mb-3" />
+                        <MudText Typo="Typo.h6" Class="mb-2">Couldn't reach BBF</MudText>
+                        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
+                            Your group data didn't load. Check your connection and try again.
+                        </MudText>
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="LoadGroupsAsync"
+                                   Disabled="_loadingGroups" StartIcon="@Icons.Material.Filled.Refresh">
+                            Try again
+                        </MudButton>
+                    </MudPaper>
+                }
+                else
+                {
+                    <div class="d-flex justify-center mt-8">
+                        <MudProgressCircular Indeterminate Color="Color.Primary" />
+                    </div>
+                }
+            </Authorized>
+            <NotAuthorized>
+                @Body
+            </NotAuthorized>
+        </AuthorizeView>
     </MudMainContent>
 
     <BottomNav OnMore="ToggleDrawer" />
@@ -47,6 +81,9 @@
 
 @code {
     private bool _drawerOpen;
+    private bool _loadingGroups;
+    private bool _groupLoadFailed;
+    private Microsoft.Maui.Controls.Window? _window;
 
     [CascadingParameter]
     private Task<AuthenticationState>? AuthStateTask { get; set; }
@@ -61,12 +98,70 @@
             var authState = await AuthStateTask;
             if (authState.User.Identity?.IsAuthenticated == true)
             {
-                await ApiGroupContext.InitializeAsync();
-                StateHasChanged();
-
+                await LoadGroupsAsync();
                 _ = RegisterPushTokenAsync();
             }
+
+            // Coming back to the app is the most common time a load has failed (phone was offline,
+            // server was restarting), so retry then instead of waiting for an app restart.
+            _window = Microsoft.Maui.Controls.Application.Current?.Windows.FirstOrDefault();
+            if (_window is not null)
+                _window.Resumed += OnWindowResumed;
         }
+    }
+
+    private async Task LoadGroupsAsync()
+    {
+        if (_loadingGroups || ApiGroupContext.IsInitialized) return;
+
+        _loadingGroups = true;
+        _groupLoadFailed = false;
+        StateHasChanged();
+        try
+        {
+            // A couple of quick retries cover brief network drops without bothering the user.
+            for (var attempt = 1; ; attempt++)
+            {
+                try
+                {
+                    await ApiGroupContext.InitializeAsync();
+                    break;
+                }
+                catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+                {
+                    // The saved sign-in was rejected (expired or revoked): sign in again rather than
+                    // looking signed in with no data.
+                    AuthProvider.SignOut();
+                    Nav.NavigateTo("/login", replace: true);
+                    return;
+                }
+                catch (Exception) when (attempt < 3)
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(attempt * 2));
+                }
+            }
+        }
+        catch (Exception)
+        {
+            _groupLoadFailed = true;
+        }
+        finally
+        {
+            _loadingGroups = false;
+            StateHasChanged();
+        }
+    }
+
+    private void OnWindowResumed(object? sender, EventArgs e)
+    {
+        if (_groupLoadFailed)
+            _ = InvokeAsync(LoadGroupsAsync);
+    }
+
+    public void Dispose()
+    {
+        if (_window is not null)
+            _window.Resumed -= OnWindowResumed;
     }
 
     private async Task RegisterPushTokenAsync()
