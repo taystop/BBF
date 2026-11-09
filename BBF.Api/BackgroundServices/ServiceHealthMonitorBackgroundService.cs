@@ -61,14 +61,16 @@ public class ServiceHealthMonitorBackgroundService(
                 await notifications.SendToAllAsync(new NotificationMessage(
                     "Service down",
                     $"{service.Name} is not responding.",
-                    new Dictionary<string, string> { ["serviceLinkId"] = service.Id.ToString() }), ct);
+                    new Dictionary<string, string> { ["serviceLinkId"] = service.Id.ToString(), ["link"] = "/status" },
+                    NotificationCategories.Services), ct);
             }
             else if (!wasHealthy && result.IsHealthy)
             {
                 await notifications.SendToAllAsync(new NotificationMessage(
                     "Service back up",
                     $"{service.Name} is responding again.",
-                    new Dictionary<string, string> { ["serviceLinkId"] = service.Id.ToString() }), ct);
+                    new Dictionary<string, string> { ["serviceLinkId"] = service.Id.ToString(), ["link"] = "/status" },
+                    NotificationCategories.Services), ct);
             }
         }
     }

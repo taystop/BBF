@@ -1,9 +1,11 @@
 ﻿using Android.App;
+using Android.Content;
 using Android.Content.PM;
 using Android.OS;
 using AndroidX.Core.App;
 using AndroidX.Core.Content;
 using AndroidX.Core.View;
+using BBF.Mobile.Push;
 
 namespace BBF.Mobile;
 
@@ -21,6 +23,10 @@ public class MainActivity : MauiAppCompatActivity
     {
         base.OnCreate(savedInstanceState);
 
+        // Opened by tapping a notification while the app wasn't running.
+        if (savedInstanceState is null)
+            HandleNotificationTap(Intent);
+
         var rootView = Window?.DecorView.FindViewById(Android.Resource.Id.Content);
         if (rootView is not null)
             ViewCompat.SetOnApplyWindowInsetsListener(rootView, new SystemBarInsetsListener());
@@ -32,6 +38,26 @@ public class MainActivity : MauiAppCompatActivity
         {
             ActivityCompat.RequestPermissions(this, new[] { Android.Manifest.Permission.PostNotifications }, 101);
         }
+    }
+
+    // Tapped while the app was already running (the activity is single-top, so it's reused).
+    protected override void OnNewIntent(Intent? intent)
+    {
+        base.OnNewIntent(intent);
+        HandleNotificationTap(intent);
+    }
+
+    /// <summary>
+    /// A tapped push carries its data as intent extras: from FCM itself when Android drew the
+    /// notification (app in the background), or from PushNotificationDisplay when the app did.
+    /// </summary>
+    private static void HandleNotificationTap(Intent? intent)
+    {
+        var link = intent?.GetStringExtra("link");
+        if (string.IsNullOrEmpty(link)) return;
+
+        NotificationNavigator.Request(link, intent!.GetStringExtra("groupId"));
+        intent.RemoveExtra("link"); // so a later restart of the same intent doesn't navigate again
     }
 
     private sealed class SystemBarInsetsListener : Java.Lang.Object, IOnApplyWindowInsetsListener

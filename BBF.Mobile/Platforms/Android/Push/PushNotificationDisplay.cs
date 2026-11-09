@@ -12,13 +12,27 @@ public static class PushNotificationDisplay
     private const string ChannelId = "bbf_default";
     private static int _nextNotificationId = 1000;
 
-    public static void Show(Context context, string title, string body)
+    public static void Show(Context context, string title, string body, IDictionary<string, string>? data = null)
     {
         EnsureChannel(context);
+        var notificationId = Interlocked.Increment(ref _nextNotificationId);
 
+        // Same keys FCM uses when Android shows a background notification itself, so MainActivity
+        // reads a tap the same way either way. Bring the running app forward rather than starting anew.
         var launchIntent = context.PackageManager?.GetLaunchIntentForPackage(context.PackageName!);
+        if (launchIntent is not null)
+        {
+            launchIntent.AddFlags(ActivityFlags.SingleTop | ActivityFlags.ClearTop);
+            if (data is not null)
+            {
+                foreach (var (key, value) in data)
+                    launchIntent.PutExtra(key, value);
+            }
+        }
+
+        // A distinct request code per notification, so each keeps its own link.
         var pendingIntent = PendingIntent.GetActivity(
-            context, 0, launchIntent, PendingIntentFlags.Immutable | PendingIntentFlags.UpdateCurrent);
+            context, notificationId, launchIntent, PendingIntentFlags.Immutable | PendingIntentFlags.UpdateCurrent);
 
         // The status bar always renders SetSmallIcon as a flat white silhouette (Android forces this
         // via the icon's alpha channel, regardless of its actual colors) — the BBF wolf mark on a
@@ -32,7 +46,7 @@ public static class PushNotificationDisplay
             .SetContentIntent(pendingIntent)
             .Build();
 
-        NotificationManagerCompat.From(context).Notify(Interlocked.Increment(ref _nextNotificationId), notification);
+        NotificationManagerCompat.From(context).Notify(notificationId, notification);
     }
 
     private static void EnsureChannel(Context context)

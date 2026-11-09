@@ -107,6 +107,9 @@
             _window = Microsoft.Maui.Controls.Application.Current?.Windows.FirstOrDefault();
             if (_window is not null)
                 _window.Resumed += OnWindowResumed;
+
+            NotificationNavigator.LinkRequested += OnNotificationLink;
+            FollowNotificationLink();
         }
     }
 
@@ -125,6 +128,7 @@
                 try
                 {
                     await ApiGroupContext.InitializeAsync();
+                    FollowNotificationLink(); // a tap that opened the app was waiting for this
                     break;
                 }
                 catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Unauthorized)
@@ -158,10 +162,25 @@
             _ = InvokeAsync(LoadGroupsAsync);
     }
 
+    private void OnNotificationLink() => _ = InvokeAsync(FollowNotificationLink);
+
+    /// <summary>Opens the page a tapped notification points to, in the group it was about.</summary>
+    private void FollowNotificationLink()
+    {
+        // Wait until signed in with groups loaded; the link stays waiting until then.
+        if (!ApiGroupContext.IsInitialized) return;
+        if (NotificationNavigator.Take() is not { } target) return;
+
+        if (target.GroupId is int groupId && groupId != ApiGroupContext.ActiveGroupId)
+            ApiGroupContext.SetActiveGroup(groupId);
+        Nav.NavigateTo(target.Link);
+    }
+
     public void Dispose()
     {
         if (_window is not null)
             _window.Resumed -= OnWindowResumed;
+        NotificationNavigator.LinkRequested -= OnNotificationLink;
     }
 
     private async Task RegisterPushTokenAsync()

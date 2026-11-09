@@ -40,6 +40,7 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
     public DbSet<FinanceAlert> FinanceAlerts => Set<FinanceAlert>();
     public DbSet<AlertPreferences> AlertPreferences => Set<AlertPreferences>();
     public DbSet<LeftoverDecision> LeftoverDecisions => Set<LeftoverDecision>();
+    public DbSet<UserNotificationSettings> UserNotificationSettings => Set<UserNotificationSettings>();
     public DbSet<Goal> Goals => Set<Goal>();
     public DbSet<GoalContribution> GoalContributions => Set<GoalContribution>();
     public DbSet<UserGroup> UserGroups => Set<UserGroup>();
@@ -322,6 +323,13 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
              .WithMany()
              .HasForeignKey(r => r.CategoryId)
              .OnDelete(DeleteBehavior.NoAction);
+        });
+
+        // Per user, not per group: no tenancy filter (always looked up by the caller's own user id).
+        builder.Entity<UserNotificationSettings>(e =>
+        {
+            e.Property(s => s.UserId).HasMaxLength(450);
+            e.HasIndex(s => s.UserId).IsUnique();
         });
 
         builder.Entity<FinanceAlert>(e =>

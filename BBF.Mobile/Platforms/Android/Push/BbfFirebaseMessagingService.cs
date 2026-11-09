@@ -6,8 +6,8 @@ namespace BBF.Mobile.Platforms.Android.Push;
 
 /// <summary>
 /// Entry point FCM calls into directly — before any DI/Blazor context exists. Token refresh goes
-/// through PushTokenRegistrar (which reaches into the app's DI container); received messages are
-/// just rendered as a plain status-bar notification for v1 (no in-app routing yet).
+/// through PushTokenRegistrar (which reaches into the app's DI container). Messages that arrive while
+/// the app is open are shown here; tapping one opens the page in its "link" data (see MainActivity).
 /// </summary>
 [Service(Exported = false)]
 [IntentFilter(new[] { "com.google.firebase.MESSAGING_EVENT" })]
@@ -29,6 +29,6 @@ public class BbfFirebaseMessagingService : FirebaseMessagingService
         var title = notification?.Title ?? dataTitle ?? "BBF";
         var body = notification?.Body ?? dataBody ?? "";
 
-        PushNotificationDisplay.Show(ApplicationContext!, title, body);
+        PushNotificationDisplay.Show(ApplicationContext!, title, body, message.Data);
     }
 }

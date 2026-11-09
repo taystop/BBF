@@ -236,6 +236,7 @@ app.MapPaychecksEndpoints();
 app.MapMoneyEndpoints();
 app.MapAlertsEndpoints();
 app.MapPlanningEndpoints();
+app.MapUserSettingsEndpoints();
 app.MapFinanceSettingsEndpoints();
 app.MapGoalsEndpoints();
 app.MapGrocerySectionsEndpoints();

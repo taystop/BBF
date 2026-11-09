@@ -22,7 +22,16 @@ public class FirebaseNotificationSender(
     public async Task SendToAllAsync(NotificationMessage message, CancellationToken ct = default)
     {
         await using var db = await dbFactory.CreateDbContextAsync(ct);
-        var tokens = await db.DeviceTokens.Select(t => t.Token).ToListAsync(ct);
+        var devices = db.DeviceTokens.AsQueryable();
+
+        // Leave out anyone who turned this kind of broadcast off in Settings.
+        if (message.Category == NotificationCategories.Services)
+        {
+            var optedOut = db.UserNotificationSettings.Where(s => !s.ServiceAlerts).Select(s => s.UserId);
+            devices = devices.Where(t => !optedOut.Contains(t.UserId));
+        }
+
+        var tokens = await devices.Select(t => t.Token).ToListAsync(ct);
         await SendAsync(tokens, message, ct);
     }
 

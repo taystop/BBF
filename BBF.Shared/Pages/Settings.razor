@@ -1,0 +1,146 @@
+@page "/settings"
+@using BBF.Shared.Contracts.Alerts
+@using BBF.Shared.Contracts.Settings
+@attribute [Authorize]
+@inject IAlertService AlertSvc
+@inject IUserSettingsService UserSettingsSvc
+@inject ApiGroupContext GroupContext
+@inject ISnackbar Snackbar
+@implements IDisposable
+
+<PageTitle>Settings - BBF</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Medium" Class="py-4">
+    <MudStack Row AlignItems="AlignItems.Center" Class="mb-4" Spacing="2">
+        <MudIcon Icon="@Icons.Material.Filled.Settings" Size="Size.Large" Color="Color.Primary" />
+        <MudText Typo="Typo.h4">Settings</MudText>
+    </MudStack>
+
+    <MudText Typo="Typo.h6" Class="mb-1">Notifications</MudText>
+    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-3">
+        These settings are just for you. Turning one off stops it on your phone and, for budget alerts, in the app's alert list too.
+    </MudText>
+
+    @if (_loading)
+    {
+        <div class="d-flex justify-center mt-6"><MudProgressCircular Indeterminate Color="Color.Primary" /></div>
+    }
+    else
+    {
+        @foreach (var group in GroupContext.Groups)
+        {
+            if (!_budget.TryGetValue(group.Id, out var prefs)) continue;
+            <MudPaper Class="pa-4 mb-4" Elevation="2">
+                <MudText Typo="Typo.subtitle1" Style="font-weight: 600;">Budget alerts</MudText>
+                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block mb-2">
+                    For @group.Name. Sent between 8am and 9pm.
+                </MudText>
+
+                <MudSwitch T="bool" Value="prefs.CategoryLimits" Color="Color.Primary"
+                           ValueChanged="@(v => SaveBudget(group.Id, prefs with { CategoryLimits = v }))"
+                           Label="A category reaches 80% or goes over its budget" />
+                <MudSwitch T="bool" Value="prefs.BillsAndBalance" Color="Color.Primary"
+                           ValueChanged="@(v => SaveBudget(group.Id, prefs with { BillsAndBalance = v }))"
+                           Label="A bill is due tomorrow, or checking is about to run low" />
+                <MudSwitch T="bool" Value="prefs.Payday" Color="Color.Primary"
+                           ValueChanged="@(v => SaveBudget(group.Id, prefs with { Payday = v }))"
+                           Label="Payday summary and money left over from a pay period" />
+                <MudSwitch T="bool" Value="prefs.CategorizeReminder" Color="Color.Primary"
+                           ValueChanged="@(v => SaveBudget(group.Id, prefs with { CategorizeReminder = v }))"
+                           Label="Evening reminder when transactions need a category" />
+
+                <MudDivider Class="my-2" />
+                <MudSwitch T="bool" Value="prefs.Push" Color="Color.Primary"
+                           ValueChanged="@(v => SaveBudget(group.Id, prefs with { Push = v }))"
+                           Label="Send budget alerts to my phone" />
+                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block">
+                    Off: the alerts you keep on still show on the Money page, just without a phone notification.
+                </MudText>
+            </MudPaper>
+        }
+
+        <MudPaper Class="pa-4 mb-4" Elevation="2">
+            <MudText Typo="Typo.subtitle1" Style="font-weight: 600;">Household notifications</MudText>
+            <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block mb-2">
+                Sent to everyone with the app, not tied to a budget group.
+            </MudText>
+            <MudSwitch T="bool" Value="_general.ServiceAlerts" Color="Color.Primary"
+                       ValueChanged="@(v => SaveGeneral(_general with { ServiceAlerts = v }))"
+                       Label="A home service goes down or comes back up" />
+        </MudPaper>
+
+        <MudText Typo="Typo.caption" Color="Color.Secondary">
+            Your phone's own notification settings for BBF still apply on top of these.
+        </MudText>
+    }
+</MudContainer>
+
+@code {
+    private readonly Dictionary<int, AlertPreferencesDto> _budget = [];
+    private NotificationSettingsDto _general = new();
+    private bool _loading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Groups arrive after the layout's first render; reload when they do.
+        GroupContext.OnGroupChanged += OnGroupChanged;
+        await LoadData();
+    }
+
+    private async void OnGroupChanged()
+    {
+        await InvokeAsync(async () =>
+        {
+            await LoadData();
+            StateHasChanged();
+        });
+    }
+
+    private async Task LoadData()
+    {
+        try
+        {
+            _general = await UserSettingsSvc.GetNotificationSettingsAsync();
+            foreach (var group in GroupContext.Groups)
+                _budget[group.Id] = await AlertSvc.GetPreferencesAsync(group.Id);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Couldn't load your settings: {ex.Message}", Severity.Error);
+        }
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private async Task SaveBudget(int groupId, AlertPreferencesDto updated)
+    {
+        var previous = _budget[groupId];
+        _budget[groupId] = updated;
+        try
+        {
+            await AlertSvc.UpdatePreferencesAsync(groupId, updated);
+        }
+        catch (Exception ex)
+        {
+            _budget[groupId] = previous;
+            Snackbar.Add($"Couldn't save that: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task SaveGeneral(NotificationSettingsDto updated)
+    {
+        var previous = _general;
+        _general = updated;
+        try
+        {
+            await UserSettingsSvc.UpdateNotificationSettingsAsync(updated);
+        }
+        catch (Exception ex)
+        {
+            _general = previous;
+            Snackbar.Add($"Couldn't save that: {ex.Message}", Severity.Error);
+        }
+    }
+
+    public void Dispose() => GroupContext.OnGroupChanged -= OnGroupChanged;
+}

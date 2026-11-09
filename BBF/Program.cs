@@ -89,6 +89,7 @@ builder.Services.AddApiHttpClient<BBF.Shared.Contracts.Paychecks.IPaycheckServic
 builder.Services.AddApiHttpClient<BBF.Shared.Contracts.Money.IMoneyService, HttpMoneyService>(apiBaseUrl);
 builder.Services.AddApiHttpClient<BBF.Shared.Contracts.Alerts.IAlertService, HttpAlertService>(apiBaseUrl);
 builder.Services.AddApiHttpClient<BBF.Shared.Contracts.Planning.IPlanningService, HttpPlanningService>(apiBaseUrl);
+builder.Services.AddApiHttpClient<BBF.Shared.Contracts.Settings.IUserSettingsService, HttpUserSettingsService>(apiBaseUrl);
 builder.Services.AddApiHttpClient<BBF.Shared.Contracts.Finance.IFinanceSettingsService, HttpFinanceSettingsService>(apiBaseUrl);
 builder.Services.AddApiHttpClient<IGrocerySectionService, HttpGrocerySectionService>(apiBaseUrl);
 builder.Services.AddApiHttpClient<IIngredientService, HttpIngredientService>(apiBaseUrl);

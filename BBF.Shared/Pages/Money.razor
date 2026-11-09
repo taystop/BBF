@@ -4,7 +4,6 @@
 @attribute [Authorize]
 @inject IMoneyService MoneySvc
 @inject IAlertService AlertSvc
-@inject IDialogService DialogService
 @inject NavigationManager Nav
 @inject ApiGroupContext GroupContext
 @inject ISnackbar Snackbar
@@ -81,7 +80,7 @@
                 {
                     <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="DismissAllAlerts">Clear all</MudButton>
                 }
-                <MudIconButton Icon="@Icons.Material.Filled.Settings" Size="Size.Small" OnClick="OpenAlertSettings" aria-label="Alert settings" />
+                <MudIconButton Icon="@Icons.Material.Filled.Settings" Size="Size.Small" Href="/settings" aria-label="Notification settings" />
             </div>
             @foreach (var alert in _alerts.Take(_showAllAlerts ? 50 : 3))
             {
@@ -387,33 +386,6 @@
     {
         if (alert.Link is { } link && link.StartsWith('/'))
             Nav.NavigateTo(link);
-    }
-
-    private async Task OpenAlertSettings()
-    {
-        var groupId = GroupContext.ActiveGroupId!.Value;
-        try
-        {
-            var p = await AlertSvc.GetPreferencesAsync(groupId);
-            var parameters = new DialogParameters<AlertSettingsDialog>
-            {
-                { x => x.CategoryLimits, p.CategoryLimits },
-                { x => x.BillsAndBalance, p.BillsAndBalance },
-                { x => x.Payday, p.Payday },
-                { x => x.CategorizeReminder, p.CategorizeReminder },
-                { x => x.Push, p.Push },
-            };
-            var dialog = await DialogService.ShowAsync<AlertSettingsDialog>("Alert Settings", parameters);
-            var result = await dialog.Result;
-            if (result is null || result.Canceled || result.Data is not AlertPreferencesDto updated) return;
-
-            await AlertSvc.UpdatePreferencesAsync(groupId, updated);
-            Snackbar.Add("Alert settings saved.", Severity.Success);
-        }
-        catch (Exception ex)
-        {
-            Snackbar.Add($"Couldn't save alert settings: {ex.Message}", Severity.Error);
-        }
     }
 
     private static string AlertIcon(string kind) => kind switch

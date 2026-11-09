@@ -1561,6 +1561,33 @@ namespace BBF.Migrations
                     b.ToTable("UserGroupMembers");
                 });
 
+            modelBuilder.Entity("BBF.Data.Entities.UserNotificationSettings", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<bool>("ServiceAlerts")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId")
+                        .IsUnique();
+
+                    b.ToTable("UserNotificationSettings");
+                });
+
             modelBuilder.Entity("BBF.Data.Entities.WikiArticle", b =>
                 {
                     b.Property<int>("Id")
