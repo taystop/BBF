@@ -247,7 +247,12 @@ public class PlaidService
             var hasMore = true;
             while (hasMore)
             {
-                var request = new TransactionsSyncRequest { AccessToken = connection.AccessToken };
+                var request = new TransactionsSyncRequest
+                {
+                    AccessToken = connection.AccessToken,
+                    // The bank's raw text tells a paycheck from a refund at the same company. No extra cost.
+                    Options = new TransactionsSyncRequestOptions { IncludeOriginalDescription = true },
+                };
                 if (!string.IsNullOrEmpty(connection.Cursor))
                     request.Cursor = connection.Cursor;
 
@@ -263,7 +268,8 @@ public class PlaidService
                     links.TryGetValue(txn.AccountId ?? "", out var link);
                     var amount = (decimal)(txn.Amount ?? 0); // Plaid: positive = money out, negative = money in
                     var detailed = txn.PersonalFinanceCategory?.Detailed;
-                    var (kind, isCardPayment) = Classify(txn.PersonalFinanceCategory?.Primary, detailed, amount, link?.IsCredit == true);
+                    var bankText = txn.OriginalDescription ?? txn.Name;
+                    var (kind, isCardPayment) = Classify(txn.PersonalFinanceCategory?.Primary, detailed, amount, link?.IsCredit == true, bankText);
 
                     // A posted transaction replacing a pending one: update the pending row in place so its
                     // category, kind and any paid-bill link carry over. Plaid's matching "removed" entry
@@ -282,11 +288,17 @@ public class PlaidService
                     row.Date = txn.Date?.ToDateTime(TimeOnly.MinValue) ?? DateTime.UtcNow.Date;
                     row.Description = txn.MerchantName ?? txn.Name ?? txn.OriginalDescription ?? "Unknown";
                     row.MerchantName = txn.MerchantName;
+                    row.BankDescription = bankText;
                     row.AccountId = link?.AccountId;
                     row.IsPending = txn.Pending == true;
                     row.PlaidCategory = detailed;
                     if (!row.KindSetManually)
+                    {
                         row.Kind = kind;
+                        // A pending deposit may have picked up a store category before it was recognised as pay.
+                        if (kind == TransactionKinds.Income && amount < 0)
+                            row.CategoryId = null;
+                    }
 
                     if (row.CategoryId is null && row.Kind == TransactionKinds.Spending)
                     {
@@ -314,11 +326,17 @@ public class PlaidService
                     existing.Date = txn.Date?.ToDateTime(TimeOnly.MinValue) ?? existing.Date;
                     existing.Description = txn.MerchantName ?? txn.Name ?? txn.OriginalDescription ?? existing.Description;
                     existing.MerchantName = txn.MerchantName ?? existing.MerchantName;
+                    existing.BankDescription = txn.OriginalDescription ?? txn.Name ?? existing.BankDescription;
                     existing.IsPending = txn.Pending == true;
                     existing.PlaidCategory = txn.PersonalFinanceCategory?.Detailed ?? existing.PlaidCategory;
                     existing.AccountId = link?.AccountId ?? existing.AccountId;
                     if (!existing.KindSetManually)
-                        existing.Kind = Classify(txn.PersonalFinanceCategory?.Primary, existing.PlaidCategory, existing.Amount, link?.IsCredit == true).Kind;
+                    {
+                        existing.Kind = Classify(txn.PersonalFinanceCategory?.Primary, existing.PlaidCategory, existing.Amount,
+                            link?.IsCredit == true, existing.BankDescription).Kind;
+                        if (existing.Kind == TransactionKinds.Income && existing.Amount < 0)
+                            existing.CategoryId = null; // a paycheck isn't a grocery refund
+                    }
                 }
 
                 // Save before removals: a pending row converted above still has its old Plaid id in the
@@ -367,8 +385,13 @@ public class PlaidService
     /// <see cref="PairTransfersAsync"/> finds the other half in one of the group's own accounts — a
     /// Venmo/Zelle to someone else shouldn't vanish from the budget.
     /// </summary>
-    private static (string Kind, bool IsCardPayment) Classify(string? primary, string? detailed, decimal amount, bool isCreditAccount)
+    private static (string Kind, bool IsCardPayment) Classify(string? primary, string? detailed, decimal amount, bool isCreditAccount, string? bankText)
     {
+        // Payroll from an employer you also shop at (e.g. Walmart) can arrive tagged as a merchant
+        // transaction; the bank's own text still says it's pay.
+        if (amount < 0 && !isCreditAccount && LooksLikePayroll(bankText))
+            return (TransactionKinds.Income, false);
+
         if (detailed == "LOAN_PAYMENTS_CREDIT_CARD_PAYMENT")
             return isCreditAccount ? (TransactionKinds.Transfer, false) : (TransactionKinds.Spending, true);
 
@@ -383,6 +406,14 @@ public class PlaidService
             return (TransactionKinds.Income, false);
 
         return (TransactionKinds.Spending, false);
+    }
+
+    private static readonly string[] PayrollWords = ["payroll", "dirdep", "directdep", "salary", "paycheck", "payrl"];
+
+    private static bool LooksLikePayroll(string? bankText)
+    {
+        var text = BillMatching.Normalize(bankText);
+        return text.Length > 0 && PayrollWords.Any(text.Contains);
     }
 
     /// <summary>

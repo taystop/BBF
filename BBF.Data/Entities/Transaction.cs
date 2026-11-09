@@ -8,6 +8,13 @@ public class Transaction
     public DateTime Date { get; set; }
     public string Description { get; set; } = string.Empty;
     public string? MerchantName { get; set; }
+
+    /// <summary>
+    /// The bank's own text for a synced transaction (e.g. "WAL-MART PAYROLL DIR DEP"). Description shows
+    /// the cleaned-up merchant name, which can't tell a paycheck from a refund when the employer is also
+    /// a store you shop at.
+    /// </summary>
+    public string? BankDescription { get; set; }
     public string Source { get; set; } = "Manual"; // "Plaid", "Manual", "CSV", or "Recurring"
 
     /// <summary>"Spending" (counts toward category budgets, net of refunds), "Income", or "Transfer" (ignored by budgets).</summary>

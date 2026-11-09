@@ -138,7 +138,10 @@ public static class PaycheckMatching
             paycheck.ReceivedAt = DateTime.UtcNow;
 
             if (!match.KindSetManually)
+            {
                 match.Kind = TransactionKinds.Income;
+                match.CategoryId = null;
+            }
         }
     }
 

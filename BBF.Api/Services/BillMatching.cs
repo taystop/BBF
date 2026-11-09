@@ -199,7 +199,8 @@ public static class BillMatching
     {
         if (matchText.Length < 3) return false;
         return Normalize(t.Description).Contains(matchText)
-            || (t.MerchantName is not null && Normalize(t.MerchantName).Contains(matchText));
+            || (t.MerchantName is not null && Normalize(t.MerchantName).Contains(matchText))
+            || (t.BankDescription is not null && Normalize(t.BankDescription).Contains(matchText));
     }
 
     internal static string Normalize(string? text) =>
