@@ -37,6 +37,9 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
     public DbSet<Paycheck> Paychecks => Set<Paycheck>();
     public DbSet<MerchantRule> MerchantRules => Set<MerchantRule>();
     public DbSet<SuggestionDismissal> SuggestionDismissals => Set<SuggestionDismissal>();
+    public DbSet<FinanceAlert> FinanceAlerts => Set<FinanceAlert>();
+    public DbSet<AlertPreferences> AlertPreferences => Set<AlertPreferences>();
+    public DbSet<LeftoverDecision> LeftoverDecisions => Set<LeftoverDecision>();
     public DbSet<Goal> Goals => Set<Goal>();
     public DbSet<GoalContribution> GoalContributions => Set<GoalContribution>();
     public DbSet<UserGroup> UserGroups => Set<UserGroup>();
@@ -319,6 +322,49 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
              .WithMany()
              .HasForeignKey(r => r.CategoryId)
              .OnDelete(DeleteBehavior.NoAction);
+        });
+
+        builder.Entity<FinanceAlert>(e =>
+        {
+            e.HasQueryFilter(a => CurrentGroupId == null || a.GroupId == CurrentGroupId);
+            e.Property(a => a.UserId).HasMaxLength(450);
+            e.Property(a => a.Kind).HasMaxLength(30);
+            e.Property(a => a.Key).HasMaxLength(200);
+            e.Property(a => a.Title).HasMaxLength(200);
+            e.Property(a => a.Link).HasMaxLength(200);
+            e.HasIndex(a => new { a.GroupId, a.UserId, a.Key }).IsUnique().HasFilter("[GroupId] IS NOT NULL");
+            e.HasIndex(a => new { a.GroupId, a.UserId, a.CreatedAt });
+
+            e.HasOne(a => a.Group)
+             .WithMany()
+             .HasForeignKey(a => a.GroupId)
+             .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<AlertPreferences>(e =>
+        {
+            e.HasQueryFilter(p => CurrentGroupId == null || p.GroupId == CurrentGroupId);
+            e.Property(p => p.UserId).HasMaxLength(450);
+            e.HasIndex(p => new { p.GroupId, p.UserId }).IsUnique().HasFilter("[GroupId] IS NOT NULL");
+
+            e.HasOne(p => p.Group)
+             .WithMany()
+             .HasForeignKey(p => p.GroupId)
+             .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<LeftoverDecision>(e =>
+        {
+            e.HasQueryFilter(d => CurrentGroupId == null || d.GroupId == CurrentGroupId);
+            e.Property(d => d.Amount).HasColumnType("decimal(18,2)");
+            e.Property(d => d.Decision).HasMaxLength(20);
+            e.HasIndex(d => new { d.GroupId, d.PeriodStart }).IsUnique().HasFilter("[GroupId] IS NOT NULL");
+            e.HasIndex(d => new { d.GroupId, d.NextPeriodStart });
+
+            e.HasOne(d => d.Group)
+             .WithMany()
+             .HasForeignKey(d => d.GroupId)
+             .OnDelete(DeleteBehavior.Cascade);
         });
 
         builder.Entity<SuggestionDismissal>(e =>

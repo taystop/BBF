@@ -76,7 +76,9 @@ public record PayPeriodDto(
     decimal Leftover,
     // Still to happen this period (private items included): paychecks not yet in, bills not yet paid.
     decimal IncomeStillExpected = 0,
-    decimal BillsStillDue = 0);
+    decimal BillsStillDue = 0,
+    // Left over from the previous pay period and not moved to savings (negative = overspent). Included in Leftover.
+    decimal CarriedIn = 0);
 
 public record UpdatePaycheckStatusRequest(string Status);
 

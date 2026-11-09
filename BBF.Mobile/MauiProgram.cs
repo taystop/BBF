@@ -74,6 +74,7 @@ public static class MauiProgram
         builder.Services.AddApiHttpClient<BBF.Shared.Contracts.Bills.IBillService, HttpBillService>(ApiBaseUrl);
         builder.Services.AddApiHttpClient<BBF.Shared.Contracts.Paychecks.IPaycheckService, HttpPaycheckService>(ApiBaseUrl);
         builder.Services.AddApiHttpClient<BBF.Shared.Contracts.Money.IMoneyService, HttpMoneyService>(ApiBaseUrl);
+        builder.Services.AddApiHttpClient<BBF.Shared.Contracts.Alerts.IAlertService, HttpAlertService>(ApiBaseUrl);
         builder.Services.AddApiHttpClient<BBF.Shared.Contracts.Finance.IFinanceSettingsService, HttpFinanceSettingsService>(ApiBaseUrl);
         builder.Services.AddApiHttpClient<IGrocerySectionService, HttpGrocerySectionService>(ApiBaseUrl);
         builder.Services.AddApiHttpClient<IIngredientService, HttpIngredientService>(ApiBaseUrl);

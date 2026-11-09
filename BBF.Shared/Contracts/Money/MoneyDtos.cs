@@ -1,3 +1,4 @@
+using BBF.Shared.Contracts.Alerts;
 using BBF.Shared.Contracts.Paychecks;
 using BBF.Shared.Contracts.Transactions;
 
@@ -17,7 +18,9 @@ public record MoneySummaryDto(
     DateTime? NextPayday,
     PayPeriodDto Period,
     List<UpcomingBillDto> NextBills,
-    int ToCategorize);
+    int ToCategorize,
+    LeftoverPromptDto? LeftoverPrompt = null,
+    int OpenAlerts = 0);
 
 public record UpcomingBillDto(int BillId, string Payee, DateTime DueDate, decimal? Amount, bool IsHidden);
 

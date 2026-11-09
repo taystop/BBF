@@ -49,23 +49,31 @@ public class MoneyService(ITenantDbContextFactory tenantDb, ICurrentUserContext 
             .ToList();
 
         var toCategorize = await NeedsCategory(db, userId, await FinanceSettingsService.GetBudgetStartAsync(db, ct)).CountAsync(ct);
+        var leftoverPrompt = await AlertsService.GetLeftoverPromptAsync(db, period.Start, ct);
+        var alertSince = DateTime.UtcNow.AddDays(-30);
+        var openAlerts = await db.FinanceAlerts.CountAsync(a => a.UserId == userId && a.DismissedAt == null && a.CreatedAt >= alertSince, ct);
 
         return new MoneySummaryDto(
             checking + period.IncomeStillExpected - period.BillsStillDue,
             checking, period.IncomeStillExpected, period.BillsStillDue,
-            hasChecking, asOf, nextPayday, period, nextBills, toCategorize);
+            hasChecking, asOf, nextPayday, period, nextBills, toCategorize,
+            leftoverPrompt, openAlerts);
     }
 
     // ------------------------------------------------------------------ Forecast
 
     public async Task<ForecastDto> GetForecastAsync(int groupId, int days, CancellationToken ct = default)
     {
+        await using var db = await tenantDb.CreateForGroupAsync(groupId, ct);
+        return await BuildForecastAsync(db, currentUser.UserId, days, ct);
+    }
+
+    /// <summary>The forecast through a group-scoped context; <paramref name="userId"/> is who's looking.</summary>
+    public static async Task<ForecastDto> BuildForecastAsync(ApplicationDbContext db, string userId, int days, CancellationToken ct)
+    {
         days = Math.Clamp(days, 1, 90);
         var today = DateTime.Today;
         var end = today.AddDays(days - 1);
-
-        await using var db = await tenantDb.CreateForGroupAsync(groupId, ct);
-        var userId = currentUser.UserId;
         var (balance, _, _) = await CheckingBalanceAsync(db, ct);
         var threshold = await db.FinanceSettings.Select(f => f.LowBalanceThreshold).FirstOrDefaultAsync(ct) ?? DefaultLowBalance;
 
@@ -252,7 +260,7 @@ public class MoneyService(ITenantDbContextFactory tenantDb, ICurrentUserContext 
     }
 
     /// <summary>Budget spending with no category, visible to this member. Card purchases left out of the budget don't need one.</summary>
-    private static IQueryable<Transaction> NeedsCategory(ApplicationDbContext db, string userId, DateTime? budgetStart) =>
+    internal static IQueryable<Transaction> NeedsCategory(ApplicationDbContext db, string userId, DateTime? budgetStart) =>
         db.Transactions.VisibleTo(db, userId)
             .Where(t => t.Kind == TransactionKinds.Spending && t.CategoryId == null
                 && (budgetStart == null || t.Date >= budgetStart)

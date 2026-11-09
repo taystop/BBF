@@ -69,6 +69,12 @@
                         <MudText Typo="Typo.caption" Color="Color.Secondary">Income</MudText>
                         <MudText Typo="Typo.h6">@_period.Income.ToString("C")</MudText>
                         <MudText Typo="Typo.caption" Color="Color.Secondary">@_period.IncomeReceived.ToString("C") received</MudText>
+                        @if (_period.CarriedIn != 0)
+                        {
+                            <MudText Typo="Typo.caption" Color="@(_period.CarriedIn > 0 ? Color.Success : Color.Error)" Class="d-block">
+                                @(_period.CarriedIn > 0 ? "+" : "")@_period.CarriedIn.ToString("C") carried over
+                            </MudText>
+                        }
                     </MudItem>
                     <MudItem xs="6" sm="3">
                         <MudText Typo="Typo.caption" Color="Color.Secondary">Bills</MudText>
@@ -83,7 +89,7 @@
                     <MudItem xs="6" sm="3">
                         <MudText Typo="Typo.caption" Color="Color.Secondary">Left over</MudText>
                         <MudText Typo="Typo.h6" Color="@(_period.Leftover >= 0 ? Color.Success : Color.Error)">@_period.Leftover.ToString("C")</MudText>
-                        <MudText Typo="Typo.caption" Color="Color.Secondary">after bills</MudText>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">after bills@(_period.CarriedIn != 0 ? ", incl. carried over" : "")</MudText>
                     </MudItem>
                 </MudGrid>
 

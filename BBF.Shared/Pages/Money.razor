@@ -1,7 +1,11 @@
 @page "/money"
 @using BBF.Shared.Contracts.Money
+@using BBF.Shared.Contracts.Alerts
 @attribute [Authorize]
 @inject IMoneyService MoneySvc
+@inject IAlertService AlertSvc
+@inject IDialogService DialogService
+@inject NavigationManager Nav
 @inject ApiGroupContext GroupContext
 @inject ISnackbar Snackbar
 @implements IDisposable
@@ -49,6 +53,58 @@
             </MudAlert>
         }
 
+        @if (s.LeftoverPrompt is LeftoverPromptDto leftover)
+        {
+            <MudAlert Severity="Severity.Success" Class="mb-4" Icon="@Icons.Material.Filled.Savings">
+                <MudText Typo="Typo.subtitle1" Style="font-weight: 600;">
+                    @leftover.Amount.ToString("C") left over from @leftover.PeriodStart.ToString("MMM d") – @leftover.PeriodEnd.ToString("MMM d")
+                </MudText>
+                <MudText Typo="Typo.body2" Class="mb-2">
+                    Move it to savings? Transfer it in your bank app, then tap "Moved to savings". If you keep it, it's added to this pay period
+                    (it already is until you answer).
+                </MudText>
+                <div class="d-flex flex-wrap" style="gap: 8px;">
+                    <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Success" Disabled="_deciding"
+                               OnClick="@(() => DecideLeftover(leftover, "Saved"))">Moved to savings</MudButton>
+                    <MudButton Size="Size.Small" Variant="Variant.Outlined" Disabled="_deciding"
+                               OnClick="@(() => DecideLeftover(leftover, "CarriedOver"))">Keep it for this paycheck</MudButton>
+                </div>
+            </MudAlert>
+        }
+
+        <MudPaper Class="pa-4 mb-4" Elevation="2">
+            <div class="d-flex align-center">
+                <MudIcon Icon="@Icons.Material.Filled.Notifications" Color="Color.Primary" Class="mr-2" />
+                <MudText Typo="Typo.h6">Alerts</MudText>
+                <MudSpacer />
+                @if (_alerts.Count > 1)
+                {
+                    <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="DismissAllAlerts">Clear all</MudButton>
+                }
+                <MudIconButton Icon="@Icons.Material.Filled.Settings" Size="Size.Small" OnClick="OpenAlertSettings" aria-label="Alert settings" />
+            </div>
+            @foreach (var alert in _alerts.Take(_showAllAlerts ? 50 : 3))
+            {
+                <div class="d-flex align-start py-2" style="gap: 12px; border-top: 1px solid var(--mud-palette-lines-default);" @key="alert.Id">
+                    <MudIcon Icon="@AlertIcon(alert.Kind)" Size="Size.Small" Color="@AlertColor(alert.Kind)" Class="mt-1" />
+                    <div style="flex: 1; min-width: 0; cursor: @(alert.Link is null ? "default" : "pointer");" @onclick="@(() => OpenAlert(alert))">
+                        <MudText Typo="Typo.body2" Style="font-weight: 600;">@alert.Title</MudText>
+                        <MudText Typo="Typo.body2">@alert.Body</MudText>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">@alert.CreatedAt.ToLocalTime().ToString("ddd MMM d, h:mm tt")</MudText>
+                    </div>
+                    <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small" OnClick="@(() => DismissAlert(alert))" aria-label="Dismiss alert" />
+                </div>
+            }
+            @if (_alerts.Count > 3 && !_showAllAlerts)
+            {
+                <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="@(() => _showAllAlerts = true)">Show all @_alerts.Count</MudButton>
+            }
+            @if (_alerts.Count == 0)
+            {
+                <MudText Typo="Typo.body2" Color="Color.Secondary">Nothing new.</MudText>
+            }
+        </MudPaper>
+
         <MudGrid Spacing="3">
             <MudItem xs="12" md="6">
                 <MudPaper Class="pa-4" Elevation="2" Style="height: 100%;">
@@ -77,6 +133,10 @@
                     <MudText Typo="Typo.body2" Color="Color.Secondary">@s.Period.Start.ToString("MMM d") – @s.Period.End.ToString("MMM d")</MudText>
                     <MudText Typo="Typo.h4" Color="@(s.Period.Leftover >= 0 ? Color.Success : Color.Error)" Class="mt-1">@s.Period.Leftover.ToString("C")</MudText>
                     <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block mb-3">left over after bills and spending</MudText>
+                    @if (s.Period.CarriedIn != 0)
+                    {
+                        <div class="d-flex justify-space-between"><MudText Typo="Typo.body2">Carried over</MudText><MudText Typo="Typo.body2">@s.Period.CarriedIn.ToString("C")</MudText></div>
+                    }
                     <div class="d-flex justify-space-between"><MudText Typo="Typo.body2">Income</MudText><MudText Typo="Typo.body2">@s.Period.Income.ToString("C")</MudText></div>
                     <div class="d-flex justify-space-between"><MudText Typo="Typo.body2">Bills</MudText><MudText Typo="Typo.body2">@s.Period.BillsTotal.ToString("C")</MudText></div>
                     <div class="d-flex justify-space-between"><MudText Typo="Typo.body2">Other spending so far</MudText><MudText Typo="Typo.body2">@s.Period.OtherSpending.ToString("C")</MudText></div>
@@ -207,6 +267,9 @@
     private ForecastDto? _forecast;
     private int _forecastDays = 14;
     private bool _loadFailed;
+    private List<FinanceAlertDto> _alerts = [];
+    private bool _showAllAlerts;
+    private bool _deciding;
 
     /// <summary>Days worth showing: today, any day with a paycheck or bill, and the first day of each tight stretch.</summary>
     private IEnumerable<ForecastDayDto> VisibleDays
@@ -250,6 +313,7 @@
             _loadFailed = false;
             _summary = await MoneySvc.GetSummaryAsync(groupId.Value);
             _forecast = await MoneySvc.GetForecastAsync(groupId.Value, _forecastDays);
+            _alerts = await AlertSvc.GetAlertsAsync(groupId.Value);
         }
         catch (Exception)
         {
@@ -272,6 +336,100 @@
             Snackbar.Add($"Couldn't load the forecast: {ex.Message}", Severity.Error);
         }
     }
+
+    private async Task DecideLeftover(LeftoverPromptDto leftover, string decision)
+    {
+        _deciding = true;
+        try
+        {
+            await AlertSvc.DecideLeftoverAsync(GroupContext.ActiveGroupId!.Value, leftover.Id, new LeftoverDecisionRequest(decision));
+            Snackbar.Add(decision == "Saved" ? "Nice. Marked as moved to savings." : "Kept for this pay period.", Severity.Success);
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Couldn't save that: {ex.Message}", Severity.Error);
+        }
+        _deciding = false;
+    }
+
+    private async Task DismissAlert(FinanceAlertDto alert)
+    {
+        try
+        {
+            await AlertSvc.DismissAsync(GroupContext.ActiveGroupId!.Value, alert.Id);
+            _alerts.Remove(alert);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Couldn't dismiss it: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task DismissAllAlerts()
+    {
+        try
+        {
+            await AlertSvc.DismissAllAsync(GroupContext.ActiveGroupId!.Value);
+            _alerts.Clear();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Couldn't clear alerts: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private void OpenAlert(FinanceAlertDto alert)
+    {
+        if (alert.Link is { } link && link.StartsWith('/'))
+            Nav.NavigateTo(link);
+    }
+
+    private async Task OpenAlertSettings()
+    {
+        var groupId = GroupContext.ActiveGroupId!.Value;
+        try
+        {
+            var p = await AlertSvc.GetPreferencesAsync(groupId);
+            var parameters = new DialogParameters<AlertSettingsDialog>
+            {
+                { x => x.CategoryLimits, p.CategoryLimits },
+                { x => x.BillsAndBalance, p.BillsAndBalance },
+                { x => x.Payday, p.Payday },
+                { x => x.CategorizeReminder, p.CategorizeReminder },
+                { x => x.Push, p.Push },
+            };
+            var dialog = await DialogService.ShowAsync<AlertSettingsDialog>("Alert Settings", parameters);
+            var result = await dialog.Result;
+            if (result is null || result.Canceled || result.Data is not AlertPreferencesDto updated) return;
+
+            await AlertSvc.UpdatePreferencesAsync(groupId, updated);
+            Snackbar.Add("Alert settings saved.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Couldn't save alert settings: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private static string AlertIcon(string kind) => kind switch
+    {
+        "CategoryLimit" => Icons.Material.Filled.PieChart,
+        "BillDue" => Icons.Material.Filled.Receipt,
+        "LowBalance" => Icons.Material.Filled.Warning,
+        "Payday" => Icons.Material.Filled.Payments,
+        "Leftover" => Icons.Material.Filled.Savings,
+        "Categorize" => Icons.Material.Filled.FactCheck,
+        _ => Icons.Material.Filled.Notifications,
+    };
+
+    private static Color AlertColor(string kind) => kind switch
+    {
+        "LowBalance" => Color.Error,
+        "CategoryLimit" => Color.Warning,
+        "Payday" or "Leftover" => Color.Success,
+        _ => Color.Primary,
+    };
 
     public void Dispose() => GroupContext.OnGroupChanged -= OnGroupChanged;
 }

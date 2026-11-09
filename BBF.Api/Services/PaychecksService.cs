@@ -127,7 +127,16 @@ public class PaychecksService(ITenantDbContextFactory tenantDb, ICurrentUserCont
     public async Task<PayPeriodDto> GetPeriodAsync(int groupId, DateTime date, CancellationToken ct = default)
     {
         await using var db = await tenantDb.CreateForGroupAsync(groupId, ct);
-        var userId = currentUser.UserId;
+        return await BuildPeriodAsync(db, groupId, currentUser.UserId, date, ct);
+    }
+
+    /// <summary>
+    /// The pay period containing <paramref name="date"/>, read through a context already scoped to the
+    /// group. <paramref name="userId"/> is who's looking (for hiding private details); background jobs
+    /// pass an empty id, which sees totals but no private details.
+    /// </summary>
+    public static async Task<PayPeriodDto> BuildPeriodAsync(ApplicationDbContext db, int groupId, string userId, DateTime date, CancellationToken ct)
+    {
         date = date.Date;
 
         var hasSchedules = await db.PaySchedules.AnyAsync(s => s.IsActive, ct);
@@ -207,11 +216,16 @@ public class PaychecksService(ITenantDbContextFactory tenantDb, ICurrentUserCont
         var incomeStillExpected = counted.Where(p => p.Status == PaycheckStatuses.Expected).Sum(p => p.ExpectedAmount);
         var billsStillDue = billsCounted.Where(b => b.Status == BillStatuses.Expected).Sum(b => b.ExpectedAmount);
 
+        // The previous period's leftover, unless it was moved to savings.
+        var carriedIn = await db.LeftoverDecisions
+            .Where(d => d.NextPeriodStart == start && d.Decision != LeftoverDecisions.Saved)
+            .SumAsync(d => (decimal?)d.Amount, ct) ?? 0m;
+
         return new PayPeriodDto(
             start, end, hasSchedules, paycheckDtos, billDtos,
             income, incomeReceived, billsTotal, billsPaid, otherSpending,
-            income - billsTotal - otherSpending,
-            incomeStillExpected, billsStillDue);
+            carriedIn + income - billsTotal - otherSpending,
+            incomeStillExpected, billsStillDue, carriedIn);
     }
 
     // --- helpers ---

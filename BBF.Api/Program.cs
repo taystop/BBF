@@ -112,6 +112,7 @@ builder.Services.AddScoped<RecurringTransactionsService>();
 builder.Services.AddScoped<BillsService>();
 builder.Services.AddScoped<PaychecksService>();
 builder.Services.AddScoped<MoneyService>();
+builder.Services.AddScoped<AlertsService>();
 builder.Services.AddScoped<FinanceSettingsService>();
 builder.Services.AddScoped<GoalsService>();
 builder.Services.AddScoped<GrocerySectionsService>();
@@ -137,6 +138,7 @@ builder.Services.AddHostedService<RecurringBillsBackgroundService>();
 builder.Services.AddSingleton<PlaidSyncQueue>();
 builder.Services.AddHostedService<PlaidSyncBackgroundService>();
 builder.Services.AddHostedService<ServiceHealthMonitorBackgroundService>();
+builder.Services.AddHostedService<BudgetAlertsBackgroundService>();
 
 // Firebase only initializes when a real service account is configured — keeps the API runnable
 // before (or without) setting up push, with every call site still going through INotificationSender
@@ -231,6 +233,7 @@ app.MapRecurringTransactionsEndpoints();
 app.MapBillsEndpoints();
 app.MapPaychecksEndpoints();
 app.MapMoneyEndpoints();
+app.MapAlertsEndpoints();
 app.MapFinanceSettingsEndpoints();
 app.MapGoalsEndpoints();
 app.MapGrocerySectionsEndpoints();

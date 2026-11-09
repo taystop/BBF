@@ -146,6 +146,46 @@ namespace BBF.Migrations
                     b.ToTable("Accounts");
                 });
 
+            modelBuilder.Entity("BBF.Data.Entities.AlertPreferences", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<bool>("BillsAndBalance")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("CategorizeReminder")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("CategoryLimits")
+                        .HasColumnType("bit");
+
+                    b.Property<int?>("GroupId")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("Payday")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("Push")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("GroupId", "UserId")
+                        .IsUnique()
+                        .HasFilter("[GroupId] IS NOT NULL");
+
+                    b.ToTable("AlertPreferences");
+                });
+
             modelBuilder.Entity("BBF.Data.Entities.AppSetting", b =>
                 {
                     b.Property<string>("Key")
@@ -539,6 +579,62 @@ namespace BBF.Migrations
                     b.ToTable("ErrorLog", (string)null);
                 });
 
+            modelBuilder.Entity("BBF.Data.Entities.FinanceAlert", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Body")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("DismissedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("GroupId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Key")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<string>("Link")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("GroupId", "UserId", "CreatedAt");
+
+                    b.HasIndex("GroupId", "UserId", "Key")
+                        .IsUnique()
+                        .HasFilter("[GroupId] IS NOT NULL");
+
+                    b.ToTable("FinanceAlerts");
+                });
+
             modelBuilder.Entity("BBF.Data.Entities.FinanceSettings", b =>
                 {
                     b.Property<int>("Id")
@@ -762,6 +858,54 @@ namespace BBF.Migrations
                     b.HasIndex("SectionId");
 
                     b.ToTable("Ingredients");
+                });
+
+            modelBuilder.Entity("BBF.Data.Entities.LeftoverDecision", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<decimal>("Amount")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("DecidedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("DecidedByUserId")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Decision")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<int?>("GroupId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("NextPeriodStart")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("PeriodEnd")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("PeriodStart")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("GroupId", "NextPeriodStart");
+
+                    b.HasIndex("GroupId", "PeriodStart")
+                        .IsUnique()
+                        .HasFilter("[GroupId] IS NOT NULL");
+
+                    b.ToTable("LeftoverDecisions");
                 });
 
             modelBuilder.Entity("BBF.Data.Entities.MealPlanEntry", b =>
@@ -1618,6 +1762,16 @@ namespace BBF.Migrations
                     b.Navigation("PlaidAccount");
                 });
 
+            modelBuilder.Entity("BBF.Data.Entities.AlertPreferences", b =>
+                {
+                    b.HasOne("BBF.Data.Entities.UserGroup", "Group")
+                        .WithMany()
+                        .HasForeignKey("GroupId")
+                        .OnDelete(DeleteBehavior.Cascade);
+
+                    b.Navigation("Group");
+                });
+
             modelBuilder.Entity("BBF.Data.Entities.BillOccurrence", b =>
                 {
                     b.HasOne("BBF.Data.Entities.RecurringTransaction", "RecurringTransaction")
@@ -1738,6 +1892,16 @@ namespace BBF.Migrations
                     b.Navigation("Group");
                 });
 
+            modelBuilder.Entity("BBF.Data.Entities.FinanceAlert", b =>
+                {
+                    b.HasOne("BBF.Data.Entities.UserGroup", "Group")
+                        .WithMany()
+                        .HasForeignKey("GroupId")
+                        .OnDelete(DeleteBehavior.Cascade);
+
+                    b.Navigation("Group");
+                });
+
             modelBuilder.Entity("BBF.Data.Entities.FinanceSettings", b =>
                 {
                     b.HasOne("BBF.Data.Entities.UserGroup", "Group")
@@ -1844,6 +2008,16 @@ namespace BBF.Migrations
                     b.Navigation("Group");
 
                     b.Navigation("Section");
+                });
+
+            modelBuilder.Entity("BBF.Data.Entities.LeftoverDecision", b =>
+                {
+                    b.HasOne("BBF.Data.Entities.UserGroup", "Group")
+                        .WithMany()
+                        .HasForeignKey("GroupId")
+                        .OnDelete(DeleteBehavior.Cascade);
+
+                    b.Navigation("Group");
                 });
 
             modelBuilder.Entity("BBF.Data.Entities.MealPlanEntry", b =>
