@@ -6,6 +6,7 @@
     // BBF.Mobile has a real page there; BBF.Web's actual login lives under Identity's Account/Login.
     protected override void OnInitialized()
     {
-        NavigationManager.NavigateTo($"Account/Login?returnUrl={Uri.EscapeDataString(NavigationManager.Uri)}", forceLoad: true);
+        // Return to home after signing in, not back to /login itself.
+        NavigationManager.NavigateTo("Account/Login?returnUrl=%2F", forceLoad: true);
     }
 }

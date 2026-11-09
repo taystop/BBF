@@ -20,10 +20,16 @@ namespace BBF.Components.Account
         {
             uri ??= "";
 
-            // Prevent open redirects.
+            // Prevent open redirects: absolute URIs are only followed to our own host. The scheme is
+            // ignored because behind the Cloudflare tunnel the server may see http while the browser is
+            // on https, and ToBaseRelativePath throws on that mismatch.
             if (!Uri.IsWellFormedUriString(uri, UriKind.Relative))
             {
-                uri = navigationManager.ToBaseRelativePath(uri);
+                var baseUri = new Uri(navigationManager.BaseUri);
+                uri = Uri.TryCreate(uri, UriKind.Absolute, out var absolute)
+                      && string.Equals(absolute.Host, baseUri.Host, StringComparison.OrdinalIgnoreCase)
+                    ? absolute.PathAndQuery + absolute.Fragment
+                    : "/";
             }
 
             navigationManager.NavigateTo(uri);

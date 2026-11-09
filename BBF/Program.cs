@@ -1,4 +1,5 @@
 using BBF.ApiClients;
+using Microsoft.AspNetCore.HttpOverrides;
 using BBF.Components;
 using BBF.Components.Account;
 using BBF.Data;
@@ -103,7 +104,17 @@ builder.Services.AddApiHttpClient<IIntegrationsStatusService, HttpIntegrationsSt
 builder.Services.AddApiHttpClient<IUserManagementService, HttpUserManagementService>(apiBaseUrl);
 builder.Services.AddScoped<ApiGroupContext>();
 
+// The site sits behind a Cloudflare Tunnel (cloudflared on this machine), so requests reach Kestrel/IIS
+// over http. Trust the tunnel's X-Forwarded-Proto so the app knows the browser is on https. Only
+// loopback proxies are trusted by default, which matches cloudflared running locally.
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+});
+
 var app = builder.Build();
+
+app.UseForwardedHeaders();
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
