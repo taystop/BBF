@@ -6,8 +6,8 @@ namespace BBF.Api.BackgroundServices;
 
 /// <summary>
 /// Every 15 minutes, across every group: posts due transactions for AutoPost rules, creates expected
-/// bills for the rest (see <see cref="BillMatching"/>), and marks bills paid when a matching transaction
-/// has arrived. Uses an unscoped DbContext — the one trusted cross-tenant operation here; matching
+/// bills for the rest (see <see cref="BillMatching"/>) and expected paychecks (see
+/// <see cref="PaycheckMatching"/>), and matches both to transactions that have arrived. Uses an unscoped DbContext — the one trusted cross-tenant operation here; matching
 /// compares GroupId explicitly so groups never mix.
 /// </summary>
 public class RecurringBillsBackgroundService(
@@ -41,8 +41,12 @@ public class RecurringBillsBackgroundService(
 
         var today = DateTime.Today;
         await BillMatching.GenerateAsync(db, today, ct);
+        await PaycheckMatching.GenerateAsync(db, today, ct);
         await db.SaveChangesAsync(ct);
 
+        // Paychecks first, so a deposit is never taken by an income-type bill rule.
+        await PaycheckMatching.MatchAsync(db, today, ct);
+        await db.SaveChangesAsync(ct);
         await BillMatching.MatchAsync(db, today, ct);
         await db.SaveChangesAsync(ct);
     }

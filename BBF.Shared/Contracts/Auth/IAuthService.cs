@@ -12,6 +12,9 @@ public interface IGroupService
     /// <summary>Lists the signed-in user's groups, auto-creating a personal group on first call if they have none.</summary>
     Task<List<GroupDto>> GetMyGroupsAsync(CancellationToken ct = default);
 
+    /// <summary>Members of a group the signed-in user belongs to (no admin role needed).</summary>
+    Task<List<GroupMemberDto>> GetMembersAsync(int groupId, CancellationToken ct = default);
+
     // --- Group management (server-enforced Admin-role gate, matching the original page's
     // [Authorize(Roles = "Admin")] attribute) ---
 

@@ -9,6 +9,9 @@ public class HttpGroupService(HttpClient http) : IGroupService
     public async Task<List<GroupDto>> GetMyGroupsAsync(CancellationToken ct = default) =>
         await http.GetFromJsonAsync<List<GroupDto>>("/api/groups", ct) ?? [];
 
+    public async Task<List<GroupMemberDto>> GetMembersAsync(int groupId, CancellationToken ct = default) =>
+        await http.GetFromJsonAsync<List<GroupMemberDto>>($"/api/groups/{groupId}/members", ct) ?? [];
+
     public async Task<List<GroupDetailDto>> GetAllGroupsDetailedAsync(CancellationToken ct = default) =>
         await http.GetFromJsonAsync<List<GroupDetailDto>>("/api/admin/groups", ct) ?? [];
 

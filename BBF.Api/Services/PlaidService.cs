@@ -159,7 +159,14 @@ public class PlaidService
             .OrderBy(c => c.InstitutionName)
             .ToListAsync(ct);
 
-        return connections.Select(c => ToDto(c, c.Accounts.ToList())).ToList();
+        var userId = _currentUser.UserId;
+        var hiddenPlaidIds = (await db.Accounts
+                .Where(a => a.PlaidAccountId != null && a.PrivateToUserId != null && a.PrivateToUserId != userId)
+                .Select(a => a.PlaidAccountId!.Value)
+                .ToListAsync(ct))
+            .ToHashSet();
+
+        return connections.Select(c => ToDto(c, c.Accounts.Where(a => !hiddenPlaidIds.Contains(a.Id)).ToList())).ToList();
     }
 
     public async Task RefreshAccountsAsync(int groupId, int connectionId, CancellationToken ct = default)
@@ -329,6 +336,7 @@ public class PlaidService
                     db.Transactions.Remove(existing);
                 }
                 await BillMatching.UnlinkTransactionsAsync(db, removedIds, ct);
+                await PaycheckMatching.UnlinkTransactionsAsync(db, removedIds, ct);
 
                 connection.Cursor = response.NextCursor;
                 connection.LastSynced = DateTime.UtcNow;
@@ -338,6 +346,8 @@ public class PlaidService
             await db.SaveChangesAsync(ct);
 
             await PairTransfersAsync(db, ct);
+            await PaycheckMatching.MatchAsync(db, DateTime.Today, ct);
+            await db.SaveChangesAsync(ct);
             await BillMatching.MatchAsync(db, DateTime.Today, ct);
             await db.SaveChangesAsync(ct);
 

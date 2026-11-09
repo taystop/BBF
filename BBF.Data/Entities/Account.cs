@@ -21,6 +21,12 @@ public class Account
 
     /// <summary>When CurrentBalance last came from the bank. Null = balance is calculated from transactions.</summary>
     public DateTime? BalanceAsOf { get; set; }
+
+    /// <summary>
+    /// Set when a member marks the account private: the money still counts in group totals, but only
+    /// this user sees its balance and transactions. Null = shared with the whole group.
+    /// </summary>
+    public string? PrivateToUserId { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     public int? GroupId { get; set; }

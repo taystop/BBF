@@ -1,0 +1,89 @@
+@using BBF.Shared.Contracts.Accounts
+@using BBF.Shared.Contracts.Groups
+
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">@(IsNew ? "Add Paycheck" : "Edit Paycheck")</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudSelect T="string" @bind-Value="UserId" Label="Who gets paid" Required
+                   Variant="Variant.Outlined" Class="mb-3">
+            @foreach (var member in Members)
+            {
+                <MudSelectItem T="string" Value="@member.UserId">@member.UserName</MudSelectItem>
+            }
+        </MudSelect>
+        <MudTextField @bind-Value="Name" Label="Name" Required Placeholder="e.g. Tayler's pay"
+                      Variant="Variant.Outlined" Class="mb-3" />
+        <MudNumericField @bind-Value="ExpectedAmount" Label="Normal take-home amount ($)" Required
+                         Variant="Variant.Outlined" Class="mb-3" Format="N2" Min="0"
+                         HelperText="Overtime shows up as extra when the deposit arrives." />
+        <MudSelect T="string" @bind-Value="Frequency" Label="How often"
+                   Variant="Variant.Outlined" Class="mb-3">
+            <MudSelectItem T="string" Value="@("Weekly")">Every week</MudSelectItem>
+            <MudSelectItem T="string" Value="@("BiWeekly")">Every two weeks</MudSelectItem>
+            <MudSelectItem T="string" Value="@("Monthly")">Once a month</MudSelectItem>
+        </MudSelect>
+        <MudDatePicker @bind-Date="FirstPayday" Label="A recent or upcoming payday" Required
+                       Variant="Variant.Outlined" Class="mb-3"
+                       HelperText="Any real payday; the others are counted from it." />
+        <MudSelect T="int?" @bind-Value="DepositAccountId" Label="Deposited into (optional)"
+                   Variant="Variant.Outlined" Class="mb-3" Clearable>
+            @foreach (var acct in Accounts)
+            {
+                <MudSelectItem T="int?" Value="@acct.Id">@acct.Name</MudSelectItem>
+            }
+        </MudSelect>
+        <MudTextField @bind-Value="MatchText" Label="Bank description contains (optional)"
+                      Variant="Variant.Outlined" Class="mb-3"
+                      HelperText="e.g. the employer's name. Leave blank to match on amount and date." />
+        <MudSwitch T="bool" @bind-Value="IsPrivate" Label="Private" Color="Color.Primary" Class="mb-1"
+                   Disabled="@(UserId != CurrentUserId)" />
+        <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block mb-3">
+            @(UserId == CurrentUserId
+                ? "Still counted in the group's totals, but only you see the amount and the deposit."
+                : "Only the person who gets paid can make their paycheck private.")
+        </MudText>
+        @if (!IsNew)
+        {
+            <MudSwitch T="bool" @bind-Value="IsActive" Label="Active" Color="Color.Primary" />
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Submit"
+                   Disabled="@(string.IsNullOrEmpty(UserId) || string.IsNullOrWhiteSpace(Name) || ExpectedAmount <= 0 || FirstPayday is null)">
+            Save
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance MudDialog { get; set; } = null!;
+
+    [Parameter] public bool IsNew { get; set; } = true;
+    [Parameter] public List<GroupMemberDto> Members { get; set; } = [];
+    [Parameter] public List<AccountDto> Accounts { get; set; } = [];
+    [Parameter] public string? CurrentUserId { get; set; }
+
+    [Parameter] public string UserId { get; set; } = string.Empty;
+    [Parameter] public string Name { get; set; } = string.Empty;
+    [Parameter] public decimal ExpectedAmount { get; set; }
+    [Parameter] public string Frequency { get; set; } = "BiWeekly";
+    [Parameter] public DateTime? FirstPayday { get; set; } = DateTime.Today;
+    [Parameter] public int? DepositAccountId { get; set; }
+    [Parameter] public string? MatchText { get; set; }
+    [Parameter] public bool IsPrivate { get; set; }
+    [Parameter] public bool IsActive { get; set; } = true;
+
+    private void Cancel() => MudDialog.Cancel();
+
+    private void Submit() => MudDialog.Close(DialogResult.Ok(new Result(
+        UserId, Name, ExpectedAmount, Frequency, FirstPayday!.Value, DepositAccountId, MatchText,
+        IsPrivate && UserId == CurrentUserId, IsActive)));
+
+    public record Result(
+        string UserId, string Name, decimal ExpectedAmount, string Frequency, DateTime FirstPayday,
+        int? DepositAccountId, string? MatchText, bool IsPrivate, bool IsActive);
+}

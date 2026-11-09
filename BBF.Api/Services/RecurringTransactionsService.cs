@@ -5,13 +5,15 @@ using Microsoft.EntityFrameworkCore;
 
 namespace BBF.Api.Services;
 
-public class RecurringTransactionsService(ITenantDbContextFactory tenantDb)
+public class RecurringTransactionsService(ITenantDbContextFactory tenantDb, ICurrentUserContext currentUser)
 {
     public async Task<List<RecurringTransactionDto>> GetActiveAsync(int groupId, CancellationToken ct = default)
     {
         await using var db = await tenantDb.CreateForGroupAsync(groupId, ct);
         var today = DateTime.Today;
+        var userId = currentUser.UserId;
         return await db.RecurringTransactions
+            .Where(r => r.Account.PrivateToUserId == null || r.Account.PrivateToUserId == userId)
             .Include(r => r.Category)
             .Include(r => r.Account)
             .OrderBy(r => r.NextOccurrence)
@@ -58,8 +60,8 @@ public class RecurringTransactionsService(ITenantDbContextFactory tenantDb)
     public async Task UpdateAsync(int groupId, int ruleId, UpdateRecurringTransactionRequest request, CancellationToken ct = default)
     {
         await using var db = await tenantDb.CreateForGroupAsync(groupId, ct);
-        var entity = await db.RecurringTransactions.FirstOrDefaultAsync(r => r.Id == ruleId, ct);
-        if (entity is null) return;
+        var entity = await db.RecurringTransactions.Include(r => r.Account).FirstOrDefaultAsync(r => r.Id == ruleId, ct);
+        if (entity is null || Privacy.IsHiddenFrom(entity.Account.PrivateToUserId, currentUser.UserId)) return;
 
         entity.Payee = request.Payee;
         entity.Amount = request.Amount;
@@ -87,8 +89,8 @@ public class RecurringTransactionsService(ITenantDbContextFactory tenantDb)
     public async Task DeleteAsync(int groupId, int ruleId, CancellationToken ct = default)
     {
         await using var db = await tenantDb.CreateForGroupAsync(groupId, ct);
-        var entity = await db.RecurringTransactions.FirstOrDefaultAsync(r => r.Id == ruleId, ct);
-        if (entity is null) return;
+        var entity = await db.RecurringTransactions.Include(r => r.Account).FirstOrDefaultAsync(r => r.Id == ruleId, ct);
+        if (entity is null || Privacy.IsHiddenFrom(entity.Account.PrivateToUserId, currentUser.UserId)) return;
 
         db.RecurringTransactions.Remove(entity); // its bills cascade
         await db.SaveChangesAsync(ct);

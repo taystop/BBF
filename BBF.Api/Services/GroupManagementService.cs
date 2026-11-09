@@ -153,6 +153,17 @@ public class GroupManagementService(IDbContextFactory<ApplicationDbContext> dbFa
         return [personalGroup];
     }
 
+    /// <summary>Members of one group. The caller must already have verified the requester belongs to it.</summary>
+    public async Task<List<GroupMemberDto>> GetMembersAsync(int groupId, CancellationToken ct = default)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
+        return await db.UserGroupMembers
+            .Where(m => m.GroupId == groupId)
+            .OrderBy(m => m.User.UserName)
+            .Select(m => new GroupMemberDto(m.Id, m.UserId, m.User.UserName ?? "Unknown", m.Role, m.JoinedAt))
+            .ToListAsync(ct);
+    }
+
     private static async Task<bool> IsOwnerAsync(ApplicationDbContext db, int groupId, string userId, CancellationToken ct) =>
         await db.UserGroupMembers.AnyAsync(m => m.GroupId == groupId && m.UserId == userId && m.Role == "Owner", ct);
 

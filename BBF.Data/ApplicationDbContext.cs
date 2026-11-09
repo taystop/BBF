@@ -33,6 +33,8 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
     public DbSet<RecurringTransaction> RecurringTransactions => Set<RecurringTransaction>();
     public DbSet<BillOccurrence> BillOccurrences => Set<BillOccurrence>();
     public DbSet<FinanceSettings> FinanceSettings => Set<FinanceSettings>();
+    public DbSet<PaySchedule> PaySchedules => Set<PaySchedule>();
+    public DbSet<Paycheck> Paychecks => Set<Paycheck>();
     public DbSet<Goal> Goals => Set<Goal>();
     public DbSet<GoalContribution> GoalContributions => Set<GoalContribution>();
     public DbSet<UserGroup> UserGroups => Set<UserGroup>();
@@ -163,6 +165,7 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
         builder.Entity<Account>(e =>
         {
             e.HasQueryFilter(a => CurrentGroupId == null || a.GroupId == CurrentGroupId);
+            e.Property(a => a.PrivateToUserId).HasMaxLength(450);
             e.Property(a => a.StartingBalance).HasColumnType("decimal(18,2)");
             e.Property(a => a.CurrentBalance).HasColumnType("decimal(18,2)");
             e.Property(a => a.AvailableBalance).HasColumnType("decimal(18,2)");
@@ -255,6 +258,45 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
             e.HasOne(b => b.Transaction)
              .WithMany()
              .HasForeignKey(b => b.TransactionId)
+             .OnDelete(DeleteBehavior.NoAction);
+        });
+
+        builder.Entity<PaySchedule>(e =>
+        {
+            e.HasQueryFilter(p => CurrentGroupId == null || p.GroupId == CurrentGroupId);
+            e.Property(p => p.ExpectedAmount).HasColumnType("decimal(18,2)");
+            e.Property(p => p.UserId).HasMaxLength(450);
+            e.HasIndex(p => p.GroupId);
+
+            e.HasOne(p => p.Group)
+             .WithMany()
+             .HasForeignKey(p => p.GroupId)
+             .OnDelete(DeleteBehavior.Cascade);
+
+            // Accounts are deactivated, never deleted; NoAction avoids a second cascade path from UserGroups.
+            e.HasOne(p => p.DepositAccount)
+             .WithMany()
+             .HasForeignKey(p => p.DepositAccountId)
+             .OnDelete(DeleteBehavior.NoAction);
+        });
+
+        builder.Entity<Paycheck>(e =>
+        {
+            e.HasQueryFilter(p => CurrentGroupId == null || p.GroupId == CurrentGroupId);
+            e.Property(p => p.ExpectedAmount).HasColumnType("decimal(18,2)");
+            e.Property(p => p.ActualAmount).HasColumnType("decimal(18,2)");
+            e.HasIndex(p => new { p.PayScheduleId, p.PayDate }).IsUnique();
+            e.HasIndex(p => new { p.GroupId, p.PayDate });
+
+            e.HasOne(p => p.PaySchedule)
+             .WithMany()
+             .HasForeignKey(p => p.PayScheduleId)
+             .OnDelete(DeleteBehavior.Cascade);
+
+            // Same as bills: code unlinks a paycheck before deleting its deposit transaction.
+            e.HasOne(p => p.Transaction)
+             .WithMany()
+             .HasForeignKey(p => p.TransactionId)
              .OnDelete(DeleteBehavior.NoAction);
         });
 

@@ -58,25 +58,39 @@
                                         {
                                             <MudChip T="string" Size="Size.Small" Class="ml-2">Inactive</MudChip>
                                         }
+                                        @if (acct.IsPrivate)
+                                        {
+                                            <MudChip T="string" Size="Size.Small" Class="ml-2" Icon="@Icons.Material.Filled.Lock">Private</MudChip>
+                                        }
                                     </MudText>
                                     <MudText Typo="Typo.caption" Color="Color.Secondary">
                                         @acct.AccountType@(acct.AccountType == "CreditCard" ? (acct.CountPurchasesInBudget ? " · purchases count in budget" : " · only payments count in budget") : "")
                                     </MudText>
                                 </MudStack>
-                                <MudStack Spacing="0" AlignItems="AlignItems.End" Style="min-width: 100px;">
-                                    <MudText Typo="Typo.body1" Color="@(acct.CurrentBalance >= 0 ? Color.Success : Color.Error)">
-                                        @acct.CurrentBalance.ToString("C")
-                                    </MudText>
-                                    @if (acct.BalanceAsOf is DateTime asOf)
-                                    {
-                                        <MudText Typo="Typo.caption" Color="Color.Secondary">@BankBalanceCaption(acct, asOf)</MudText>
-                                    }
-                                </MudStack>
-                                <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
-                                               OnClick="@(() => EditAccount(acct))" />
-                                <MudIconButton Icon="@(acct.IsActive ? Icons.Material.Filled.VisibilityOff : Icons.Material.Filled.Visibility)"
-                                               Size="Size.Small"
-                                               OnClick="@(() => ToggleActive(acct))" />
+                                @if (acct.IsHidden)
+                                {
+                                    @* Another member's private account: counted in totals, details hidden. *@
+                                    <MudTooltip Text="Another member keeps this account private. Its money still counts in the group's totals.">
+                                        <MudIcon Icon="@Icons.Material.Filled.Lock" Color="Color.Secondary" />
+                                    </MudTooltip>
+                                }
+                                else
+                                {
+                                    <MudStack Spacing="0" AlignItems="AlignItems.End" Style="min-width: 100px;">
+                                        <MudText Typo="Typo.body1" Color="@(acct.CurrentBalance >= 0 ? Color.Success : Color.Error)">
+                                            @acct.CurrentBalance.ToString("C")
+                                        </MudText>
+                                        @if (acct.BalanceAsOf is DateTime asOf)
+                                        {
+                                            <MudText Typo="Typo.caption" Color="Color.Secondary">@BankBalanceCaption(acct, asOf)</MudText>
+                                        }
+                                    </MudStack>
+                                    <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                                                   OnClick="@(() => EditAccount(acct))" />
+                                    <MudIconButton Icon="@(acct.IsActive ? Icons.Material.Filled.VisibilityOff : Icons.Material.Filled.Visibility)"
+                                                   Size="Size.Small"
+                                                   OnClick="@(() => ToggleActive(acct))" />
+                                }
                             </MudStack>
                         </MudPaper>
                     }
@@ -260,6 +274,7 @@
             { x => x.PlaidAccountId, account.PlaidAccountId },
             { x => x.IsActive, account.IsActive },
             { x => x.CountPurchasesInBudget, account.CountPurchasesInBudget },
+            { x => x.IsPrivate, account.IsPrivate },
             { x => x.PlaidAccounts, _plaidAccounts }
         };
         var dialog = await DialogService.ShowAsync<AccountDialog>("Edit Account", parameters);
@@ -268,7 +283,7 @@
         if (result is not null && !result.Canceled && result.Data is AccountDialog.AccountResult data)
         {
             var groupId = GroupContext.ActiveGroupId!.Value;
-            await AccountSvc.UpdateAsync(groupId, account.Id, new UpdateAccountRequest(data.Name, data.AccountType, data.PlaidAccountId, data.CountPurchasesInBudget));
+            await AccountSvc.UpdateAsync(groupId, account.Id, new UpdateAccountRequest(data.Name, data.AccountType, data.PlaidAccountId, data.CountPurchasesInBudget, data.IsPrivate));
             if (data.IsActive != account.IsActive)
                 await AccountSvc.SetActiveAsync(groupId, account.Id, data.IsActive);
             await LoadData();

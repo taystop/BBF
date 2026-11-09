@@ -6,16 +6,13 @@ using Microsoft.EntityFrameworkCore;
 
 namespace BBF.Api.Services;
 
-public class AccountsService(ITenantDbContextFactory tenantDb)
+public class AccountsService(ITenantDbContextFactory tenantDb, ICurrentUserContext currentUser)
 {
     public async Task<List<AccountDto>> GetAccountsAsync(int groupId, CancellationToken ct = default)
     {
         await using var db = await tenantDb.CreateForGroupAsync(groupId, ct);
-        return await db.Accounts
-            .OrderBy(a => a.Name)
-            .Select(a => new AccountDto(a.Id, a.Name, a.AccountType, a.StartingBalance, a.CurrentBalance, a.IsActive, a.PlaidAccountId,
-                a.CountPurchasesInBudget, a.AvailableBalance, a.BalanceAsOf))
-            .ToListAsync(ct);
+        var accounts = await db.Accounts.OrderBy(a => a.Name).ToListAsync(ct);
+        return accounts.Select(a => ToDto(a, currentUser.UserId)).ToList();
     }
 
     public async Task<AccountDto> CreateAsync(int groupId, CreateAccountRequest request, CancellationToken ct = default)
@@ -32,7 +29,7 @@ public class AccountsService(ITenantDbContextFactory tenantDb)
         };
         db.Accounts.Add(account);
         await db.SaveChangesAsync(ct);
-        return ToDto(account);
+        return ToDto(account, currentUser.UserId);
     }
 
     public async Task UpdateAsync(int groupId, int accountId, UpdateAccountRequest request, CancellationToken ct = default)
@@ -40,7 +37,11 @@ public class AccountsService(ITenantDbContextFactory tenantDb)
         await using var db = await tenantDb.CreateForGroupAsync(groupId, ct);
         var entity = await db.Accounts.FirstOrDefaultAsync(a => a.Id == accountId, ct);
         if (entity is null) return; // the query filter means a cross-tenant id is simply never found
+        if (Privacy.IsHiddenFrom(entity.PrivateToUserId, currentUser.UserId))
+            throw new ForbiddenAccessException("Only its owner can change a private account.");
 
+        if (request.IsPrivate is bool makePrivate)
+            entity.PrivateToUserId = makePrivate ? currentUser.UserId : null;
         entity.Name = request.Name;
         entity.AccountType = request.AccountType;
         var unlinked = entity.PlaidAccountId is not null && request.PlaidAccountId is null;
@@ -62,6 +63,8 @@ public class AccountsService(ITenantDbContextFactory tenantDb)
         await using var db = await tenantDb.CreateForGroupAsync(groupId, ct);
         var entity = await db.Accounts.FirstOrDefaultAsync(a => a.Id == accountId, ct);
         if (entity is null) return;
+        if (Privacy.IsHiddenFrom(entity.PrivateToUserId, currentUser.UserId))
+            throw new ForbiddenAccessException("Only its owner can change a private account.");
 
         entity.IsActive = isActive;
         await db.SaveChangesAsync(ct);
@@ -90,7 +93,11 @@ public class AccountsService(ITenantDbContextFactory tenantDb)
     /// <summary>Credit card purchases are off by default: the household budgets the card payment instead.</summary>
     public static bool DefaultCountPurchases(string accountType) => accountType != "CreditCard";
 
-    private static AccountDto ToDto(Account a) =>
-        new(a.Id, a.Name, a.AccountType, a.StartingBalance, a.CurrentBalance, a.IsActive, a.PlaidAccountId,
-            a.CountPurchasesInBudget, a.AvailableBalance, a.BalanceAsOf);
+    /// <summary>Another member's private account keeps its type and budget setting but loses name and balances.</summary>
+    private static AccountDto ToDto(Account a, string userId) =>
+        Privacy.IsHiddenFrom(a.PrivateToUserId, userId)
+            ? new(a.Id, Privacy.HiddenAccountName, a.AccountType, 0, 0, a.IsActive, null,
+                a.CountPurchasesInBudget, null, null, IsPrivate: false, IsHidden: true)
+            : new(a.Id, a.Name, a.AccountType, a.StartingBalance, a.CurrentBalance, a.IsActive, a.PlaidAccountId,
+                a.CountPurchasesInBudget, a.AvailableBalance, a.BalanceAsOf, IsPrivate: a.PrivateToUserId is not null);
 }

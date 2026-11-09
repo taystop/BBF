@@ -128,6 +128,10 @@ namespace BBF.Migrations
                     b.Property<int?>("PlaidAccountId")
                         .HasColumnType("int");
 
+                    b.Property<string>("PrivateToUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
                     b.Property<decimal>("StartingBalance")
                         .HasColumnType("decimal(18,2)");
 
@@ -166,6 +170,9 @@ namespace BBF.Migrations
                         .HasColumnType("int");
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime?>("AssignedPayDate")
+                        .HasColumnType("datetime2");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
@@ -809,6 +816,111 @@ namespace BBF.Migrations
                         .HasFilter("[GroupId] IS NOT NULL");
 
                     b.ToTable("MealPlanWeeks");
+                });
+
+            modelBuilder.Entity("BBF.Data.Entities.PaySchedule", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("DepositAccountId")
+                        .HasColumnType("int");
+
+                    b.Property<decimal>("ExpectedAmount")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<DateTime>("FirstPayday")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Frequency")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int?>("GroupId")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsPrivate")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("MatchText")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime>("NextPayday")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DepositAccountId");
+
+                    b.HasIndex("GroupId");
+
+                    b.ToTable("PaySchedules");
+                });
+
+            modelBuilder.Entity("BBF.Data.Entities.Paycheck", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<decimal?>("ActualAmount")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<decimal>("ExpectedAmount")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<int?>("GroupId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("PayDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("PayScheduleId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("ReceivedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int?>("TransactionId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TransactionId");
+
+                    b.HasIndex("GroupId", "PayDate");
+
+                    b.HasIndex("PayScheduleId", "PayDate")
+                        .IsUnique();
+
+                    b.ToTable("Paychecks");
                 });
 
             modelBuilder.Entity("BBF.Data.Entities.PlaidAccount", b =>
@@ -1689,6 +1801,41 @@ namespace BBF.Migrations
                         .OnDelete(DeleteBehavior.SetNull);
 
                     b.Navigation("Group");
+                });
+
+            modelBuilder.Entity("BBF.Data.Entities.PaySchedule", b =>
+                {
+                    b.HasOne("BBF.Data.Entities.Account", "DepositAccount")
+                        .WithMany()
+                        .HasForeignKey("DepositAccountId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("BBF.Data.Entities.UserGroup", "Group")
+                        .WithMany()
+                        .HasForeignKey("GroupId")
+                        .OnDelete(DeleteBehavior.Cascade);
+
+                    b.Navigation("DepositAccount");
+
+                    b.Navigation("Group");
+                });
+
+            modelBuilder.Entity("BBF.Data.Entities.Paycheck", b =>
+                {
+                    b.HasOne("BBF.Data.Entities.PaySchedule", "PaySchedule")
+                        .WithMany()
+                        .HasForeignKey("PayScheduleId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("BBF.Data.Entities.Transaction", "Transaction")
+                        .WithMany()
+                        .HasForeignKey("TransactionId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.Navigation("PaySchedule");
+
+                    b.Navigation("Transaction");
                 });
 
             modelBuilder.Entity("BBF.Data.Entities.PlaidAccount", b =>

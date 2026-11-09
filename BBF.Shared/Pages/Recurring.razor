@@ -228,7 +228,7 @@
         if (groupId is null) return;
 
         _rules = await RecurringSvc.GetActiveAsync(groupId.Value);
-        _accounts = await AccountSvc.GetAccountsAsync(groupId.Value);
+        _accounts = (await AccountSvc.GetAccountsAsync(groupId.Value)).Where(a => !a.IsHidden).ToList();
         _categories = await CategorySvc.GetCategoriesAsync(groupId.Value);
         _bills = await BillSvc.GetBillsAsync(groupId.Value, DateTime.Today.AddDays(-30), DateTime.Today.AddDays(45));
 

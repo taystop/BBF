@@ -17,6 +17,12 @@ public static class GroupsEndpoints
         group.MapGet("/", async (ICurrentUserContext currentUser, GroupManagementService groups, CancellationToken ct) =>
             Results.Ok(await groups.GetMyGroupsAsync(currentUser.UserId, ct)));
 
+        group.MapGet("/{groupId:int}/members", async (int groupId, ICurrentUserContext currentUser, GroupManagementService groups, CancellationToken ct) =>
+        {
+            await currentUser.GetVerifiedGroupIdAsync(groupId, ct);
+            return Results.Ok(await groups.GetMembersAsync(groupId, ct));
+        });
+
         // Admin-only group management — matches the original Groups.razor page's
         // [Authorize(Roles = "Admin")] gate. Per-group Owner checks happen inside the service itself.
         var admin = app.MapGroup("/api/admin/groups").RequireAuthorization("AdminOnly");

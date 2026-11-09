@@ -1,6 +1,7 @@
 using BBF.Api.Services;
 using BBF.Data.Entities;
 using BBF.Shared.Contracts.Bills;
+using BBF.Shared.Contracts.Paychecks;
 
 namespace BBF.Api.Endpoints;
 
@@ -24,6 +25,12 @@ public static class BillsEndpoints
             if (!BillStatuses.IsValid(request.Status))
                 return Results.BadRequest(new { error = "Status must be Expected, Paid or Skipped." });
             await bills.UpdateStatusAsync(groupId, billId, request, ct);
+            return Results.NoContent();
+        });
+
+        group.MapPut("/{billId:int}/pay-date", async (int groupId, int billId, MoveBillRequest request, BillsService bills, CancellationToken ct) =>
+        {
+            await bills.MoveToPayDateAsync(groupId, billId, request.PayDate, ct);
             return Results.NoContent();
         });
     }

@@ -202,7 +202,7 @@
         var monthEnd = _selectedMonth.AddMonths(1);
 
         _categories = await CategorySvc.GetCategoriesAsync(groupId.Value);
-        _accounts = await AccountSvc.GetAccountsAsync(groupId.Value);
+        _accounts = (await AccountSvc.GetAccountsAsync(groupId.Value)).Where(a => !a.IsHidden).ToList();
 
         var allTransactions = await TransactionSvc.GetTransactionsAsync(groupId.Value);
         _transactions = allTransactions

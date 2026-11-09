@@ -36,6 +36,13 @@
                 Off: only the card payment from checking counts, so nothing is counted twice.
             </MudText>
         }
+        @if (!IsNew)
+        {
+            <MudSwitch T="bool" @bind-Value="IsPrivate" Label="Private to me" Color="Color.Primary" Class="mb-1" />
+            <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block mb-3">
+                Its money still counts in the group's totals, but other members can't see its balance or transactions.
+            </MudText>
+        }
         <MudSwitch @bind-Value="IsActive" Label="Active" Color="Color.Primary" />
     </DialogContent>
     <DialogActions>
@@ -58,6 +65,7 @@
     [Parameter] public int? PlaidAccountId { get; set; }
     [Parameter] public bool IsActive { get; set; } = true;
     [Parameter] public bool? CountPurchasesInBudget { get; set; }
+    [Parameter] public bool IsPrivate { get; set; }
 
     private bool CountPurchases
     {
@@ -75,7 +83,8 @@
         PlaidAccountId = PlaidAccountId,
         IsActive = IsActive,
         // Only meaningful for cards; null lets the API apply its default for other types.
-        CountPurchasesInBudget = AccountType == "CreditCard" ? CountPurchases : null
+        CountPurchasesInBudget = AccountType == "CreditCard" ? CountPurchases : null,
+        IsPrivate = IsPrivate
     }));
 
     public class AccountResult
@@ -86,5 +95,6 @@
         public int? PlaidAccountId { get; set; }
         public bool IsActive { get; set; }
         public bool? CountPurchasesInBudget { get; set; }
+        public bool IsPrivate { get; set; }
     }
 }

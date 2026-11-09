@@ -133,11 +133,13 @@ public static class BillMatching
         var from = bills.Min(b => b.DueDate).AddDays(-DaysEarly);
         var to = bills.Max(b => b.DueDate).AddDays(DaysLate);
         var linkedIds = db.BillOccurrences.Where(b => b.TransactionId != null).Select(b => b.TransactionId);
+        var paycheckIds = db.Paychecks.Where(p => p.TransactionId != null).Select(p => p.TransactionId);
 
         var candidates = await db.Transactions
             .Where(t => t.Date >= from && t.Date <= to
                 && t.Kind != TransactionKinds.Transfer
-                && !linkedIds.Contains(t.Id))
+                && !linkedIds.Contains(t.Id)
+                && !paycheckIds.Contains(t.Id))
             .ToListAsync(ct);
 
         var used = new HashSet<int>();
@@ -193,13 +195,13 @@ public static class BillMatching
         return Math.Abs(actual - expected) <= tolerance;
     }
 
-    private static bool TextMatches(Transaction t, string matchText)
+    internal static bool TextMatches(Transaction t, string matchText)
     {
         if (matchText.Length < 3) return false;
         return Normalize(t.Description).Contains(matchText)
             || (t.MerchantName is not null && Normalize(t.MerchantName).Contains(matchText));
     }
 
-    private static string Normalize(string? text) =>
+    internal static string Normalize(string? text) =>
         new((text ?? "").ToLowerInvariant().Where(char.IsLetterOrDigit).ToArray());
 }

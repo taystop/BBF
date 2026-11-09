@@ -1,17 +1,19 @@
 using System.Globalization;
 using BBF.Api.Auth;
+using BBF.Data;
 using BBF.Data.Entities;
 using BBF.Shared.Contracts.Transactions;
 using Microsoft.EntityFrameworkCore;
 
 namespace BBF.Api.Services;
 
-public class TransactionsService(ITenantDbContextFactory tenantDb)
+public class TransactionsService(ITenantDbContextFactory tenantDb, ICurrentUserContext currentUser)
 {
     public async Task<List<TransactionDto>> GetTransactionsAsync(int groupId, CancellationToken ct = default)
     {
         await using var db = await tenantDb.CreateForGroupAsync(groupId, ct);
         return await db.Transactions
+            .VisibleTo(db, currentUser.UserId)
             .Include(t => t.Category)
             .Include(t => t.Account)
             .OrderByDescending(t => t.Date)
@@ -26,6 +28,7 @@ public class TransactionsService(ITenantDbContextFactory tenantDb)
     public async Task<TransactionDto> CreateAsync(int groupId, CreateTransactionRequest request, CancellationToken ct = default)
     {
         await using var db = await tenantDb.CreateForGroupAsync(groupId, ct);
+        await EnsureAccountUsableAsync(db, request.AccountId, ct);
         var transaction = new Transaction
         {
             Amount = request.Amount,
@@ -57,8 +60,10 @@ public class TransactionsService(ITenantDbContextFactory tenantDb)
     public async Task UpdateAsync(int groupId, int transactionId, UpdateTransactionRequest request, CancellationToken ct = default)
     {
         await using var db = await tenantDb.CreateForGroupAsync(groupId, ct);
-        var entity = await db.Transactions.FirstOrDefaultAsync(t => t.Id == transactionId, ct);
+        var entity = await db.Transactions.VisibleTo(db, currentUser.UserId).FirstOrDefaultAsync(t => t.Id == transactionId, ct);
         if (entity is null) return;
+        if (request.AccountId != entity.AccountId)
+            await EnsureAccountUsableAsync(db, request.AccountId, ct);
 
         var previousAccountId = entity.AccountId;
 
@@ -86,11 +91,12 @@ public class TransactionsService(ITenantDbContextFactory tenantDb)
     public async Task DeleteAsync(int groupId, int transactionId, CancellationToken ct = default)
     {
         await using var db = await tenantDb.CreateForGroupAsync(groupId, ct);
-        var entity = await db.Transactions.FirstOrDefaultAsync(t => t.Id == transactionId, ct);
+        var entity = await db.Transactions.VisibleTo(db, currentUser.UserId).FirstOrDefaultAsync(t => t.Id == transactionId, ct);
         if (entity is null) return;
 
         var accountId = entity.AccountId;
         await BillMatching.UnlinkTransactionsAsync(db, [entity.Id], ct);
+        await PaycheckMatching.UnlinkTransactionsAsync(db, [entity.Id], ct);
         db.Transactions.Remove(entity);
         await db.SaveChangesAsync(ct);
 
@@ -104,6 +110,7 @@ public class TransactionsService(ITenantDbContextFactory tenantDb)
     public async Task<CsvImportResult> ImportCsvAsync(int groupId, int? accountId, Stream csvContent, CancellationToken ct = default)
     {
         await using var db = await tenantDb.CreateForGroupAsync(groupId, ct);
+        await EnsureAccountUsableAsync(db, accountId, ct);
         using var reader = new StreamReader(csvContent);
         var headerLine = await reader.ReadLineAsync(ct);
         if (headerLine is null)
@@ -216,6 +223,15 @@ public class TransactionsService(ITenantDbContextFactory tenantDb)
         }
         result.Add(field.ToString().Trim().Trim('"'));
         return result;
+    }
+
+    /// <summary>Nobody can add to or move transactions into another member's private account.</summary>
+    private async Task EnsureAccountUsableAsync(ApplicationDbContext db, int? accountId, CancellationToken ct)
+    {
+        if (accountId is not int id) return;
+        var owner = await db.Accounts.Where(a => a.Id == id).Select(a => a.PrivateToUserId).FirstOrDefaultAsync(ct);
+        if (Privacy.IsHiddenFrom(owner, currentUser.UserId))
+            throw new ForbiddenAccessException("That account is private to another member.");
     }
 
     private static string ValidKind(string? kind) => TransactionKinds.IsValid(kind) ? kind! : TransactionKinds.Spending;

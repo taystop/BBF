@@ -1,0 +1,489 @@
+@page "/paychecks"
+@using System.Security.Claims
+@using BBF.Shared.Contracts.Accounts
+@using BBF.Shared.Contracts.Auth
+@using BBF.Shared.Contracts.Groups
+@using BBF.Shared.Contracts.Paychecks
+@attribute [Authorize]
+@inject IPaycheckService PaycheckSvc
+@inject IAccountService AccountSvc
+@inject IGroupService GroupSvc
+@inject ApiGroupContext GroupContext
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@implements IDisposable
+
+<PageTitle>Paychecks - BBF</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="py-4">
+    @if (!GroupContext.IsInitialized || GroupContext.ActiveGroupId is null)
+    {
+        <MudPaper Class="pa-6 text-center" Elevation="2">
+            <MudIcon Icon="@Icons.Material.Filled.Group" Size="Size.Large" Color="Color.Secondary" Class="mb-3" />
+            <MudText Typo="Typo.h5" Class="mb-2">No Budget Group</MudText>
+            <MudText Typo="Typo.body1" Color="Color.Secondary" Class="mb-4">
+                Create or join a group to start tracking paychecks.
+            </MudText>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" Href="/groups"
+                       StartIcon="@Icons.Material.Filled.GroupAdd">
+                Manage Groups
+            </MudButton>
+        </MudPaper>
+    }
+    else
+    {
+        <MudStack Row AlignItems="AlignItems.Center" Style="flex-wrap: wrap; gap: 8px;" Class="mb-4">
+            <MudIcon Icon="@Icons.Material.Filled.Payments" Size="Size.Large" Color="Color.Primary" />
+            <MudText Typo="Typo.h4">Paychecks</MudText>
+        </MudStack>
+
+        @if (_period is not null)
+        {
+            <MudPaper Class="pa-4 mb-4" Elevation="2">
+                <div class="d-flex align-center flex-wrap" style="gap: 4px 8px;">
+                    <MudIconButton Icon="@Icons.Material.Filled.ChevronLeft" OnClick="PreviousPeriod" aria-label="Previous pay period" />
+                    <MudStack Spacing="0" Style="flex: 1; min-width: 160px;">
+                        <MudText Typo="Typo.h6">@_period.Start.ToString("MMM d") – @_period.End.ToString("MMM d")</MudText>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">
+                            @(IsCurrentPeriod ? "This pay period" : _period.End < DateTime.Today ? "Past pay period" : "Upcoming pay period")
+                        </MudText>
+                    </MudStack>
+                    @if (!IsCurrentPeriod)
+                    {
+                        <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="GoToToday">Today</MudButton>
+                    }
+                    <MudIconButton Icon="@Icons.Material.Filled.ChevronRight" OnClick="NextPeriod" aria-label="Next pay period" />
+                </div>
+
+                @if (!_period.HasPaySchedules)
+                {
+                    <MudAlert Severity="Severity.Info" Dense Class="mt-3">
+                        Add each paycheck below to see what's left over each pay period.
+                    </MudAlert>
+                }
+
+                <MudGrid Spacing="2" Class="mt-2">
+                    <MudItem xs="6" sm="3">
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">Income</MudText>
+                        <MudText Typo="Typo.h6">@_period.Income.ToString("C")</MudText>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">@_period.IncomeReceived.ToString("C") received</MudText>
+                    </MudItem>
+                    <MudItem xs="6" sm="3">
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">Bills</MudText>
+                        <MudText Typo="Typo.h6">@_period.BillsTotal.ToString("C")</MudText>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">@_period.BillsPaid.ToString("C") paid</MudText>
+                    </MudItem>
+                    <MudItem xs="6" sm="3">
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">Other spending</MudText>
+                        <MudText Typo="Typo.h6">@_period.OtherSpending.ToString("C")</MudText>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">so far</MudText>
+                    </MudItem>
+                    <MudItem xs="6" sm="3">
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">Left over</MudText>
+                        <MudText Typo="Typo.h6" Color="@(_period.Leftover >= 0 ? Color.Success : Color.Error)">@_period.Leftover.ToString("C")</MudText>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">after bills</MudText>
+                    </MudItem>
+                </MudGrid>
+
+                <MudText Typo="Typo.subtitle1" Class="mt-4 mb-2" Style="font-weight: 600;">Paychecks</MudText>
+                @foreach (var pay in _period.Paychecks)
+                {
+                    var status = PaycheckStatusLabel(pay);
+                    <MudPaper Class="pa-3 mb-2" Elevation="1">
+                        <div class="d-flex align-center flex-wrap" style="gap: 8px 12px;">
+                            <MudStack Spacing="0" Style="min-width: 64px;">
+                                <MudText Typo="Typo.subtitle2">@pay.PayDate.ToString("MMM d")</MudText>
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">@pay.PayDate.ToString("ddd")</MudText>
+                            </MudStack>
+                            <MudStack Spacing="0" Style="flex: 1; min-width: 140px;">
+                                <MudText Typo="Typo.body2" Style="font-weight: 600;">
+                                    @if (pay.IsHidden)
+                                    {
+                                        <MudIcon Icon="@Icons.Material.Filled.Lock" Size="Size.Small" Class="mr-1" Style="vertical-align: middle;" />
+                                    }
+                                    @pay.Name
+                                </MudText>
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                    @(pay.DepositDescription is not null ? $"{pay.EarnerName} · {pay.DepositDescription}" : pay.EarnerName)
+                                </MudText>
+                            </MudStack>
+                            @if (!pay.IsHidden)
+                            {
+                                <MudStack Spacing="0" AlignItems="AlignItems.End" Style="min-width: 80px;">
+                                    <MudText Typo="Typo.body2">@((pay.ActualAmount ?? pay.ExpectedAmount ?? 0).ToString("C"))</MudText>
+                                    @if (pay.Extra is decimal extra)
+                                    {
+                                        <MudText Typo="Typo.caption" Color="Color.Success">+@extra.ToString("C") extra</MudText>
+                                    }
+                                </MudStack>
+                            }
+                            <MudChip T="string" Size="Size.Small" Color="@status.Color">@status.Text</MudChip>
+                            @if (!pay.IsHidden)
+                            {
+                                <div class="d-flex">
+                                    @if (pay.Status == "Expected")
+                                    {
+                                        <MudTooltip Text="Mark received">
+                                            <MudIconButton Icon="@Icons.Material.Filled.CheckCircle" Size="Size.Small" Color="Color.Success"
+                                                           OnClick="@(() => SetPaycheckStatus(pay, "Received"))" />
+                                        </MudTooltip>
+                                        <MudTooltip Text="No paycheck this time">
+                                            <MudIconButton Icon="@Icons.Material.Filled.SkipNext" Size="Size.Small"
+                                                           OnClick="@(() => SetPaycheckStatus(pay, "Skipped"))" />
+                                        </MudTooltip>
+                                    }
+                                    else
+                                    {
+                                        <MudTooltip Text="Undo (back to expected)">
+                                            <MudIconButton Icon="@Icons.Material.Filled.Undo" Size="Size.Small"
+                                                           OnClick="@(() => SetPaycheckStatus(pay, "Expected"))" />
+                                        </MudTooltip>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    </MudPaper>
+                }
+                @if (_period.Paychecks.Count == 0)
+                {
+                    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-2">No paychecks in this period.</MudText>
+                }
+
+                <MudText Typo="Typo.subtitle1" Class="mt-4 mb-1" Style="font-weight: 600;">Bills paid from this period</MudText>
+                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block mb-2">
+                    Each bill comes out of the last paycheck before it's due. Use the menu to move one.
+                </MudText>
+                @foreach (var bill in _period.Bills)
+                {
+                    var status = BillStatusLabel(bill);
+                    <MudPaper Class="pa-3 mb-2" Elevation="1">
+                        <div class="d-flex align-center flex-wrap" style="gap: 8px 12px;">
+                            <MudStack Spacing="0" Style="min-width: 64px;">
+                                <MudText Typo="Typo.subtitle2">@bill.DueDate.ToString("MMM d")</MudText>
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">due</MudText>
+                            </MudStack>
+                            <MudText Typo="Typo.body2" Style="flex: 1; min-width: 140px; font-weight: 600;">
+                                @if (bill.IsHidden)
+                                {
+                                    <MudIcon Icon="@Icons.Material.Filled.Lock" Size="Size.Small" Class="mr-1" Style="vertical-align: middle;" />
+                                }
+                                @bill.Payee
+                            </MudText>
+                            @if (bill.Amount is decimal amount)
+                            {
+                                <MudText Typo="Typo.body2" Style="min-width: 80px; text-align: right;">@amount.ToString("C")</MudText>
+                            }
+                            @if (bill.IsMoved)
+                            {
+                                <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">Moved</MudChip>
+                            }
+                            <MudChip T="string" Size="Size.Small" Color="@status.Color">@status.Text</MudChip>
+                            @if (!bill.IsHidden)
+                            {
+                                <MudMenu Icon="@Icons.Material.Filled.MoreVert" Size="Size.Small" Dense
+                                         AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight"
+                                         aria-label="Move bill to another paycheck">
+                                    @foreach (var payday in MoveOptions(bill))
+                                    {
+                                        <MudMenuItem OnClick="@(() => MoveBill(bill, payday))">
+                                            Pay from @payday.ToString("ddd MMM d") paycheck
+                                        </MudMenuItem>
+                                    }
+                                    @if (bill.IsMoved)
+                                    {
+                                        <MudMenuItem Icon="@Icons.Material.Filled.Undo" OnClick="@(() => MoveBill(bill, null))">
+                                            Back to the default paycheck
+                                        </MudMenuItem>
+                                    }
+                                </MudMenu>
+                            }
+                        </div>
+                    </MudPaper>
+                }
+                @if (_period.Bills.Count == 0)
+                {
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">No bills come out of this period.</MudText>
+                }
+            </MudPaper>
+        }
+
+        <MudPaper Class="pa-4" Elevation="2">
+            <MudStack Row AlignItems="AlignItems.Center" Style="flex-wrap: wrap; gap: 8px;" Class="mb-3">
+                <MudText Typo="Typo.h6">Pay schedules</MudText>
+                <MudSpacer />
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small"
+                           StartIcon="@Icons.Material.Filled.Add" OnClick="AddSchedule"
+                           Disabled="@(_members.Count == 0)">
+                    Add Paycheck
+                </MudButton>
+            </MudStack>
+
+            @foreach (var s in _schedules)
+            {
+                <MudPaper Class="pa-3 mb-2" Elevation="1">
+                    <div class="d-flex align-center flex-wrap" style="gap: 8px 12px;">
+                        <MudStack Spacing="0" Style="flex: 1; min-width: 160px;">
+                            <MudText Typo="Typo.body2" Style="font-weight: 600;">
+                                @s.Name
+                                @if (s.IsPrivate)
+                                {
+                                    <MudChip T="string" Size="Size.Small" Class="ml-1" Icon="@Icons.Material.Filled.Lock">Private</MudChip>
+                                }
+                                @if (!s.IsActive)
+                                {
+                                    <MudChip T="string" Size="Size.Small" Class="ml-1">Inactive</MudChip>
+                                }
+                            </MudText>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                @s.EarnerName · @FrequencyLabel(s.Frequency)@(s.DepositAccountName is not null ? $" · into {s.DepositAccountName}" : "")
+                            </MudText>
+                        </MudStack>
+                        @if (s.ExpectedAmount is decimal expected)
+                        {
+                            <MudText Typo="Typo.body2" Style="min-width: 80px; text-align: right;">@expected.ToString("C")</MudText>
+                        }
+                        <MudStack Spacing="0" AlignItems="AlignItems.End" Style="min-width: 90px;">
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">Next payday</MudText>
+                            <MudText Typo="Typo.body2">@(s.NextPayday?.ToString("ddd MMM d") ?? "—")</MudText>
+                        </MudStack>
+                        @if (s.IsMine || !s.IsPrivate)
+                        {
+                            <div class="d-flex">
+                                <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" OnClick="@(() => EditSchedule(s))" aria-label="Edit paycheck" />
+                                <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error"
+                                               OnClick="@(() => DeleteSchedule(s))" aria-label="Delete paycheck" />
+                            </div>
+                        }
+                    </div>
+                </MudPaper>
+            }
+
+            @if (_schedules.Count == 0)
+            {
+                <MudText Typo="Typo.body2" Color="Color.Secondary" Class="pa-4 text-center">
+                    No paychecks yet. Add one for each person who gets paid.
+                </MudText>
+            }
+        </MudPaper>
+    }
+</MudContainer>
+
+@code {
+    [CascadingParameter]
+    private Task<AuthenticationState>? AuthStateTask { get; set; }
+
+    private PayPeriodDto? _period;
+    private DateTime _periodDate = DateTime.Today;
+    private List<DateTime> _paydays = [];
+    private List<PayScheduleDto> _schedules = [];
+    private List<GroupMemberDto> _members = [];
+    private List<AccountDto> _accounts = [];
+    private string? _currentUserId;
+
+    private bool IsCurrentPeriod => _period is not null && _period.Start <= DateTime.Today && DateTime.Today <= _period.End;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthStateTask is not null)
+        {
+            var user = (await AuthStateTask).User;
+            // The web cookie uses the full claim type; the mobile JWT uses the short "nameid".
+            _currentUserId = user.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? user.FindFirst("nameid")?.Value;
+        }
+
+        GroupContext.OnGroupChanged += OnGroupChanged;
+        if (GroupContext.ActiveGroupId is not null)
+            await LoadData();
+    }
+
+    private async void OnGroupChanged()
+    {
+        await InvokeAsync(async () =>
+        {
+            await LoadData();
+            StateHasChanged();
+        });
+    }
+
+    private async Task LoadData()
+    {
+        var groupId = GroupContext.ActiveGroupId;
+        if (groupId is null) return;
+
+        _schedules = await PaycheckSvc.GetSchedulesAsync(groupId.Value);
+        _members = await GroupSvc.GetMembersAsync(groupId.Value);
+        _accounts = (await AccountSvc.GetAccountsAsync(groupId.Value)).Where(a => a.IsActive && !a.IsHidden).ToList();
+        await LoadPeriod();
+    }
+
+    private async Task LoadPeriod()
+    {
+        var groupId = GroupContext.ActiveGroupId;
+        if (groupId is null) return;
+
+        _period = await PaycheckSvc.GetPeriodAsync(groupId.Value, _periodDate);
+        // Paydays a bill in this period could be moved to: up to five weeks before its due date.
+        _paydays = await PaycheckSvc.GetPaydaysAsync(groupId.Value, _period.Start.AddDays(-35), _period.End.AddDays(35));
+        StateHasChanged();
+    }
+
+    private async Task PreviousPeriod()
+    {
+        if (_period is null) return;
+        _periodDate = _period.Start.AddDays(-1);
+        await LoadPeriod();
+    }
+
+    private async Task NextPeriod()
+    {
+        if (_period is null) return;
+        _periodDate = _period.End.AddDays(1);
+        await LoadPeriod();
+    }
+
+    private async Task GoToToday()
+    {
+        _periodDate = DateTime.Today;
+        await LoadPeriod();
+    }
+
+    private IEnumerable<DateTime> MoveOptions(PeriodBillDto bill) =>
+        _paydays.Where(d => d <= bill.DueDate && d >= bill.DueDate.AddDays(-35) && d != _period?.Start).OrderByDescending(d => d);
+
+    private async Task MoveBill(PeriodBillDto bill, DateTime? payday)
+    {
+        try
+        {
+            await PaycheckSvc.MoveBillAsync(GroupContext.ActiveGroupId!.Value, bill.BillId, new MoveBillRequest(payday));
+            Snackbar.Add(payday is DateTime d ? $"{bill.Payee} now comes out of the {d:MMM d} paycheck." : $"{bill.Payee} is back on its default paycheck.", Severity.Success);
+            await LoadPeriod();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Couldn't move the bill: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task SetPaycheckStatus(PaycheckDto pay, string status)
+    {
+        try
+        {
+            await PaycheckSvc.UpdatePaycheckStatusAsync(GroupContext.ActiveGroupId!.Value, pay.Id, new UpdatePaycheckStatusRequest(status));
+            await LoadPeriod();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Couldn't update the paycheck: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task AddSchedule()
+    {
+        var parameters = new DialogParameters<PayScheduleDialog>
+        {
+            { x => x.IsNew, true },
+            { x => x.Members, _members },
+            { x => x.Accounts, _accounts },
+            { x => x.CurrentUserId, _currentUserId },
+            { x => x.UserId, _members.Any(m => m.UserId == _currentUserId) ? _currentUserId! : _members[0].UserId },
+            { x => x.DepositAccountId, _accounts.FirstOrDefault(a => a.AccountType == "Checking")?.Id },
+        };
+        await SaveScheduleFromDialog(parameters, null);
+    }
+
+    private async Task EditSchedule(PayScheduleDto s)
+    {
+        var parameters = new DialogParameters<PayScheduleDialog>
+        {
+            { x => x.IsNew, false },
+            { x => x.Members, _members },
+            { x => x.Accounts, _accounts },
+            { x => x.CurrentUserId, _currentUserId },
+            { x => x.UserId, s.UserId },
+            { x => x.Name, s.Name },
+            { x => x.ExpectedAmount, s.ExpectedAmount ?? 0 },
+            { x => x.Frequency, s.Frequency },
+            // Show the next payday rather than the original anchor; both describe the same schedule.
+            { x => x.FirstPayday, s.NextPayday ?? s.FirstPayday },
+            { x => x.DepositAccountId, s.DepositAccountId },
+            { x => x.MatchText, s.MatchText },
+            { x => x.IsPrivate, s.IsPrivate },
+            { x => x.IsActive, s.IsActive },
+        };
+        await SaveScheduleFromDialog(parameters, s.Id);
+    }
+
+    private async Task SaveScheduleFromDialog(DialogParameters<PayScheduleDialog> parameters, int? scheduleId)
+    {
+        var dialog = await DialogService.ShowAsync<PayScheduleDialog>(scheduleId is null ? "Add Paycheck" : "Edit Paycheck", parameters);
+        var result = await dialog.Result;
+        if (result is null || result.Canceled || result.Data is not PayScheduleDialog.Result data) return;
+
+        var request = new SavePayScheduleRequest(
+            data.UserId, data.Name, data.ExpectedAmount, data.Frequency, data.FirstPayday,
+            data.DepositAccountId, data.MatchText, data.IsPrivate, data.IsActive);
+        try
+        {
+            var groupId = GroupContext.ActiveGroupId!.Value;
+            if (scheduleId is int id)
+                await PaycheckSvc.UpdateScheduleAsync(groupId, id, request);
+            else
+                await PaycheckSvc.CreateScheduleAsync(groupId, request);
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Couldn't save the paycheck: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task DeleteSchedule(PayScheduleDto s)
+    {
+        var parameters = new DialogParameters<MessageBoxDialog>
+        {
+            { x => x.ContentText, $"Remove '{s.Name}' and its expected paydays? Deposits already in your transactions stay." },
+            { x => x.ButtonText, "Delete" },
+            { x => x.Color, Color.Error }
+        };
+        var dialog = await DialogService.ShowAsync<MessageBoxDialog>("Delete Paycheck", parameters);
+        var result = await dialog.Result;
+        if (result is null || result.Canceled) return;
+
+        try
+        {
+            await PaycheckSvc.DeleteScheduleAsync(GroupContext.ActiveGroupId!.Value, s.Id);
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Couldn't delete the paycheck: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private static string FrequencyLabel(string frequency) => frequency switch
+    {
+        "Weekly" => "every week",
+        "BiWeekly" => "every two weeks",
+        "Monthly" => "once a month",
+        _ => frequency,
+    };
+
+    private static (string Text, Color Color) PaycheckStatusLabel(PaycheckDto pay) => pay.Status switch
+    {
+        "Received" => ("Received", Color.Success),
+        "Skipped" => ("Skipped", Color.Default),
+        // Deposits can land a day or two late; only flag it after that.
+        _ when pay.PayDate < DateTime.Today.AddDays(-2) => ("Not seen yet", Color.Warning),
+        _ => ("Expected", Color.Info),
+    };
+
+    private static (string Text, Color Color) BillStatusLabel(PeriodBillDto bill) => bill.Status switch
+    {
+        "Paid" => ("Paid", Color.Success),
+        "Skipped" => ("Skipped", Color.Default),
+        _ when bill.DueDate < DateTime.Today => ("Overdue", Color.Error),
+        _ => ("Expected", Color.Info),
+    };
+
+    public void Dispose() => GroupContext.OnGroupChanged -= OnGroupChanged;
+}
