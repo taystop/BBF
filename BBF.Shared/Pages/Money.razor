@@ -217,7 +217,7 @@
                     {
                         var lowest = _forecast.Days.MinBy(d => d.EndBalance);
                         <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block mb-3">
-                            Checking balance with expected paychecks and bills, minus about @_forecast.DailySpending.ToString("C") a day of everyday spending (your last 4 weeks).
+                            Today's checking balance, moved only by expected paychecks and bills. Everyday spending isn't included.
                             @if (lowest is not null)
                             {
                                 <span> Lowest: <b>@lowest.EndBalance.ToString("C")</b> on @lowest.Date.ToString("MMM d").</span>

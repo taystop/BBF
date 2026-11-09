@@ -25,12 +25,11 @@ public record MoneySummaryDto(
 public record UpcomingBillDto(int BillId, string Payee, DateTime DueDate, decimal? Amount, bool IsHidden);
 
 /// <summary>
-/// Day-by-day checking balance: expected paychecks in, unpaid bills out, and an everyday-spending
-/// estimate (average of the last four weeks) taken off each day after today.
+/// Day-by-day checking balance: today's balance, then expected paychecks in and unpaid bills out.
+/// Everyday spending isn't estimated.
 /// </summary>
 public record ForecastDto(
     decimal StartBalance,
-    decimal DailySpending,
     decimal LowBalanceThreshold,
     List<ForecastDayDto> Days);
 

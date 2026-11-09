@@ -182,6 +182,8 @@ public class BudgetAlertsBackgroundService(
     /// When a new pay period has started, records how the one before it ended. A positive leftover is
     /// a question for the household (Pending until answered, carrying over meanwhile); zero or negative
     /// just carries over. Only looks back three weeks, so turning this on doesn't rewrite old periods.
+    /// The leftover is never more than checking really had spare when the period ended. A question
+    /// still unanswered is worked out again each run, so late-posting transactions correct it.
     /// </summary>
     private static async Task RecordFinishedPeriodAsync(ApplicationDbContext db, int groupId, BBF.Shared.Contracts.Paychecks.PayPeriodDto current, DateTime today, CancellationToken ct)
     {
@@ -190,19 +192,49 @@ public class BudgetAlertsBackgroundService(
         var previous = await PaychecksService.BuildPeriodAsync(db, groupId, "", current.Start.AddDays(-1), ct);
         if (previous.Paychecks.Count == 0 || previous.End != current.Start.AddDays(-1)) return;
         if (previous.Start < today.AddDays(-21)) return;
-        if (await db.LeftoverDecisions.AnyAsync(d => d.PeriodStart == previous.Start, ct)) return;
+        var existing = await db.LeftoverDecisions.FirstOrDefaultAsync(d => d.PeriodStart == previous.Start, ct);
+        if (existing is not null && existing.Decision != LeftoverDecisions.Pending) return;
 
-        var amount = Math.Round(previous.Leftover, 2);
-        db.LeftoverDecisions.Add(new LeftoverDecision
+        var amount = Math.Round(Math.Min(previous.Leftover, await CashSpareAsync(db, previous, ct) ?? previous.Leftover), 2);
+        var decision = amount > 0 ? LeftoverDecisions.Pending : LeftoverDecisions.CarriedOver;
+        if (existing is null)
         {
-            GroupId = groupId,
-            PeriodStart = previous.Start,
-            PeriodEnd = previous.End,
-            NextPeriodStart = current.Start,
-            Amount = amount,
-            Decision = amount > 0 ? LeftoverDecisions.Pending : LeftoverDecisions.CarriedOver,
-        });
+            db.LeftoverDecisions.Add(new LeftoverDecision
+            {
+                GroupId = groupId,
+                PeriodStart = previous.Start,
+                PeriodEnd = previous.End,
+                NextPeriodStart = current.Start,
+                Amount = amount,
+                Decision = decision,
+            });
+        }
+        else if (existing.Amount != amount)
+        {
+            existing.Amount = amount;
+            existing.Decision = decision;
+        }
         await db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>
+    /// What checking had spare when the period ended: its balance at the end of the last day, less the
+    /// period's bills that hadn't come out yet. Null when no checking account is linked.
+    /// </summary>
+    private static async Task<decimal?> CashSpareAsync(ApplicationDbContext db, BBF.Shared.Contracts.Paychecks.PayPeriodDto period, CancellationToken ct)
+    {
+        var balance = await MoneyService.CheckingBalanceAtEndOfAsync(db, period.End, ct);
+        if (balance is null) return null;
+
+        var billIds = period.Bills.Select(b => b.BillId).ToList();
+        var end = period.End.Date;
+        var stillOwed = await db.BillOccurrences
+            .Where(b => billIds.Contains(b.Id)
+                && (b.Status == BillStatuses.Expected
+                    || b.Status == BillStatuses.Paid && b.Transaction != null && b.Transaction.Date > end))
+            .SumAsync(b => (decimal?)(b.Status == BillStatuses.Paid ? b.Transaction!.Amount : b.ExpectedAmount), ct) ?? 0m;
+
+        return balance.Value - stillOwed;
     }
 
     /// <summary>Creates each member's alert once, honoring their settings, and pushes it.</summary>

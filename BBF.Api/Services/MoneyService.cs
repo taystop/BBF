@@ -8,13 +8,12 @@ using Microsoft.EntityFrameworkCore;
 namespace BBF.Api.Services;
 
 /// <summary>
-/// The daily screens: Money home (safe to spend), the balance forecast, quick categorizing with store
+/// The daily screens: Money home (safe to spend), the balance forecast (scheduled paychecks and bills only), quick categorizing with store
 /// rules, and recurring-charge suggestions. Safe to spend and the forecast use checking accounts only.
 /// </summary>
 public class MoneyService(ITenantDbContextFactory tenantDb, ICurrentUserContext currentUser, PaychecksService paychecks)
 {
     public const decimal DefaultLowBalance = 200m;
-    private const int SpendingLookbackDays = 28;
 
     // ------------------------------------------------------------------ Money home
 
@@ -77,16 +76,6 @@ public class MoneyService(ITenantDbContextFactory tenantDb, ICurrentUserContext 
         var (balance, _, _) = await CheckingBalanceAsync(db, ct);
         var threshold = await db.FinanceSettings.Select(f => f.LowBalanceThreshold).FirstOrDefaultAsync(ct) ?? DefaultLowBalance;
 
-        // Everyday spending from checking that isn't a scheduled bill: the last four weeks, per day.
-        var since = today.AddDays(-SpendingLookbackDays);
-        var billTransactionIds = db.BillOccurrences.Where(b => b.TransactionId != null).Select(b => b.TransactionId);
-        var recentSpending = await db.Transactions
-            .Where(t => t.Kind == TransactionKinds.Spending && t.Date >= since && t.Date < today
-                && t.Account != null && t.Account.AccountType == "Checking"
-                && !billTransactionIds.Contains(t.Id))
-            .SumAsync(t => (decimal?)t.Amount, ct) ?? 0m;
-        var daily = Math.Round(Math.Max(0, recentSpending) / SpendingLookbackDays, 2);
-
         var paycheckRows = await db.Paychecks
             .Include(p => p.PaySchedule).ThenInclude(s => s.DepositAccount)
             .Where(p => p.Status == PaycheckStatuses.Expected && p.PayDate >= today && p.PayDate <= end
@@ -128,13 +117,12 @@ public class MoneyService(ITenantDbContextFactory tenantDb, ICurrentUserContext 
         {
             var dayItems = items.GetValueOrDefault(date) ?? [];
             balance += dayItems.Sum(i => i.Amount);
-            if (date > today) balance -= daily;
             result.Add(new ForecastDayDto(date,
                 dayItems.OrderByDescending(i => i.Amount).Select(i => i.Item).ToList(),
                 Math.Round(balance, 2), balance < threshold));
         }
 
-        return new ForecastDto(Math.Round(startBalance, 2), daily, threshold, result);
+        return new ForecastDto(Math.Round(startBalance, 2), threshold, result);
     }
 
     // ------------------------------------------------------------------ Quick review
@@ -248,6 +236,22 @@ public class MoneyService(ITenantDbContextFactory tenantDb, ICurrentUserContext 
     /// Active checking accounts, private ones included (they count in totals). Bank-fed accounts use the
     /// bank's available balance when it has one, since pending charges are already out of it.
     /// </summary>
+    /// <summary>
+    /// What checking held at the end of <paramref name="date"/>: today's balance with every checking
+    /// transaction dated after that day undone. Null when no checking account is linked.
+    /// </summary>
+    internal static async Task<decimal?> CheckingBalanceAtEndOfAsync(ApplicationDbContext db, DateTime date, CancellationToken ct)
+    {
+        var (balance, _, hasChecking) = await CheckingBalanceAsync(db, ct);
+        if (!hasChecking) return null;
+        var day = date.Date;
+        // Amounts are positive for money out, so adding them back undoes spending and removes deposits.
+        var since = await db.Transactions
+            .Where(t => t.Date > day && t.Account != null && t.Account.IsActive && t.Account.AccountType == "Checking")
+            .SumAsync(t => (decimal?)t.Amount, ct) ?? 0m;
+        return balance + since;
+    }
+
     private static async Task<(decimal Balance, DateTime? AsOf, bool HasChecking)> CheckingBalanceAsync(ApplicationDbContext db, CancellationToken ct)
     {
         var accounts = await db.Accounts
