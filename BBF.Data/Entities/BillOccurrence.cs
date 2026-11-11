@@ -22,7 +22,7 @@ public class BillOccurrence
     public DateTime? PaidAt { get; set; }
 
     /// <summary>
-    /// The payday this bill is paid from, when moved by hand. Null = the last payday before the due date.
+    /// The payday this bill is paid from, when moved by hand. Null = the latest payday on or before the due date.
     /// </summary>
     public DateTime? AssignedPayDate { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;

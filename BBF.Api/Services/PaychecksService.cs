@@ -9,7 +9,7 @@ namespace BBF.Api.Services;
 /// <summary>
 /// Pay schedules, paychecks and pay periods. A pay period runs from one payday (any earner) up to the
 /// day before the next one, so two alternating biweekly earners give weekly periods. Each bill belongs
-/// to the period of the last payday before its due date, unless it was moved by hand.
+/// to the period of the latest payday on or before its due date, unless it was moved by hand.
 /// </summary>
 public class PaychecksService(ITenantDbContextFactory tenantDb, ICurrentUserContext currentUser)
 {
@@ -168,11 +168,10 @@ public class PaychecksService(ITenantDbContextFactory tenantDb, ICurrentUserCont
                 hidden ? null : p.Transaction?.Description);
         }).ToList();
 
-        // Bills paid from this period: moved here by hand, or due after this payday and no later than the
-        // next one (so this is the last payday before the due date). Income-type rules are left out
-        // (paychecks cover income), and so are bills on cards whose purchases don't count: the card
+        // Bills paid from this period: moved here by hand, or due within it (on this payday or before the
+        // next one). A bill due on a payday belongs to that payday's paycheck. Income-type rules are left
+        // out (paychecks cover income), and so are bills on cards whose purchases don't count: the card
         // payment from checking is what's budgeted.
-        var nextPayday = end.AddDays(1);
         var bills = await db.BillOccurrences
             .Include(b => b.RecurringTransaction).ThenInclude(r => r.Account)
             .Include(b => b.Transaction)
@@ -180,7 +179,7 @@ public class PaychecksService(ITenantDbContextFactory tenantDb, ICurrentUserCont
                 && b.RecurringTransaction.Account.CountPurchasesInBudget
                 && (b.AssignedPayDate != null
                     ? b.AssignedPayDate >= start && b.AssignedPayDate <= end
-                    : b.DueDate > start && b.DueDate <= nextPayday))
+                    : b.DueDate >= start && b.DueDate <= end))
             .OrderBy(b => b.DueDate).ThenBy(b => b.RecurringTransaction.Payee)
             .ToListAsync(ct);
 
